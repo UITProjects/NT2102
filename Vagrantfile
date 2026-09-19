@@ -1,0 +1,218 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# Lab NT2102.11.CH — Network Intrusion Detection lab
+#
+# Layout of THIS DIRECTORY (kept in Git alongside the Vagrantfile):
+#   Vagrantfile
+#   provision/*.sh                — per-VM provisioning scripts (in Git)
+#   src/                          — YOUR shared code, mounted read/write at ~/NT2102 in every VM
+#
+# Storage model:
+#   Each VM uses ONLY its box's default (single) disk — no secondary data
+#   disk is created or attached. The default disk is capped at 20G via the
+#   vagrant-disksize plugin (`vagrant plugin install vagrant-disksize`),
+#   which resizes/limits the box's built-in disk on first boot.
+#
+# Subnet plan (encoded from NT2102.11.CH):
+#   internal LAN (VLAN 11)  10.21.2.0/24
+#   attacker "Internet"     198.51.100.0/24  (RFC 5737 TEST-NET-2)
+#   C2 "Internet"           203.0.113.0/24   (RFC 5737 TEST-NET-3)
+#
+# Provisioning:
+#   Shell provisioners are registered with run: "never", so `vagrant up` boots
+#   every VM (networks and synced folders get attached/mounted) WITHOUT
+#   executing provision/*.sh. Run a script explicitly with:
+#     vagrant provision <vm-name> --provision-with <vm-name>-setup
+#   e.g.
+#     vagrant provision sensor --provision-with sensor-setup
+#
+# Quick commands:
+#   vagrant up                       # boot all 6 VMs, no provisioning scripts run
+#   vagrant up sensor                # single VM
+#   vagrant provision sensor --provision-with sensor-setup   # run its script when ready
+#   vagrant ssh attacker             # into a VM
+#   vagrant destroy -f               # nuke VMs
+
+require 'fileutils'
+
+# -----------------------------------------------------------------------------
+# Portability notes (read this if you're cloning this repo on a new machine):
+#   Requires only two free, cross-platform tools — same steps on Windows,
+#   macOS, and Linux:
+#     1. VirtualBox  (https://www.virtualbox.org/wiki/Downloads)
+#     2. Vagrant     (https://developer.hashicorp.com/vagrant/downloads)
+#   Everything else (the vagrant-disksize plugin, the box image, the .vdi
+#   files) is fetched/installed automatically on first `vagrant up` — no
+#   other manual setup step is required.
+# -----------------------------------------------------------------------------
+
+# Auto-install any required plugin and re-exec so the SAME `vagrant` command
+# the user typed runs again with it loaded. This is what makes `git clone` +
+# `vagrant up` work out of the box for a friend, on any OS, with nothing to
+# install by hand beyond VirtualBox + Vagrant themselves.
+REQUIRED_PLUGINS = %w[vagrant-disksize]
+missing = REQUIRED_PLUGINS.reject { |p| Vagrant.has_plugin?(p) }
+unless missing.empty?
+  missing.each { |p| system("vagrant plugin install #{p}") or abort "[nt2102] Failed to install required plugin: #{p}" }
+  exec "vagrant #{ARGV.map { |a| "\"#{a}\"" }.join(' ')}"
+end
+
+VAGRANT_ROOT = File.dirname(File.expand_path(__FILE__))
+SRC_DIR      = File.join(VAGRANT_ROOT, 'src')
+
+# Ensure the host-side src directory exists before Vagrant tries to sync it.
+FileUtils.mkdir_p(SRC_DIR)
+
+Vagrant.configure("2") do |config|
+  # -------------------------------------------------------------------------
+  # Global defaults
+  # -------------------------------------------------------------------------
+  config.vm.box_check_update = false
+  config.ssh.insert_key      = false
+
+  # Cap every VM's default disk at 20G (vagrant-disksize plugin, auto-installed above).
+  config.disksize.size = "20GB"
+
+  # Default /vagrant sync is fine (points at this directory). We ALSO expose
+  # ./src as ~/NT2102 in every VM so the team's shared code has a stable path.
+  config.vm.synced_folder ".",     "/vagrant",           disabled: false
+  config.vm.synced_folder SRC_DIR, "/home/vagrant/NT2102", create: true
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.linked_clone = false
+    vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+    vb.customize ["modifyvm", :id, "--audio",               "none"]
+  end
+
+  UBUNTU_BOX = "bento/ubuntu-22.04"
+
+  # -------------------------------------------------------------------------
+  # 1) attacker  — Kali on 198.51.100.0/24
+  # -------------------------------------------------------------------------
+  config.vm.define "attacker" do |m|
+  m.vm.box      = "kalilinux/rolling"
+  m.vm.hostname = "attacker.nt2102.ch"
+
+  m.vm.network "private_network",
+               ip: "198.51.100.102", netmask: "255.255.255.0",
+               virtualbox__intnet: "nt2102-internet"
+
+  m.vm.provider "virtualbox" do |vb|
+    vb.name   = "nt2102-attacker"
+    vb.memory = 2048
+    vb.cpus   = 1
+  end
+
+  m.vm.provision "attacker-setup", type: "shell", path: "provision/attacker.sh", run: "never"
+end
+
+  # -------------------------------------------------------------------------
+  # 2) web-victim  — Ubuntu + DVWA on 10.21.2.12
+  # -------------------------------------------------------------------------
+  config.vm.define "web-victim" do |m|
+    m.vm.box      = UBUNTU_BOX
+    m.vm.hostname = "web-victim.nt2102.ch"
+
+    m.vm.network "private_network",
+                 ip: "10.21.2.12", netmask: "255.255.255.0",
+                 virtualbox__intnet: "nt2102-lan"
+
+    m.vm.provider "virtualbox" do |vb|
+      vb.name   = "nt2102-web-victim"
+      vb.memory = 2048
+      vb.cpus   = 1
+    end
+
+    m.vm.provision "web-victim-setup", type: "shell", path: "provision/web-victim.sh", run: "never"
+  end
+
+  # -------------------------------------------------------------------------
+  # 3) srv-victim  — Ubuntu + SSH/FTP/MySQL on 10.21.2.13
+  # -------------------------------------------------------------------------
+  config.vm.define "srv-victim" do |m|
+    m.vm.box      = UBUNTU_BOX
+    m.vm.hostname = "srv-victim.nt2102.ch"
+
+    m.vm.network "private_network",
+                 ip: "10.21.2.13", netmask: "255.255.255.0",
+                 virtualbox__intnet: "nt2102-lan"
+
+    m.vm.provider "virtualbox" do |vb|
+      vb.name   = "nt2102-srv-victim"
+      vb.memory = 1024
+      vb.cpus   = 1
+    end
+
+    m.vm.provision "srv-victim-setup", type: "shell", path: "provision/srv-victim.sh", run: "never"
+  end
+
+  # -------------------------------------------------------------------------
+  # 4) c2  — Fake C2 on 203.0.113.102
+  # -------------------------------------------------------------------------
+  config.vm.define "c2" do |m|
+    m.vm.box      = UBUNTU_BOX
+    m.vm.hostname = "c2.nt2102.ch"
+
+    m.vm.network "private_network",
+                 ip: "203.0.113.102", netmask: "255.255.255.0",
+                 virtualbox__intnet: "nt2102-c2"
+
+    m.vm.provider "virtualbox" do |vb|
+      vb.name   = "nt2102-c2"
+      vb.memory = 1024
+      vb.cpus   = 1
+    end
+
+    m.vm.provision "c2-setup", type: "shell", path: "provision/c2.sh", run: "never"
+  end
+
+  # -------------------------------------------------------------------------
+  # 5) bot  — LAN host beaconing to C2
+  # -------------------------------------------------------------------------
+  config.vm.define "bot" do |m|
+    m.vm.box      = UBUNTU_BOX
+    m.vm.hostname = "bot.nt2102.ch"
+
+    m.vm.network "private_network",
+                 ip: "10.21.2.14", netmask: "255.255.255.0",
+                 virtualbox__intnet: "nt2102-lan"
+
+    m.vm.provider "virtualbox" do |vb|
+      vb.name   = "nt2102-bot"
+      vb.memory = 1024
+      vb.cpus   = 1
+    end
+
+    m.vm.provision "bot-setup", type: "shell", path: "provision/bot.sh", run: "never"
+  end
+
+  # -------------------------------------------------------------------------
+  # 6) sensor  — Zeek + Suricata + CICFlowMeter, kiêm router
+  # -------------------------------------------------------------------------
+  config.vm.define "sensor" do |m|
+    m.vm.box      = UBUNTU_BOX
+    m.vm.hostname = "sensor.nt2102.ch"
+
+    m.vm.network "private_network",
+                 ip: "10.21.2.11", netmask: "255.255.255.0",
+                 virtualbox__intnet: "nt2102-lan"
+    m.vm.network "private_network",
+                 ip: "198.51.100.11", netmask: "255.255.255.0",
+                 virtualbox__intnet: "nt2102-internet"
+    m.vm.network "private_network",
+                 ip: "203.0.113.11", netmask: "255.255.255.0",
+                 virtualbox__intnet: "nt2102-c2"
+
+    m.vm.provider "virtualbox" do |vb|
+      vb.name   = "nt2102-sensor"
+      vb.memory = 4096
+      vb.cpus   = 2
+      vb.customize ["modifyvm", :id, "--nicpromisc2", "allow-all"]
+      vb.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
+      vb.customize ["modifyvm", :id, "--nicpromisc4", "allow-all"]
+    end
+
+    m.vm.provision "sensor-setup", type: "shell", path: "provision/sensor.sh", run: "never"
+  end
+end
