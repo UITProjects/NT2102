@@ -1,0 +1,10 @@
+[project]
+name = "nt2102"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastparquet>=2026.5.0",
+    "jupyter>=1.1.1",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.6",
+]

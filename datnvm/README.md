@@ -30,8 +30,8 @@ lab-nt2102/
 ```
 
 **What lives where:**
-- `provision/` — provisioning scripts, committed.
-- `src/` — the team's shared source code. Mounted at `/home/vagrant/NT2102` inside every VM. Two-way sync. **Commit here.**
+- `provision` — provisioning scripts, committed.
+- `src` — the team's shared source code. Mounted at `/home/vagrant/NT2102` inside every VM. Two-way sync. **Commit here.**
 - `.vm-data/` — per-VM data disks (VDI files). Attached to each VM at SATA port 2, formatted ext4, mounted at `/data` inside the guest. Survives `vagrant destroy`. **Not committed.**
 
 ## Subnet plan (encoded from `NT2102.11.CH`)
@@ -61,8 +61,8 @@ The `.11` on the sensor is deliberate — matches section `.11`. The sensor has 
 ## What you get inside every VM
 
 - `/data` — the dedicated per-VM data disk, mounted read/write. Owned by `vagrant`.
-- `/home/vagrant/NT2102` — the host's `src/` folder, two-way synced (edits from host or guest are visible immediately on the other side).
-- `/vagrant` — the host's project root (this whole directory), also synced. Handy for one-off scripts, but prefer `src/` for shared code and `/data` for persistent artifacts.
+- `/home/vagrant/NT2102` — the host's `src` folder, two-way synced (edits from host or guest are visible immediately on the other side).
+- `/vagrant` — the host's project root (this whole directory), also synced. Handy for one-off scripts, but prefer `src` for shared code and `/data` for persistent artifacts.
 
 ## Prerequisites
 
@@ -119,7 +119,7 @@ Every VM gets a second SATA disk (`.vm-data/<vm>.vdi`) attached at port 2, auto-
    ./run-cicflow-live.sh                        # live capture → streaming CSV
    ./run-zeek.sh    /data/captures/lab.pcap0   # conn/http/dns logs to /data/zeek-logs/
    ```
-6. **Train / score** using notebooks and scripts under `src/` (accessible at `~/NT2102` from any VM, or directly on your host). CSVs land under `/data/flows/` on the sensor.
+6. **Train / score** using notebooks and scripts under `src` (accessible at `~/NT2102` from any VM, or directly on your host). CSVs land under `/data/flows/` on the sensor.
 
 ## Safety
 
