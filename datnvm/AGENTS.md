@@ -87,15 +87,17 @@ ones.
 - The sensor installs Zeek, Suricata, tcpdump/tshark, and the Python
   `cicflowmeter` CLI. It runs as the router and uses promiscuous mode on the
   three lab NICs.
+- The fake C2 service logs to `/var/log/nt2102/c2.log`; it must not use
+  `/data`, because the current Vagrantfile does not attach a data disk.
 - Current sensor output location is host directory `sensor-data/`, mounted in
   the guest as `/vagrant/sensor-data`. It contains `captures/`, `flows/`, and
   `zeek-logs/`; guest convenience symlinks live under `/home/vagrant/`.
   This is intentionally different from the stale README references to sensor
   `/data` and `.vm-data/sensor.vdi`.
-- The non-sensor provisioning scripts still call `mount_data_disk /data`, but
-  the current `Vagrantfile` does not attach second data disks. Do not assume
+- `srv-victim` and `web-victim` still call `mount_data_disk /data`, but the
+  current `Vagrantfile` does not attach second data disks. Do not assume
   `/data` is functional on those VMs without reconciling that implementation
-  mismatch first.
+  mismatch first. `bot` and `c2` do not depend on `/data`.
 - `src/` is mounted read/write into every VM at `/home/vagrant/NT2102` and is
   the shared location for project code. Keep large PCAPs, flow CSVs, and model
   artifacts out of Git unless the user explicitly changes that policy.

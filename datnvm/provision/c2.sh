@@ -6,8 +6,6 @@ export DEBIAN_FRONTEND=noninteractive
 # shellcheck source=/vagrant/provision/_lib.sh
 source /vagrant/provision/_lib.sh
 
-mount_data_disk /data
-
 # Reverse route back to the LAN so TCP responses find their way home.
 install_lab_routes \
     "10.21.2.0/24 via 203.0.113.11" \
@@ -17,6 +15,7 @@ apt-get update -y
 apt-get install -y --no-install-recommends python3 curl
 
 mkdir -p /opt/c2
+install -d -o root -g root -m 0755 /var/log/nt2102
 cat > /opt/c2/server.py <<'PY'
 #!/usr/bin/env python3
 # Tiny fake C2: logs every beacon and returns a canned command.
@@ -48,8 +47,8 @@ After=network-online.target
 [Service]
 ExecStart=/usr/bin/python3 /opt/c2/server.py
 Restart=always
-StandardOutput=append:/data/c2.log
-StandardError=append:/data/c2.log
+StandardOutput=append:/var/log/nt2102/c2.log
+StandardError=append:/var/log/nt2102/c2.log
 
 [Install]
 WantedBy=multi-user.target
@@ -58,5 +57,5 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now c2.service
 
-echo "c2.nt2102.ch provisioning done. Beacon log: /data/c2.log"
+echo "c2.nt2102.ch provisioning done. Beacon log: /var/log/nt2102/c2.log"
 report_reboot_requirement

@@ -52,7 +52,7 @@ All three run over **VirtualBox internal networks (`intnet`)**. That's important
 | `attacker` | `198.51.100.102` | Kali rolling | 5 GB | hping3 / nmap / hydra / patator / sqlmap / slowhttptest |
 | `web-victim` | `10.21.2.12` | Ubuntu 22.04 | 5 GB | Apache + DVWA (SQLi / XSS / L7-DDoS target) |
 | `srv-victim` | `10.21.2.13` | Ubuntu 22.04 | 5 GB | SSH + FTP + MySQL (brute-force / port scan target) |
-| `c2` | `203.0.113.102` | Ubuntu 22.04 | 5 GB | Fake C2 HTTP endpoint (:8080) — logs to `/data/c2.log` |
+| `c2` | `203.0.113.102` | Ubuntu 22.04 | 5 GB | Fake C2 HTTP endpoint (:8080) — logs to `/var/log/nt2102/c2.log` |
 | `bot` | `10.21.2.14` | Ubuntu 22.04 | 5 GB | Periodic beacon to C2 (~60s, low jitter) |
 | `sensor` | `10.21.2.11`, `198.51.100.11`, `203.0.113.11` | Ubuntu 22.04 | **20 GB** | Zeek + Suricata + CICFlowMeter, also the router |
 

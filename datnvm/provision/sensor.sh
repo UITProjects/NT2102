@@ -99,7 +99,9 @@ echo "  Captures / flows:  $DATA_DIR/{captures,flows,zeek-logs}"
 echo "  Zeek:              /opt/zeek/bin/zeek"
 echo "  Suricata service:  $(systemctl is-active suricata 2>/dev/null || echo 'not running')"
 echo "  CICFlowMeter:      cicflowmeter (Python port)"
-
+iptables -t nat -A POSTROUTING -s 10.21.2.14/24 -j MASQUERADE
+apt install iptables-persistent -y
+netfilter-persistent save
 if [ -f /var/run/reboot-required ]; then
     echo "  Reboot:            required"
 fi

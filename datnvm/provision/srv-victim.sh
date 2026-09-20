@@ -6,8 +6,6 @@ export DEBIAN_FRONTEND=noninteractive
 # shellcheck source=/vagrant/provision/_lib.sh
 source /vagrant/provision/_lib.sh
 
-mount_data_disk /data
-
 install_lab_routes \
     "198.51.100.0/24 via 10.21.2.11" \
     "203.0.113.0/24 via 10.21.2.11"
