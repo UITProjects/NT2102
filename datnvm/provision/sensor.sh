@@ -103,3 +103,4 @@ echo "  Captures / flows:  /data/{captures,flows,zeek-logs}"
 echo "  Zeek:              /opt/zeek/bin/zeek"
 echo "  Suricata service:  $(systemctl is-active suricata 2>/dev/null || echo 'not running')"
 echo "  CICFlowMeter:      cicflowmeter (Python port)"
+report_reboot_requirement

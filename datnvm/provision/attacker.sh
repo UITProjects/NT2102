@@ -73,3 +73,4 @@ chmod +x /home/vagrant/attacks/*.sh
 chown -R vagrant:vagrant /home/vagrant/attacks
 
 echo "attacker.nt2102.ch provisioning done."
+report_reboot_requirement

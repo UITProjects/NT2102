@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 # Shared provisioning helpers.
 
+# Print an actionable notice only when the guest OS reports that a reboot is
+# required (for example, after a kernel or core-library update). Provisioning
+# itself is not interrupted, and services configured by the lab are started
+# immediately.
+report_reboot_requirement() {
+    if [ -f /var/run/reboot-required ]; then
+        echo
+        echo "NT2102: guest reboot required to finish OS updates."
+        echo "Run from the host: vagrant reload \"${HOSTNAME%%.*}\""
+        if [ -s /var/run/reboot-required.pkgs ]; then
+            echo "Packages requesting reboot: $(tr '\n' ' ' < /var/run/reboot-required.pkgs)"
+        fi
+    fi
+}
+
 # install_lab_routes "CIDR via GATEWAY" ...
 # Installs a systemd oneshot service that (re)adds lab routes on every boot.
 install_lab_routes() {

@@ -1,1 +1,0 @@
-{"virtualbox":{"/vagrant":{"disabled":false,"guestpath":"/vagrant","hostpath":"D:/code/NT2102","__vagrantfile":true},"/home/vagrant/NT2102":{"create":true,"guestpath":"/home/vagrant/NT2102","hostpath":"D:/code/NT2102/src","disabled":false,"__vagrantfile":true}}}

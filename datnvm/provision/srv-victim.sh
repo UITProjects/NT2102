@@ -41,3 +41,4 @@ systemctl enable --now mariadb
 systemctl restart mariadb
 
 echo "srv-victim.nt2102.ch provisioning done. Weak login: lab / letmein"
+report_reboot_requirement

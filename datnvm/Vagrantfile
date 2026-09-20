@@ -15,22 +15,18 @@
 #   which resizes/limits the box's built-in disk on first boot.
 #
 # Subnet plan (encoded from NT2102.11.CH):
-#   internal LAN (VLAN 11)  10.21.2.0/24
+#   host-only LAN (VLAN 11) 10.21.2.0/24 (host conventionally 10.21.2.1)
 #   attacker "Internet"     198.51.100.0/24  (RFC 5737 TEST-NET-2)
 #   C2 "Internet"           203.0.113.0/24   (RFC 5737 TEST-NET-3)
 #
 # Provisioning:
-#   Shell provisioners are registered with run: "never", so `vagrant up` boots
-#   every VM (networks and synced folders get attached/mounted) WITHOUT
-#   executing provision/*.sh. Run a script explicitly with:
-#     vagrant provision <vm-name> --provision-with <vm-name>-setup
-#   e.g.
-#     vagrant provision sensor --provision-with sensor-setup
+#   Shell provisioners run automatically once, when each VM is first created.
+#   Later `vagrant up` and reload operations do not rerun them unless you
+#   explicitly invoke `vagrant provision`.
 #
 # Quick commands:
-#   vagrant up                       # boot all 6 VMs, no provisioning scripts run
-#   vagrant up sensor                # single VM
-#   vagrant provision sensor --provision-with sensor-setup   # run its script when ready
+#   vagrant up                       # create/boot all 6 VMs; provision new VMs
+#   vagrant up sensor                # create/boot one VM; provision it if new
 #   vagrant ssh attacker             # into a VM
 #   vagrant destroy -f               # nuke VMs
 
@@ -101,10 +97,10 @@ Vagrant.configure("2") do |config|
   m.vm.provider "virtualbox" do |vb|
     vb.name   = "nt2102-attacker"
     vb.memory = 2048
-    vb.cpus   = 1
+    vb.cpus   = 2
   end
 
-  m.vm.provision "attacker-setup", type: "shell", path: "provision/attacker.sh", run: "never"
+  m.vm.provision "attacker-setup", type: "shell", path: "provision/attacker.sh"
 end
 
   # -------------------------------------------------------------------------
@@ -114,17 +110,19 @@ end
     m.vm.box      = UBUNTU_BOX
     m.vm.hostname = "web-victim.nt2102.ch"
 
+    # Vagrant private_network defaults to a VirtualBox host-only adapter.
+    # This exposes DVWA to the host at http://10.21.2.12/dvwa/ while the
+    # attacker and C2 segments remain VirtualBox internal networks.
     m.vm.network "private_network",
-                 ip: "10.21.2.12", netmask: "255.255.255.0",
-                 virtualbox__intnet: "nt2102-lan"
+                 ip: "10.21.2.12", netmask: "255.255.255.0"
 
     m.vm.provider "virtualbox" do |vb|
       vb.name   = "nt2102-web-victim"
       vb.memory = 2048
-      vb.cpus   = 1
+      vb.cpus   = 2
     end
 
-    m.vm.provision "web-victim-setup", type: "shell", path: "provision/web-victim.sh", run: "never"
+    m.vm.provision "web-victim-setup", type: "shell", path: "provision/web-victim.sh"
   end
 
   # -------------------------------------------------------------------------
@@ -135,8 +133,7 @@ end
     m.vm.hostname = "srv-victim.nt2102.ch"
 
     m.vm.network "private_network",
-                 ip: "10.21.2.13", netmask: "255.255.255.0",
-                 virtualbox__intnet: "nt2102-lan"
+                 ip: "10.21.2.13", netmask: "255.255.255.0"
 
     m.vm.provider "virtualbox" do |vb|
       vb.name   = "nt2102-srv-victim"
@@ -144,7 +141,7 @@ end
       vb.cpus   = 1
     end
 
-    m.vm.provision "srv-victim-setup", type: "shell", path: "provision/srv-victim.sh", run: "never"
+    m.vm.provision "srv-victim-setup", type: "shell", path: "provision/srv-victim.sh"
   end
 
   # -------------------------------------------------------------------------
@@ -164,7 +161,7 @@ end
       vb.cpus   = 1
     end
 
-    m.vm.provision "c2-setup", type: "shell", path: "provision/c2.sh", run: "never"
+    m.vm.provision "c2-setup", type: "shell", path: "provision/c2.sh"
   end
 
   # -------------------------------------------------------------------------
@@ -175,8 +172,7 @@ end
     m.vm.hostname = "bot.nt2102.ch"
 
     m.vm.network "private_network",
-                 ip: "10.21.2.14", netmask: "255.255.255.0",
-                 virtualbox__intnet: "nt2102-lan"
+                 ip: "10.21.2.14", netmask: "255.255.255.0"
 
     m.vm.provider "virtualbox" do |vb|
       vb.name   = "nt2102-bot"
@@ -184,7 +180,7 @@ end
       vb.cpus   = 1
     end
 
-    m.vm.provision "bot-setup", type: "shell", path: "provision/bot.sh", run: "never"
+    m.vm.provision "bot-setup", type: "shell", path: "provision/bot.sh"
   end
 
   # -------------------------------------------------------------------------
@@ -195,8 +191,7 @@ end
     m.vm.hostname = "sensor.nt2102.ch"
 
     m.vm.network "private_network",
-                 ip: "10.21.2.11", netmask: "255.255.255.0",
-                 virtualbox__intnet: "nt2102-lan"
+                 ip: "10.21.2.11", netmask: "255.255.255.0"
     m.vm.network "private_network",
                  ip: "198.51.100.11", netmask: "255.255.255.0",
                  virtualbox__intnet: "nt2102-internet"
@@ -207,12 +202,11 @@ end
     m.vm.provider "virtualbox" do |vb|
       vb.name   = "nt2102-sensor"
       vb.memory = 4096
-      vb.cpus   = 2
+      vb.cpus   = 4
       vb.customize ["modifyvm", :id, "--nicpromisc2", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc4", "allow-all"]
     end
-
-    m.vm.provision "sensor-setup", type: "shell", path: "provision/sensor.sh", run: "never"
+    m.vm.provision "sensor-setup", type: "shell", path: "provision/sensor.sh"
   end
 end

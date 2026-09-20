@@ -59,3 +59,4 @@ systemctl daemon-reload
 systemctl enable --now c2.service
 
 echo "c2.nt2102.ch provisioning done. Beacon log: /data/c2.log"
+report_reboot_requirement

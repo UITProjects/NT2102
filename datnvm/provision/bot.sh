@@ -52,3 +52,4 @@ systemctl daemon-reload
 systemctl enable --now beacon.service
 
 echo "bot.nt2102.ch provisioning done. Beaconing to c2.nt2102.ch every ~60s."
+report_reboot_requirement

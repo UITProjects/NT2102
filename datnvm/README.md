@@ -72,6 +72,10 @@ The `.11` on the sensor is deliberate — matches section `.11`. The sensor has 
 
 First `vagrant up` takes 15–20 minutes (box downloads + `apt-get install` + DVWA clone).
 
+Each VM is provisioned automatically once, when it is first created. Later `vagrant up` and `vagrant reload` operations do not rerun provisioning; use `vagrant provision <vm-name>` when you deliberately need to rerun it.
+
+Provisioning starts the lab services and routes immediately, so a reboot is not ordinarily needed. If a provisioner detects an OS update that requires one, it prints a `vagrant reload <vm-name>` command at the end of its output.
+
 ## Bring it up
 
 ```bash
@@ -91,7 +95,11 @@ rm -rf .vm-data && vagrant up # full reset (fresh data disks)
 
 ## Networking model
 
-The sensor is the only VM sitting on all three internal networks; it has `net.ipv4.ip_forward=1`, so it routes between them. Every other VM has **specific static routes** to the two lab networks it isn't directly on, installed as a `lab-routes.service` systemd oneshot so they survive `vagrant halt`+`vagrant up`. The default route on every VM still goes through Vagrant's NAT adapter — that's what `apt-get update` uses. Lab traffic uses the specific routes.
+The `10.21.2.0/24` LAN is a VirtualBox host-only network, so the host can reach its VMs directly (for example, DVWA at `http://10.21.2.12/dvwa/`). The host conventionally uses `10.21.2.1`; the LAN guests keep their documented addresses. The attacker (`198.51.100.0/24`) and C2 (`203.0.113.0/24`) segments remain VirtualBox internal networks.
+
+The sensor is the only VM sitting on all three lab networks; it has `net.ipv4.ip_forward=1`, so it routes between them. Every other VM has **specific static routes** to the two lab networks it isn't directly on, installed as a `lab-routes.service` systemd oneshot so they survive `vagrant halt`+`vagrant up`. The default route on every VM still goes through Vagrant's NAT adapter — that's what `apt-get update` uses. Lab traffic uses the specific routes.
+
+After pulling this networking change, run `vagrant reload` for running VMs, or `vagrant up` for stopped VMs, so VirtualBox replaces the LAN adapter. Then open `http://10.21.2.12/dvwa/` from the host browser.
 
 ## Data-disk model
 
@@ -123,10 +131,10 @@ Every VM gets a second SATA disk (`.vm-data/<vm>.vdi`) attached at port 2, auto-
 
 ## Safety
 
-Every segment is on a VirtualBox internal network (`intnet`) — no host adapter, no bridge to the real Internet. The attacker VM cannot reach the outside world via the lab NIC; only via Vagrant's NAT (used for `apt-get`). **Do not run the attack scripts against anything other than the lab targets.**
+The LAN (`10.21.2.0/24`) is host-only and therefore reachable from this host; it is not bridged to the real network. The attacker and C2 segments remain VirtualBox internal networks (`intnet`). The attacker VM cannot reach the outside world via its lab NIC; only via Vagrant's NAT (used for `apt-get`). **Do not run the attack scripts against anything other than the lab targets.**
 
 ## Troubleshooting
 
 - **`storageattach` fails with "not found: SATA Controller"** — a small number of boxes rename the controller. Run `VBoxManage showvminfo nt2102-<name>` and check the storage controller name, then edit the `'--storagectl', 'SATA Controller'` line in the Vagrantfile.
-- **Host-only IP-range error** — you're only likely to hit this if you convert a private network from `virtualbox__intnet` back to a host-only network. Fix: `sudo mkdir -p /etc/vbox && echo '* 0.0.0.0/0 ::/0' | sudo tee /etc/vbox/networks.conf`.
+- **Host-only IP-range error** — VirtualBox may reject the lab's `10.21.2.0/24` host-only range. On Linux, fix it with: `sudo mkdir -p /etc/vbox && echo '* 0.0.0.0/0 ::/0' | sudo tee /etc/vbox/networks.conf`.
 - **"Medium with UUID … does not exist"** — happens if you manually deleted a `.vm-data/*.vdi` while VirtualBox still had it registered. Run `VBoxManage list hdds` to find the stale UUID and `VBoxManage closemedium disk <UUID>` to release it.

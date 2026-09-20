@@ -52,3 +52,4 @@ systemctl restart apache2
 
 echo "web-victim.nt2102.ch provisioning done."
 echo "From the attacker VM: http://10.21.2.12/dvwa/setup.php then set security = Low."
+report_reboot_requirement
