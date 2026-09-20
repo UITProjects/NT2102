@@ -207,6 +207,6 @@ end
       vb.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc4", "allow-all"]
     end
-    m.vm.provision "sensor-setup", type: "shell", path: "provision/sensor.sh"
+    m.vm.provision "sensor-setup", type: "shell", path: "provision/sensor.sh", run: "never"
   end
 end

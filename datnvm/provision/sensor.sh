@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
 # sensor.nt2102.ch — Zeek + Suricata + Python CICFlowMeter, also acts as the router
-# between LAN / attacker "Internet" / C2 "Internet". Captures & flows land on /data
-# (dedicated disk, so they survive vagrant destroy).
+# between LAN / attacker "Internet" / C2 "Internet".
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
-# shellcheck source=/vagrant/provision/_lib.sh
-source /vagrant/provision/_lib.sh
-
-# Dedicated data disk (./.vm-data/sensor.vdi, 20 GB) → /data
-mount_data_disk /data
+DATA_DIR=/vagrant/sensor-data
 
 # --- IP forwarding (router role) --------------------------------------------
 echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-nt2102-forward.conf
@@ -53,12 +48,14 @@ pip3 install --no-cache-dir cicflowmeter
 #     /etc/suricata/suricata.yaml (af-packet section) if desired.
 systemctl enable --now suricata || true
 
-# --- Working dirs on the persistent data disk -------------------------------
-mkdir -p /data/captures /data/flows /data/zeek-logs
-chown -R vagrant:vagrant /data
-ln -snf /data/captures  /home/vagrant/captures
-ln -snf /data/flows     /home/vagrant/flows
-ln -snf /data/zeek-logs /home/vagrant/zeek-logs
+# --- Working dirs in the shared Vagrant project folder ----------------------
+# This path is configured by Vagrant as the host's datnvm directory. Do not
+# chown it here: VirtualBox shared folders do not support ownership changes.
+mkdir -p "$DATA_DIR"/{captures,flows,zeek-logs}
+ln -snf "$DATA_DIR/captures"  /home/vagrant/captures
+ln -snf "$DATA_DIR/flows"     /home/vagrant/flows
+ln -snf "$DATA_DIR/zeek-logs" /home/vagrant/zeek-logs
+chown -h vagrant:vagrant /home/vagrant/captures /home/vagrant/flows /home/vagrant/zeek-logs
 
 # --- Helper scripts ---------------------------------------------------------
 LAN_IF=$(ip -o -4 addr show | awk '/10\.21\.2\.11/ {print $2; exit}')
@@ -66,31 +63,31 @@ LAN_IF=$(ip -o -4 addr show | awk '/10\.21\.2\.11/ {print $2; exit}')
 cat > /home/vagrant/capture.sh <<EOF
 #!/usr/bin/env bash
 # Rotating packet capture on the LAN interface, 100 MB per file, keep last 20.
-# Output lands under /data/captures (persistent).
-sudo tcpdump -i "${LAN_IF:-enp0s8}" -C 100 -W 20 -w /data/captures/lab.pcap
+# Output lands in the shared Vagrant project folder.
+sudo tcpdump -i "${LAN_IF:-enp0s8}" -C 100 -W 20 -w "$DATA_DIR/captures/lab.pcap"
 EOF
 
-cat > /home/vagrant/run-zeek.sh <<'EOF'
+cat > /home/vagrant/run-zeek.sh <<EOF
 #!/usr/bin/env bash
-# Run Zeek offline over a captured PCAP; logs land under /data/zeek-logs
-cd /data/zeek-logs
-/opt/zeek/bin/zeek -r "$1"
+# Run Zeek offline over a captured PCAP; logs land in the shared Vagrant project folder.
+cd "$DATA_DIR/zeek-logs"
+/opt/zeek/bin/zeek -r "\$1"
 EOF
 
-cat > /home/vagrant/run-cicflow.sh <<'EOF'
+cat > /home/vagrant/run-cicflow.sh <<EOF
 #!/usr/bin/env bash
 # Convert a PCAP into CICFlowMeter's 80-feature CSV (offline mode, Python port).
-# Usage: ./run-cicflow.sh /data/captures/lab.pcap0
-in="$1"
-out="/data/flows/$(basename "$in" .pcap).csv"
-cicflowmeter -f "$in" -c "$out"
-echo "wrote: $out"
+# Usage: ./run-cicflow.sh /vagrant/sensor-data/captures/lab.pcap0
+in="\$1"
+out="$DATA_DIR/flows/\$(basename "\$in" .pcap).csv"
+cicflowmeter -f "\$in" -c "\$out"
+echo "wrote: \$out"
 EOF
 
 cat > /home/vagrant/run-cicflow-live.sh <<EOF
 #!/usr/bin/env bash
 # Live CICFlowMeter feature extraction on the LAN interface, streaming to CSV.
-cicflowmeter -i "${LAN_IF:-enp0s8}" -c /data/flows/live.csv
+cicflowmeter -i "${LAN_IF:-enp0s8}" -c "$DATA_DIR/flows/live.csv"
 EOF
 
 chmod +x /home/vagrant/*.sh
@@ -98,9 +95,11 @@ chown vagrant:vagrant /home/vagrant/*.sh
 
 echo "sensor.nt2102.ch provisioning done."
 echo "  LAN interface (10.21.2.11): ${LAN_IF:-<unknown>}"
-echo "  Data disk:         /data (backed by ./.vm-data/sensor.vdi on host)"
-echo "  Captures / flows:  /data/{captures,flows,zeek-logs}"
+echo "  Captures / flows:  $DATA_DIR/{captures,flows,zeek-logs}"
 echo "  Zeek:              /opt/zeek/bin/zeek"
 echo "  Suricata service:  $(systemctl is-active suricata 2>/dev/null || echo 'not running')"
 echo "  CICFlowMeter:      cicflowmeter (Python port)"
-report_reboot_requirement
+
+if [ -f /var/run/reboot-required ]; then
+    echo "  Reboot:            required"
+fi
