@@ -1,0 +1,6 @@
+[submodule "dataset/Simulated-Data"]
+	path = dataset/Simulated-Data
+	url = https://github.com/PKU-ASAL/Simulated-Data.git
+[submodule "original-paper"]
+	path = OCR-APT
+	url = https://github.com/CoDS-GCS/OCR-APT.git
