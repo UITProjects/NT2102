@@ -14,3 +14,4 @@ Thumbs.db
 
 dataset.tar.xz
 .idea
+/src/out/
