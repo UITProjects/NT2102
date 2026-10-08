@@ -44,14 +44,17 @@ Vagrant.configure("2") do |config|
   else
     # Export channel for traces/provider dumps while NOT isolated.
     config.vm.synced_folder "./out", "C:/lab-out", create: true
+    config.vm.synced_folder "./scripts", "C:/scripts", create: false
   end
 
   config.vm.provider "virtualbox" do |vb|
     vb.name   = VM_NAME
     vb.gui    = true
-    vb.memory = 4096
+    vb.memory = 8096
     vb.cpus   = 4
-    vb.customize ["modifyvm", :id, "--vram", "128"]
+    vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+    vb.customize ["modifyvm", :id, "--accelerate3d", "on"]
+    vb.customize ["modifyvm", :id, "--vram", "256"]
     vb.customize ["modifyvm", :id, "--clipboard-mode", "bidirectional"]
     vb.customize ["modifyvm", :id, "--draganddrop", "disabled"]
     vb.customize ["modifyvm", :id, "--cableconnected1", ISOLATED ? "off" : "on"]

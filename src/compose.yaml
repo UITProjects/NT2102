@@ -3,13 +3,13 @@
 #
 # Start:        docker compose up -d
 # Init log:     docker compose logs -f graphdb-init   (ends with "[init] Done.")
-# Workbench:    http://10.21.2.10:7200   user: admin   pass: Nt2102-OcrApt!
+# Workbench:    http://10.21.3.10:7200   user: admin   pass: Nt2102-OcrApt!
 # Override:     GRAPHDB_ADMIN_PASSWORD=xxx GRAPHDB_HEAP=16g docker compose up -d
 # Import data:  docker cp cadets.ttl ocrapt-graphdb:/opt/graphdb/import/
 #               then Workbench -> Import -> Server files
-# Network:      nt2102-net 10.21.2.0/24  gw .1 | graphdb 10.21.2.10 | init 10.21.2.11
+# Network:      nt2102-net 10.21.3.0/24  gw .1 | graphdb 10.21.3.10 | init 10.21.3.11
 #               (reserve .20+ for the PyG/LLM containers)
-# From other containers on nt2102-net: http://graphdb:7200  or  http://10.21.2.10:7200
+# From other containers on nt2102-net: http://graphdb:7200  or  http://10.21.3.10:7200
 # Stop:         docker compose down        (keeps data)
 # Wipe all:     docker compose down -v     (deletes repositories + users)
 #
@@ -41,7 +41,7 @@ services:
       nofile: { soft: 65536, hard: 65536 }
     networks:
       nt2102:
-        ipv4_address: 10.21.2.10
+        ipv4_address: 10.21.3.10
 
   graphdb-init:
     image: curlimages/curl:8.10.1
@@ -50,7 +50,7 @@ services:
     restart: "no"
     networks:
       nt2102:
-        ipv4_address: 10.21.2.11
+        ipv4_address: 10.21.3.11
     environment:
       GDB_URL: http://graphdb:7200
       PW: *admin_password
@@ -93,9 +93,9 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 10.21.2.0/24
-          ip_range: 10.21.2.128/25   # dynamic IPs only from .128+, so fixed IPs below never collide
-          gateway: 10.21.2.1
+        - subnet: 10.21.3.0/24
+          ip_range: 10.21.3.128/25
+          gateway: 10.21.3.1
 
 volumes:
   graphdb-home:
