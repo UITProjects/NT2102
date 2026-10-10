@@ -1,0 +1,37 @@
+{
+  "source": "/home/akira/code/NT2102/src/out/etw/experiments/20261009T145632Z/SimulatedW10_train_edges.csv",
+  "ts_unit": "ms",
+  "repo_rounding": true,
+  "feature_order": [
+    "out_write",
+    "in_write",
+    "out_read",
+    "in_read",
+    "out_send",
+    "in_send",
+    "out_recv",
+    "in_recv",
+    "out_start",
+    "in_start",
+    "out_load",
+    "in_load",
+    "avg_idle_time",
+    "max_idle_time",
+    "min_idle_time"
+  ],
+  "idle_minmax": {
+    "avg_idle_time": {
+      "min": 0.0,
+      "max": 290.0
+    },
+    "max_idle_time": {
+      "min": 0.0,
+      "max": 290.0
+    },
+    "min_idle_time": {
+      "min": 0.0,
+      "max": 290.0
+    }
+  },
+  "refit": true
+}

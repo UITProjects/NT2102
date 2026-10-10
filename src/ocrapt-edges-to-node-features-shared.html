@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OCR-APT: how edges become node features</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['$', '$']], displayMath: [['$$', '$$']] },
+    svg: { fontCache: 'global' },
+    options: { ignoreHtmlClass: 'nomath' }
+  };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js" defer></script>
+<style>
+:root {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  --bg: #EEF2F6;
+  --surface: #FFFFFF;
+  --ink: #17202B;
+  --muted: #566373;
+  --rule: #CDD5DE;
+  --mark: #FFE066;
+  --mark-ink: #3A2E00;
+  --code-bg: #F6F8FA;
+  --c-write: #B42358;
+  --c-read: #1F63B5;
+  --c-send: #0E8A66;
+  --c-recv: #6A4CC2;
+  --c-start: #A86A00;
+  --c-load: #52606D;
+  --c-delete: #C0392B;
+  --t-repo: #1F63B5;
+  --t-paper: #0E8A66;
+  --t-inf: #A86A00;
+  --t-ours: #6A4CC2;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171E; --surface: #1A212B; --ink: #E3E8EE; --muted: #9AA7B6; --rule: #2E3946;
+    --mark: #6B5A12; --mark-ink: #FFF3C4; --code-bg: #151B23;
+    --c-write: #F06C9B; --c-read: #6FA8F0; --c-send: #4CC9A0; --c-recv: #A993F0;
+    --c-start: #E3B04B; --c-load: #A3B1C0; --c-delete: #F07A6C;
+    --t-repo: #6FA8F0; --t-paper: #4CC9A0; --t-inf: #E3B04B; --t-ours: #A993F0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171E; --surface: #1A212B; --ink: #E3E8EE; --muted: #9AA7B6; --rule: #2E3946;
+  --mark: #6B5A12; --mark-ink: #FFF3C4; --code-bg: #151B23;
+  --c-write: #F06C9B; --c-read: #6FA8F0; --c-send: #4CC9A0; --c-recv: #A993F0;
+  --c-start: #E3B04B; --c-load: #A3B1C0; --c-delete: #F07A6C;
+  --t-repo: #6FA8F0; --t-paper: #4CC9A0; --t-inf: #E3B04B; --t-ours: #A993F0;
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--sans); font-size: 17px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+.prose { max-width: 720px; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 16px; max-width: 16ch; }
+h2 { font-size: 1.55rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 12px; display: flex; gap: 14px; align-items: baseline; }
+h2 .n { font-family: var(--mono); font-weight: 500; font-size: 0.95rem; color: var(--muted); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 10px; flex: none; }
+h3 { font-size: 1.05rem; font-weight: 600; margin: 24px 0 8px; }
+p { margin: 0 0 14px; }
+a { color: var(--c-read); }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+p code, li code, td code { background: var(--code-bg); border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; }
+section { padding: 44px 0; border-top: 1px solid var(--rule); }
+header.hero { padding: 56px 0 40px; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 60ch; }
+
+/* tags */
+.tag { font-family: var(--mono); font-size: 0.72rem; font-weight: 500; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; vertical-align: 1px; white-space: nowrap; }
+.tag.repo { color: var(--t-repo); } .tag.paper { color: var(--t-paper); } .tag.inf { color: var(--t-inf); } .tag.ours { color: var(--t-ours); }
+
+/* hero transform */
+.hero-demo { margin-top: 28px; display: grid; gap: 10px; max-width: 760px; }
+.hero-event { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-family: var(--mono); font-size: 0.95rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; }
+.hero-event .hl { background: var(--mark); color: var(--mark-ink); padding: 0 4px; border-radius: 3px; }
+.hero-out { font-family: var(--mono); font-size: 0.92rem; padding-left: 14px; border-left: 3px solid var(--c-recv); display: grid; gap: 2px; }
+.ent { font-family: var(--mono); }
+.act { font-family: var(--mono); font-weight: 500; padding: 0 6px; border-radius: 4px; color: var(--surface); }
+.act-write { background: var(--c-write); } .act-read { background: var(--c-read); } .act-send { background: var(--c-send); }
+.act-recv { background: var(--c-recv); } .act-start { background: var(--c-start); } .act-load { background: var(--c-load); }
+.act-delete { background: var(--c-delete); }
+
+/* pipeline strip */
+.pipe { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 16px 0 6px; font-size: 0.9rem; }
+.pipe span { padding: 4px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+.pipe span.here { background: var(--mark); color: var(--mark-ink); border-color: transparent; font-weight: 600; }
+.pipe i { color: var(--muted); font-style: normal; }
+
+/* code */
+pre.code { background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 0; margin: 12px 0 18px; overflow-x: auto; font-family: var(--mono); font-size: 0.82rem; line-height: 1.55; }
+pre.code .ln { display: block; padding: 0 14px 0 0; white-space: pre; }
+pre.code .ln::before { content: attr(data-n); display: inline-block; width: 3.6em; padding-right: 1em; text-align: right; color: var(--muted); user-select: none; }
+pre.code .ln.on { background: var(--mark); color: var(--mark-ink); }
+pre.code .ln.on::before { color: var(--mark-ink); }
+.src { font-size: 0.82rem; color: var(--muted); margin-top: -10px; margin-bottom: 18px; }
+
+/* tabs */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-top: 18px; flex-wrap: wrap; }
+.tabs button { font: inherit; font-size: 0.92rem; background: none; border: 1px solid transparent; border-bottom: none; padding: 8px 14px; border-radius: 6px 6px 0 0; color: var(--muted); cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--surface); border-color: var(--rule); color: var(--ink); margin-bottom: -1px; font-weight: 500; }
+.tabpanel { background: var(--surface); border: 1px solid var(--rule); border-top: none; border-radius: 0 0 8px 8px; padding: 14px; }
+.scroll { overflow-x: auto; max-width: 100%; }
+.tsv { font-family: var(--mono); font-size: 0.78rem; line-height: 1.6; white-space: pre; margin: 0; }
+.tsv .dim { color: var(--muted); }
+.tsv .key { background: var(--mark); color: var(--mark-ink); }
+
+table { border-collapse: collapse; font-size: 0.85rem; }
+th, td { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font-weight: 600; }
+table.gdf td, table.gdf th { font-family: var(--mono); font-size: 0.78rem; }
+table.gdf th.read-col { background: var(--mark); color: var(--mark-ink); }
+table.gdf th.half-col { background: color-mix(in srgb, var(--mark) 40%, transparent); }
+
+/* callouts */
+.note { border-left: 3px solid var(--rule); padding: 4px 0 4px 14px; color: var(--muted); margin: 14px 0; }
+.warn { border-left: 3px solid var(--c-delete); padding: 6px 0 6px 14px; margin: 18px 0; }
+.warn strong { color: var(--c-delete); }
+
+/* stepper */
+.bench { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 20px; margin-top: 20px; align-items: start; }
+@media (max-width: 900px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+button.btn { font: inherit; font-size: 0.9rem; font-weight: 500; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+button.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--c-read); outline-offset: 2px; }
+.progress { font-size: 0.88rem; color: var(--muted); }
+ol.events { list-style: none; margin: 0; padding: 0; max-height: 520px; overflow-y: auto; font-size: 0.8rem; }
+ol.events li { display: grid; grid-template-columns: 22px 22px 58px 1fr; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 5px; }
+ol.events li .idx { color: var(--muted); font-family: var(--mono); text-align: right; }
+ol.events li .t { color: var(--muted); font-family: var(--mono); font-size: 0.74rem; }
+ol.events li .what { font-family: var(--mono); font-size: 0.76rem; overflow-wrap: anywhere; }
+ol.events li.pending .what { opacity: 0.55; }
+ol.events li.off { text-decoration: line-through; opacity: 0.4; }
+ol.events li.current { background: var(--mark); color: var(--mark-ink); }
+ol.events li.current .idx, ol.events li.current .t { color: var(--mark-ink); }
+ol.events li.extra { box-shadow: inset 3px 0 0 var(--c-delete); }
+ol.events li.error { background: color-mix(in srgb, var(--c-delete) 22%, transparent); }
+.trace { font-family: var(--mono); font-size: 0.8rem; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 5.2em; }
+.trace .err { color: var(--c-delete); font-weight: 500; }
+.trace .v { background: var(--mark); color: var(--mark-ink); padding: 0 3px; border-radius: 3px; }
+
+/* matrix */
+table.mx { font-family: var(--mono); font-size: 0.78rem; }
+table.mx th, table.mx td { text-align: center; padding: 4px 6px; border-bottom: 1px solid var(--rule); }
+table.mx th.rowh, table.mx td.rowh { text-align: left; font-family: var(--sans); font-size: 0.82rem; }
+table.mx td.rowh small { display: block; font-family: var(--mono); color: var(--muted); font-size: 0.7rem; }
+table.mx thead tr.acts th { color: var(--surface); font-weight: 500; font-size: 0.75rem; border-left: 2px solid var(--surface); }
+table.mx thead tr.dirs th { font-weight: 400; color: var(--muted); font-size: 0.72rem; }
+table.mx td.z { color: var(--muted); opacity: 0.45; }
+table.mx td.nz { font-weight: 500; }
+table.mx td.hit { background: var(--mark); color: var(--mark-ink); opacity: 1; box-shadow: inset 0 0 0 2px var(--mark-ink); }
+table.mx tr.typesep td { border-top: 2px solid var(--rule); }
+table.mx tr.ghost td { opacity: 0.35; }
+table.mx td.typecell { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); writing-mode: vertical-rl; transform: rotate(180deg); padding: 4px 2px; }
+table.mx th.dropped, table.mx td.dropped { text-decoration: line-through; opacity: 0.3; }
+table.mx tr.sel td { box-shadow: inset 0 2px 0 var(--ink), inset 0 -2px 0 var(--ink); }
+table.mx tbody tr.clickable { cursor: pointer; }
+@media (prefers-reduced-motion: no-preference) {
+  table.mx td.hit { animation: pop 0.45s ease-out; }
+  @keyframes pop { from { transform: scale(1.35); } to { transform: scale(1); } }
+}
+
+/* graph */
+.graph svg { width: 100%; height: auto; display: block; }
+.graph .nlabel { font-family: var(--mono); font-size: 11px; fill: var(--ink); }
+.graph .nshape { fill: var(--surface); stroke: var(--ink); stroke-width: 1.4; }
+.graph .nshape.on { fill: var(--mark); }
+.graph .edge { fill: none; stroke-width: 1.6; opacity: 0.18; }
+.graph .edge.done { opacity: 0.85; }
+.graph .edge.cur { stroke-width: 3.6; opacity: 1; }
+.graph .edge.off { opacity: 0.06; stroke-dasharray: 3 4; }
+.graph .elabel { font-family: var(--mono); font-size: 10px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
+
+/* presets */
+.presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.fcount { font-family: var(--mono); font-size: 1.05rem; font-weight: 500; }
+
+/* tensor */
+.tensors { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 14px; }
+.tensors .panel h3 { margin-top: 0; font-family: var(--mono); font-size: 0.9rem; font-weight: 500; }
+.shape { font-family: var(--mono); background: var(--mark); color: var(--mark-ink); padding: 0 5px; border-radius: 3px; }
+table.tz td, table.tz th { font-family: var(--mono); font-size: 0.74rem; padding: 3px 5px; text-align: right; }
+table.tz td:first-child, table.tz th:first-child, table.tz td:nth-child(2), table.tz th:nth-child(2) { text-align: left; }
+.tensors .panel.wide { grid-column: 1 / -1; }
+
+.worked { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; margin-top: 14px; overflow-x: auto; }
+.twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 700px) { .twocol { grid-template-columns: 1fr; } }
+.twocol ul { padding-left: 1.1em; margin: 0; }
+.twocol li { margin-bottom: 6px; }
+details { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+details summary { cursor: pointer; font-weight: 500; }
+details[open] summary { margin-bottom: 8px; }
+footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); }
+</style>
+</head>
+<body>
+
+<header class="hero wrap">
+  <h1>Seventeen events become nine rows of numbers</h1>
+  <p class="lede">A walk through <code>feature_engineering()</code> in <code>encode_to_PyG.py</code> for the SimulatedW10 host. It starts from what <code>transform_to_RDF.py</code> writes and ends at the <code>out_&lt;action&gt;</code> / <code>in_&lt;action&gt;</code> columns that become the node tensors. The input is a small simulated Windows trace: a download, a macro that spawns PowerShell, and a rundll32 that beacons out.</p>
+  <div class="hero-demo" aria-label="One event becomes two counter increments">
+    <div class="hero-event"><span class="ent">chrome.exe</span><span class="act act-recv">Recv</span><span class="ent">198.51.100.23:443</span><span class="hl">t = 1791428403150</span></div>
+    <div class="hero-out">
+      <span>x_list["proc-3c51"]["out_recv"] += 1</span>
+      <span>x_list["flow-4b2c"]["in_recv"]  += 1</span>
+    </div>
+  </div>
+  <p class="prose" style="margin-top:20px">That is the whole idea. Every event adds 1 to a counter on its source node and 1 to a counter on its destination node. The rest of this page shows where those counters come from, what happens to them afterwards, and what is lost along the way.</p>
+  <p class="prose" style="font-size:0.9rem;color:var(--muted)">Tags: <span class="tag repo">REPO</span> verified in the project's repo files, with file and line. <span class="tag paper">PAPER</span> stated in the paper. <span class="tag inf">INFERENCE</span> an interpretation, not verified in code or paper. <span class="tag ours">IMPL</span> a practical note for anyone re-implementing this step.</p>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">0</span>Where this step sits</h2>
+    <div class="prose">
+      <div class="pipe">
+        <span>Audit log</span><i>→</i><span>NODLINK-format edge CSV</span><i>→</i><span>transform_to_RDF.py</span><i>→</i><span class="here">encode_to_PyG.py · feature_engineering()</span><i>→</i><span>node-features.pt</span><i>→</i><span>OCRGCN</span>
+      </div>
+      <p><span class="tag paper">PAPER</span> §5.1.2 describes two behavior features: action frequencies (the proportion of each action type in a node's activity, L2-normalized) and idle-period statistics. This page covers only the first one, the action columns. Timestamps also get summarized into node features, as min/max/avg idle time (<code>encode_to_PyG.py</code> l.149–201), but that is a separate topic.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">1</span>Two files come in, only one gets counted</h2>
+    <div class="prose">
+      <p><span class="tag repo">REPO</span> <code>transform_to_RDF.py</code> writes two files that <code>encode_to_PyG.py</code> reads back (l.269–271):</p>
+      <p><code>&lt;graph&gt;.tsv</code> holds RDF triples (subject, predicate, object), built at <code>transform_to_RDF.py</code> l.133–223. The encoder uses it to discover node types (l.276), declared edge types (l.277), the per-type node index (l.306–340), labels and the train/test split.</p>
+      <p><code>&lt;graph&gt;_graph_df.csv</code> is the plain edge table, one row per event, saved at <code>transform_to_RDF.py</code> l.390. Despite the <code>.csv</code> name it is tab-separated. <strong>This is the file the action counts are computed from</strong> (l.510 passes <code>graph_df</code> into <code>feature_engineering</code>).</p>
+      <p>The plain triples have no timestamps. A triple like <code>node/A &nbsp;Start&nbsp; node/B</code> is a set member, so two identical events would collapse into one. The counts only work because <code>graph_df</code> keeps every event as its own row.</p>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-gdf" aria-selected="true" aria-controls="panel-gdf">SimulatedW10_graph_df.csv</button>
+      <button role="tab" id="tab-tsv" aria-selected="false" aria-controls="panel-tsv">SimulatedW10.tsv (excerpt)</button>
+    </div>
+    <div class="tabpanel" id="panel-gdf" role="tabpanel" aria-labelledby="tab-gdf">
+      <div class="scroll"><table class="gdf" id="gdfTable"></table></div>
+      <p class="note" style="margin-bottom:0">Highlighted columns are read in the counting loop. <code>timestamp</code> is read too but only feeds the idle features. The column order here is illustrative: the code looks columns up by name (l.138). Node types <code>PROCESS / FILE / NET</code> match the NODLINK names in <code>database_config.py</code> l.106. <span class="tag inf">INFERENCE</span> Edge direction (process as subject for Recv and Load) is an assumption of this simulation and has not been verified against NODLINK's raw data.</p>
+    </div>
+    <div class="tabpanel" id="panel-tsv" role="tabpanel" aria-labelledby="tab-tsv" hidden>
+      <div class="scroll"><pre class="tsv nomath" id="tsvBox"></pre></div>
+      <p class="note" style="margin-bottom:0">Highlighted triples are what the encoder pulls out. Edge-type declarations look like <code>Write a …/edge-type</code> (<code>transform_to_RDF.py</code> l.214–215), and l.277 collects their subjects. For W10 that list is then ignored, as section 2 explains. The <code>node-attribute</code> values (image names, paths, IPs) never reach the features. <span class="tag paper">PAPER</span> §5.1.1 leaves them out on purpose so the model does not memorize specific instances.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">2</span>The columns are fixed before any event is read</h2>
+    <div class="prose">
+      <p><span class="tag repo">REPO</span> The column list does not come from the data. <code>order_x_features</code> in <code>database_config.py</code> overrides the discovered edge types with a hard-coded list for each host, then expands each action into an <code>out_</code> column and an <code>in_</code> column:</p>
+    </div>
+<pre class="code nomath"><span class="ln" data-n="85">    elif host == 'SimulatedW10':</span><span class="ln" data-n="86">        edge_types = ["Write","Read",'Send','Recv','Start',"Load"]</span><span class="ln" data-n="…"></span><span class="ln" data-n="91">    sorted_edge_types = []</span><span class="ln" data-n="92">    for edge in edge_types:</span><span class="ln" data-n="93">        sorted_edge_types.append("out_" + edge.replace("EVENT_", "").lower())</span><span class="ln" data-n="94">        sorted_edge_types.append("in_" + edge.replace("EVENT_", "").lower())</span></pre>
+    <p class="src">database_config.py l.85–94</p>
+    <div class="prose">
+      <p>Then every node in <code>graph_df</code> gets its own copy of a zeroed dictionary with those keys:</p>
+    </div>
+<pre class="code nomath"><span class="ln" data-n="132">    all_nodes_uuid = set(graph_df["source-id"].unique().tolist() + graph_df["destination-id"].unique().tolist())</span><span class="ln" data-n="133">    sorted_edge_types = order_x_features(args.host,edge_types)</span><span class="ln" data-n="134">    edge_types_dic = {edge:0 for edge in sorted_edge_types}</span><span class="ln" data-n="135">    x_list = {node: edge_types_dic.copy() for node in all_nodes_uuid}</span></pre>
+    <p class="src">encode_to_PyG.py l.132–135</p>
+    <div class="prose">
+      <p>For W10 that gives $2 \times 6 = 12$ columns, in this order: <span id="colList" class="mono"></span>. Every node type gets all 12 columns. A file node still has an <code>out_start</code> slot, which will simply stay 0.</p>
+      <p>Before the loop starts, <code>x_list</code> is a $9 \times 12$ table of zeros: 9 nodes, 12 counters each. In other words, a nested dictionary (node → action column → count) whose inner keys are fixed up front.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">3</span>Stream the events and count</h2>
+    <div class="prose">
+      <p><span class="tag repo">REPO</span> One pass over <code>graph_df</code>. For each row: read the source, the destination and the edge type, lowercase the type, then increment two counters.</p>
+    </div>
+<pre class="code nomath" id="loopCode"><span class="ln" data-n="139" data-k="for">    for row in graph_df.itertuples(index=False):</span><span class="ln" data-n="140" data-k="read">        src_uuid = str(row[dict_columns['source-id']])</span><span class="ln" data-n="141" data-k="read">        dst_uuid = str(row[dict_columns['destination-id']])</span><span class="ln" data-n="142" data-k="read">        edge_type = str(row[dict_columns['edge-type']]).replace("EVENT_", "").lower()</span><span class="ln" data-n="…">        # l.143–146: read the timestamp (used later for idle features)</span><span class="ln" data-n="147" data-k="out">        x_list[src_uuid][str("out_" + edge_type)] += 1</span><span class="ln" data-n="148" data-k="in">        x_list[dst_uuid][str("in_" + edge_type)] += 1</span></pre>
+    <p class="src">encode_to_PyG.py l.139–148</p>
+    <div class="prose">
+      <p>Step through the events below. Unticking an event removes it from the log, as if it was never captured. Clicking a row in the table selects that node in the graph.</p>
+    </div>
+
+    <div class="bench">
+      <div class="panel">
+        <div class="controls">
+          <button class="btn primary" id="btnStep">Process next event</button>
+          <button class="btn" id="btnPlay">Play all</button>
+          <button class="btn" id="btnReset">Reset</button>
+        </div>
+        <div class="progress" id="progress" aria-live="polite"></div>
+        <div class="trace nomath" id="trace" aria-live="polite"></div>
+        <ol class="events" id="eventList"></ol>
+      </div>
+      <div style="display:grid;gap:20px;min-width:0">
+        <div class="panel graph">
+          <svg id="graph" viewBox="0 0 680 350" role="img" aria-label="Provenance graph of the simulated events"></svg>
+          <div class="legend"><span>▢ process</span><span>▭ file</span><span>◇ network flow</span><span>Faint edges have not been processed yet.</span></div>
+        </div>
+        <div class="panel">
+          <div class="scroll"><table class="mx" id="countMx"></table></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="prose" style="margin-top:22px">
+      <h3>What to notice once all 17 are in</h3>
+      <p><span class="tag inf">INFERENCE</span> In this schema every event has a process as its subject, so <code>out_*</code> counters only ever fill on process rows. File and flow rows get only <code>in_*</code> counters. <code>Start</code> is the one action where a process sits on both sides, which is why processes have both <code>out_start</code> and <code>in_start</code>. So the 12 columns are shared by every node, but each node type actually uses a different subset of them.</p>
+      <p>The counts carry three things: how much of each action a node did, in which role (source or target), and nothing else. Who the counterpart was is gone. <code>out_send = 2</code> on chrome does not say which flow. The order is gone too: the table cannot distinguish "write stage.dll, then rundll32 loads it" from the reverse. In OCRGCN, the counterpart is recovered later by message passing over <code>edge_index</code>, and the order by the LLM stage, which serializes events by timestamp.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">4</span>Columns that no node used are dropped</h2>
+<pre class="code nomath"><span class="ln" data-n="202">    x_list_df = pd.DataFrame.from_dict(x_list, orient='index')</span><span class="ln" data-n="203">    # # removes all columns in x_list_df that are entirely zeros. Not necessary to keep</span><span class="ln" data-n="204">    x_list_df = x_list_df.loc[:, (x_list_df != 0).any(axis=0)]</span></pre>
+    <p class="src">encode_to_PyG.py l.202–204</p>
+    <div class="prose">
+      <p><span class="tag repo">REPO</span> After counting, the dictionary becomes a DataFrame, and any column that is zero for every node in this encoding run is deleted. With all 17 events, every column is used somewhere, so all 12 survive. Try removing one action type:</p>
+      <div class="presets">
+        <button class="btn" data-preset="noload">Remove all Load events</button>
+        <button class="btn" data-preset="nostart">Remove all Start events</button>
+        <button class="btn" data-preset="all">Restore all 17</button>
+      </div>
+      <p>Feature width now: <span class="fcount" id="fcount"></span></p>
+    </div>
+    <div class="panel"><div class="scroll"><table class="mx" id="dropMx"></table></div></div>
+    <div class="warn prose">
+      <p><strong>Why this matters for per-window encoding.</strong> <span class="tag ours">IMPL</span> The repo encodes the training and test logs together as one graph (<code>is_Train</code> just labels the nodes), so the columns that survive are always the same for both. If a pipeline encodes each time window on its own, a quiet window with no <code>Load</code> events comes out 10 columns wide. A model trained on 12 columns then either fails on a shape mismatch or, if two different columns happen to drop, silently reads the wrong ones. For per-window encoding, keep the fixed 12-column list and skip l.204.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">5</span>Counts become a behavior mix</h2>
+    <div class="prose">
+      <p><span class="tag paper">PAPER</span> §5.1.2 uses L2 normalization "to reduce bias from high-activity benign nodes". <span class="tag repo">REPO</span> With <code>--normalize-features</code>, each row of action columns is divided by its own Euclidean length:</p>
+    </div>
+<pre class="code nomath"><span class="ln" data-n="226">    if args.normalize_features:</span><span class="ln" data-n="227">        sorted_edge_types = [action for action in sorted_edge_types if action in x_list_df.columns]</span><span class="ln" data-n="…"></span><span class="ln" data-n="233">        normalized_data = normalize(x_list_df[sorted_edge_types], norm='l2', axis=1)</span><span class="ln" data-n="234">        normalized_x_list_df[sorted_edge_types] = pd.DataFrame(normalized_data, columns=sorted_edge_types)</span></pre>
+    <p class="src">encode_to_PyG.py l.226–234 (<code>axis=1</code> means per row, so per node)</p>
+    <div class="prose">
+      <p>For node $i$ with count vector $c_i \in \mathbb{R}^{F}$:</p>
+      <p>$$\tilde{c}_i = \frac{c_i}{\lVert c_i \rVert_2}, \qquad \lVert c_i \rVert_2 = \sqrt{\textstyle\sum_{k=1}^{F} c_{ik}^2}$$</p>
+      <p>Each row now has length 1, so it describes the node's mix of actions, not how busy it was. Scaling all of a node's counts by 100 gives exactly the same row. Click any row in the table to see its arithmetic.</p>
+    </div>
+    <div class="panel"><div class="scroll"><table class="mx" id="normMx"></table></div></div>
+    <div class="worked" id="worked"></div>
+    <div class="prose" style="margin-top:16px">
+      <p class="note">Compare explorer.exe and rundll32.exe. Explorer did only one thing (Start twice), so its single non-zero cell becomes 1.0. Two of rundll32's 4 counted actions were loads, so its <code>out_load</code> is 0.816, larger than chrome's 0.25 even though chrome had just 1 fewer load. After normalization, a value only means something relative to the rest of the same row.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">6</span>One tensor per node type</h2>
+<pre class="code nomath"><span class="ln" data-n="516">    for label_node in label_nodes_names:</span><span class="ln" data-n="517">        file_path = output_root_path + dataset_name + "/mapping/" + label_node + "_entidx2name.csv"</span><span class="ln" data-n="518">        mapping_nodes_df = pd.read_csv(file_path, header=None, skiprows=1, names=["node_id", "node_uuid"])</span><span class="ln" data-n="519">        mapped_x_list_df = pd.merge(mapping_nodes_df, x_list_df, on="node_uuid")</span><span class="ln" data-n="520">        mapped_x_list_df = mapped_x_list_df.set_index("node_id")</span><span class="ln" data-n="521">        del mapped_x_list_df['node_uuid']</span><span class="ln" data-n="522">        x_list_tensor = torch.from_numpy(mapped_x_list_df.to_numpy()).float()</span><span class="ln" data-n="523">        save_path = output_root_path + dataset_name + "/features/" + label_node + "/node-features.pt"</span><span class="ln" data-n="524">        ensure_dir(save_path)</span><span class="ln" data-n="525">        torch.save(x_list_tensor, save_path)</span></pre>
+    <p class="src">encode_to_PyG.py l.516–525</p>
+    <div class="prose">
+      <p><span class="tag repo">REPO</span> The normalized table is split by node type. The row order comes from the per-type mapping file, which sorts nodes by UUID string and numbers them from 0 (l.327–330). Row $k$ of <code>PROCESS/node-features.pt</code> is therefore the process whose UUID sorts $k$-th. <code>train_gnn_models.py</code> l.564–573 later copies these rows into one big <code>x</code> of shape $[N, F]$.</p>
+    </div>
+    <div class="tensors" id="tensors"></div>
+    <div class="prose" style="margin-top:16px">
+      <p class="note">If <code>--get-idle-time</code> is set, three more columns (<code>avg_idle_time</code>, <code>max_idle_time</code>, <code>min_idle_time</code>, min-max scaled) are appended after the action columns. That would make $F = 15$ for W10.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">7</span>When the converter emits an action the list does not know</h2>
+    <div class="prose">
+      <p><span class="tag repo">REPO</span> Because the columns are fixed (section 2), an edge type outside the six has no counter. Python raises <code>KeyError</code> at l.147 and the whole encoding stops. Add an unmapped <code>Delete</code> event to see it, then run section 3 again:</p>
+      <div class="presets">
+        <button class="btn" id="btnExtra">Add a Delete event</button>
+      </div>
+      <p><span class="tag ours">IMPL</span> Whatever converts raw audit logs into <code>graph_df</code> has to enforce this. Anything that reaches <code>graph_df</code> must be one of <code>Write, Read, Send, Recv, Start, Load</code> after <code>.lower()</code>. Otherwise it has to be dropped in the converter, or the list in <code>database_config.py</code> l.86 has to be extended, which is a deviation from the repo and should be documented as one.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="n">8</span>What the node features keep and what they lose</h2>
+    <div class="twocol prose" style="max-width:none">
+      <div>
+        <h3>Kept</h3>
+        <ul>
+          <li>The share of each action type in a node's activity.</li>
+          <li>The role the node played: initiator (<code>out_</code>) or target (<code>in_</code>).</li>
+          <li>Which columns exist at all in this graph (after l.204).</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Lost</h3>
+        <ul>
+          <li>Total volume, after L2 normalization.</li>
+          <li>Who the counterpart was. OCRGCN recovers this through typed message passing.</li>
+          <li>Order and timing of individual events. The idle features keep a summary; the LLM stage keeps the sequence.</li>
+          <li>Names, paths and IPs, left out on purpose (§5.1.1).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap prose">
+    <h2><span class="n">?</span>Check yourself</h2>
+    <details><summary>1. After L2, rundll32's <code>out_load</code> is 0.816 and chrome's is 0.25. Does that mean rundll32 loaded about three times as much?</summary>
+      <p>No. Raw counts are 2 and 1. The normalized value is the share of that action in the node's own mix: rundll32 did only 4 actions, chrome did 8 spread over 5 columns. Comparing the same column across rows compares behavior profiles, not volumes.</p>
+    </details>
+    <details><summary>2. Remove all Load events: F drops to 10. Why doesn't the repo's own pipeline ever hit this, while an encoder that processes each time window separately can?</summary>
+      <p>The repo encodes training and test logs as one graph, so the zero-column check sees both together and keeps the same columns for both. Separate per-window encodings each run l.204 on their own data, so a window without Load produces a narrower tensor than the model was trained on.</p>
+    </details>
+    <details><summary>3. In this schema, can a FILE node ever have a non-zero <code>out_</code> value? What does that say about how informative the 12 columns are per type?</summary>
+      <p>Not if every event has a process as its subject. File and flow rows only use the <code>in_*</code> half (in this data, at most 3 of the 12 columns). The per-type OCRGCN models (§5.1.2) each see a sparse slice of the shared feature space, which is one reason the GNN's neighbor aggregation matters so much for non-process nodes.</p>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">Sources: OCR-APT repo files <code>transform_to_RDF.py</code>, <code>encode_to_PyG.py</code>, <code>database_config.py</code>, <code>train_gnn_models.py</code>; Aly, Mansour, Youssef, CCS 2025, §5.1. All events, IDs and IPs on this page are simulated (IPs are from documentation ranges).</div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var ACTIONS = ["Write", "Read", "Send", "Recv", "Start", "Load"];
+  var COLS = [];
+  ACTIONS.forEach(function (a) { COLS.push("out_" + a.toLowerCase()); COLS.push("in_" + a.toLowerCase()); });
+  var PREFIX = "https://NODLINK.graph/SimulatedW10/";
+  var BASE = 1791428400000;
+
+  var NODES = [
+    { id: "proc-1a07", type: "PROCESS", label: "explorer.exe", x: 70, y: 150 },
+    { id: "proc-3c51", type: "PROCESS", label: "chrome.exe", x: 230, y: 70 },
+    { id: "proc-8e22", type: "PROCESS", label: "powershell.exe", x: 230, y: 235 },
+    { id: "proc-b9f4", type: "PROCESS", label: "rundll32.exe", x: 560, y: 285 },
+    { id: "file-0d3a", type: "FILE", label: "kernel32.dll", x: 610, y: 120 },
+    { id: "file-5f10", type: "FILE", label: "invoice.docm", x: 340, y: 152 },
+    { id: "file-c7e8", type: "FILE", label: "stage.dll", x: 440, y: 205 },
+    { id: "flow-4b2c", type: "NET", label: "198.51.100.23:443", x: 430, y: 32 },
+    { id: "flow-e019", type: "NET", label: "203.0.113.50:8080", x: 370, y: 318 }
+  ];
+  var BY_ID = {};
+  NODES.forEach(function (n) { BY_ID[n.id] = n; });
+  var TYPE_ORDER = ["PROCESS", "FILE", "NET"];
+
+  var RAW = [
+    ["proc-1a07", "Start", "proc-3c51", 0],
+    ["proc-3c51", "Load", "file-0d3a", 180],
+    ["proc-3c51", "Send", "flow-4b2c", 2410],
+    ["proc-3c51", "Recv", "flow-4b2c", 2530],
+    ["proc-3c51", "Send", "flow-4b2c", 3020],
+    ["proc-3c51", "Recv", "flow-4b2c", 3150],
+    ["proc-3c51", "Recv", "flow-4b2c", 3290],
+    ["proc-3c51", "Write", "file-5f10", 3870],
+    ["proc-1a07", "Start", "proc-8e22", 94500],
+    ["proc-8e22", "Read", "file-5f10", 95120],
+    ["proc-8e22", "Send", "flow-e019", 96400],
+    ["proc-8e22", "Recv", "flow-e019", 96910],
+    ["proc-8e22", "Write", "file-c7e8", 97330],
+    ["proc-8e22", "Start", "proc-b9f4", 98050],
+    ["proc-b9f4", "Load", "file-c7e8", 98210],
+    ["proc-b9f4", "Load", "file-0d3a", 98260],
+    ["proc-b9f4", "Send", "flow-e019", 312700]
+  ];
+  var EVENTS = RAW.map(function (r, i) {
+    return { key: "e" + i, src: r[0], etype: r[1], dst: r[2], ts: BASE + r[3], on: true, extra: false };
+  });
+  var EXTRA = { key: "x0", src: "proc-8e22", etype: "Delete", dst: "file-5f10", ts: BASE + 97900, on: true, extra: true };
+
+  var state = { cursor: 0, extraAdded: false, selected: "proc-3c51", timer: null };
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function allEvents() {
+    var list = EVENTS.slice();
+    if (state.extraAdded) list.push(EXTRA);
+    list.sort(function (a, b) { return a.ts - b.ts; });
+    return list;
+  }
+  function activeEvents() { return allEvents().filter(function (e) { return e.on; }); }
+  function actClass(et) { return "act act-" + et.toLowerCase(); }
+  function colVar(col) { return "var(--c-" + col.replace(/^(out|in)_/, "") + ")"; }
+
+  // Mirrors encode_to_PyG.py l.132-148 for the first n active events.
+  function processUntil(n) {
+    var act = activeEvents();
+    var present = {};
+    act.forEach(function (e) { present[e.src] = true; present[e.dst] = true; });   // l.132 uses the whole graph_df
+    var x = {};
+    Object.keys(present).forEach(function (id) {
+      var d = {}; COLS.forEach(function (c) { d[c] = 0; }); x[id] = d;               // l.134-135
+    });
+    var hits = [], error = null, last = null;
+    for (var i = 0; i < Math.min(n, act.length); i++) {
+      var e = act[i];
+      var et = e.etype.replace("EVENT_", "").toLowerCase();                            // l.142
+      var ko = "out_" + et, ki = "in_" + et;
+      last = e;
+      if (!(ko in x[e.src])) { error = { ev: e, key: ko, index: i }; hits = []; break; } // l.147 KeyError
+      x[e.src][ko] += 1;                                                                 // l.147
+      x[e.dst][ki] += 1;                                                                 // l.148
+      hits = [[e.src, ko], [e.dst, ki]];
+    }
+    return { x: x, present: present, hits: hits, error: error, last: last, total: act.length };
+  }
+
+  function sortedNodes(present) {
+    return NODES.filter(function (n) { return !present || present[n.id]; })
+      .sort(function (a, b) {
+        var t = TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type);
+        return t !== 0 ? t : (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      });
+  }
+
+  /* ---------- section 1: inputs ---------- */
+  function renderInputs() {
+    var cols = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"];
+    var cls = { "source-id": "read-col", "destination-id": "read-col", "edge-type": "read-col", "timestamp": "half-col" };
+    var h = "<thead><tr>" + cols.map(function (c) { return "<th class='" + (cls[c] || "") + "'>" + c + "</th>"; }).join("") + "</tr></thead><tbody>";
+    allEvents().forEach(function (e) {
+      h += "<tr" + (e.extra ? " style='color:var(--c-delete)'" : "") + "><td>" + e.src + "</td><td>" + BY_ID[e.src].type + "</td><td>" + e.dst + "</td><td>" + BY_ID[e.dst].type + "</td><td>" + e.etype + "</td><td>" + e.ts + "</td></tr>";
+    });
+    document.getElementById("gdfTable").innerHTML = h + "</tbody>";
+
+    var P = PREFIX, L = [];
+    function t(s, p, o, key) { L.push((key ? "<span class='key'>" : "") + esc(s) + "\t" + esc(p) + "\t" + esc(o) + (key ? "</span>" : "")); }
+    L.push("<span class='dim'>s\tp\to</span>");
+    ["proc-3c51", "flow-4b2c"].forEach(function (id) {
+      t(P + "node/" + id, P + "node-type", P + BY_ID[id].type, true);
+      t(P + "node/" + id, P + "uuid", '"' + id + '"', false);
+      t(P + "node/" + id, P + "is_Train", "True", true);
+    });
+    L.push("<span class='dim'>… same three triples for the other 7 nodes</span>");
+    t(P + "node/proc-3c51", P + "node-attribute", '"chrome.exe"', false);
+    t(P + "node/flow-4b2c", P + "node-attribute", '"198.51.100.23:443"', false);
+    t(P + "node/proc-3c51", P + "is_malicious", "False", true);
+    t(P + "node/flow-4b2c", P + "is_malicious", "False", true);
+    ["PROCESS", "FILE", "NET"].forEach(function (nt) { t(nt, "a", P + "node-type", false); });
+    ["Start", "Load", "Send", "Recv", "Write", "Read"].forEach(function (et) { t(et, "a", P + "edge-type", true); });
+    EVENTS.slice(0, 3).forEach(function (e) { t(P + "node/" + e.src, P + e.etype, P + "node/" + e.dst, false); });
+    L.push("<span class='dim'>… 14 more edge triples (no timestamps in the plain .tsv)</span>");
+    document.getElementById("tsvBox").innerHTML = L.join("\n");
+  }
+
+  /* ---------- section 3: stepper ---------- */
+  function renderEventList(res) {
+    var all = allEvents();
+    var activeIdx = 0, html = "";
+    all.forEach(function (e, i) {
+      var status;
+      if (!e.on) status = "off";
+      else {
+        if (res.error && activeIdx === res.error.index) status = "error";
+        else if (activeIdx < state.cursor - 1) status = "done";
+        else if (activeIdx === state.cursor - 1) status = "current";
+        else status = "pending";
+        activeIdx++;
+      }
+      var dt = ((e.ts - BASE) / 1000).toFixed(3);
+      html += "<li class='" + status + (e.extra ? " extra" : "") + "'>" +
+        "<input type='checkbox' aria-label='Include event " + (i + 1) + "' data-key='" + e.key + "'" + (e.on ? " checked" : "") + ">" +
+        "<span class='idx'>" + (i + 1) + "</span>" +
+        "<span class='t'>+" + dt + "s</span>" +
+        "<span class='what'>" + esc(BY_ID[e.src].label) + " <span class='" + actClass(e.etype) + "'>" + e.etype + "</span> " + esc(BY_ID[e.dst].label) + "</span></li>";
+    });
+    var ol = document.getElementById("eventList");
+    ol.innerHTML = html;
+    var cur = ol.querySelector("li.current, li.error");
+    if (cur) {
+      var top = cur.offsetTop - ol.offsetTop, h = ol.clientHeight;
+      if (top < ol.scrollTop || top > ol.scrollTop + h - 30) ol.scrollTop = Math.max(0, top - h / 3);
+    }
+  }
+
+  function renderTrace(res) {
+    var box = document.getElementById("trace");
+    var lines = document.querySelectorAll("#loopCode .ln");
+    lines.forEach(function (l) { l.classList.remove("on"); });
+    if (res.error) {
+      var e = res.error.ev;
+      box.innerHTML = "src_uuid  = <span class='v'>'" + e.src + "'</span>\nedge_type = <span class='v'>'" + e.etype.toLowerCase() + "'</span>\n<span class='err'>KeyError: '" + res.error.key + "'</span>\nencode_to_PyG.py l.147: the fixed column list has no '" + res.error.key + "'. Encoding stops here.";
+      lines.forEach(function (l) { if (l.dataset.n === "147") l.classList.add("on"); });
+      return;
+    }
+    if (state.cursor === 0 || !res.last) {
+      box.textContent = "x_list holds " + Object.keys(res.present).length + " nodes × " + COLS.length + " counters, all 0.\nPress \"Process next event\".";
+      return;
+    }
+    var e = res.last, et = e.etype.toLowerCase();
+    var nOut = res.x[e.src]["out_" + et], nIn = res.x[e.dst]["in_" + et];
+    box.innerHTML = "src_uuid = '" + e.src + "'   # " + esc(BY_ID[e.src].label) + "\n" +
+      "dst_uuid = '" + e.dst + "'   # " + esc(BY_ID[e.dst].label) + "\n" +
+      "edge_type = '" + e.etype + "'.lower() → '" + et + "'\n" +
+      "x_list['" + e.src + "']['out_" + et + "'] → <span class='v'>" + nOut + "</span>\n" +
+      "x_list['" + e.dst + "']['in_" + et + "']  → <span class='v'>" + nIn + "</span>";
+    lines.forEach(function (l) { if (["140", "141", "142", "147", "148"].indexOf(l.dataset.n) >= 0) l.classList.add("on"); });
+  }
+
+  function headerRows(dropped) {
+    var r1 = "<tr class='acts'><th colspan='2' class='rowh'></th>", r2 = "<tr class='dirs'><th colspan='2' class='rowh' style='color:var(--muted);font-weight:400'>node</th>";
+    ACTIONS.forEach(function (a) {
+      var lo = a.toLowerCase();
+      r1 += "<th colspan='2' style='background:var(--c-" + lo + ")'>" + a + "</th>";
+      ["out_" + lo, "in_" + lo].forEach(function (c) {
+        r2 += "<th class='" + (dropped && dropped[c] ? "dropped" : "") + "' title='" + c + "'>" + c.split("_")[0] + "</th>";
+      });
+    });
+    return "<thead>" + r1 + "</tr>" + r2 + "</tr></thead>";
+  }
+
+  function matrixBody(nodes, valueFn, opts) {
+    opts = opts || {};
+    var html = "<tbody>", prevType = null;
+    nodes.forEach(function (n) {
+      var typeCount = nodes.filter(function (m) { return m.type === n.type; }).length;
+      var cls = [];
+      if (prevType !== null && prevType !== n.type) cls.push("typesep");
+      if (opts.ghost && opts.ghost(n)) cls.push("ghost");
+      if (opts.selectable) cls.push("clickable");
+      if (opts.selected === n.id) cls.push("sel");
+      html += "<tr class='" + cls.join(" ") + "' data-node='" + n.id + "'>";
+      if (prevType !== n.type) html += "<td class='typecell' rowspan='" + typeCount + "'>" + n.type + "</td>";
+      html += "<td class='rowh'>" + esc(n.label) + "<small>" + n.id + "</small></td>";
+      COLS.forEach(function (c) {
+        var v = valueFn(n, c);
+        var tdc = [];
+        if (opts.dropped && opts.dropped[c]) tdc.push("dropped");
+        var hit = opts.hits && opts.hits.some(function (h) { return h[0] === n.id && h[1] === c; });
+        if (hit) tdc.push("hit");
+        var style = "";
+        if (opts.shade && typeof v === "number" && v > 0 && !(opts.dropped && opts.dropped[c])) {
+          style = " style='background:color-mix(in srgb, " + colVar(c) + " " + Math.round(v * 55) + "%, transparent)'";
+        }
+        var txt = opts.fmt ? opts.fmt(v) : v;
+        if (!hit) tdc.push(v === 0 ? "z" : "nz");
+        html += "<td class='" + tdc.join(" ") + "'" + style + ">" + txt + "</td>";
+      });
+      html += "</tr>";
+      prevType = n.type;
+    });
+    return html + "</tbody>";
+  }
+
+  function renderCountMatrix(res) {
+    var nodes = sortedNodes(null);
+    var tbl = document.getElementById("countMx");
+    tbl.innerHTML = headerRows(null) + matrixBody(nodes, function (n, c) {
+      return res.x[n.id] ? res.x[n.id][c] : 0;
+    }, { hits: res.hits, ghost: function (n) { return !res.present[n.id]; }, selectable: true, selected: state.selected });
+  }
+
+  function edgePath(a, b, off) {
+    var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    var dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / len, ny = dx / len;
+    var cx = mx + nx * off, cy = my + ny * off;
+    // shorten ends so arrows stop at node boundary
+    function pull(p, q, r) { var vx = q.x - p.x, vy = q.y - p.y, l = Math.sqrt(vx * vx + vy * vy) || 1; return { x: p.x + vx / l * r, y: p.y + vy / l * r }; }
+    var s = pull(a, { x: cx, y: cy }, 20), t = pull(b, { x: cx, y: cy }, 22);
+    return { d: "M" + s.x.toFixed(1) + "," + s.y.toFixed(1) + " Q" + cx.toFixed(1) + "," + cy.toFixed(1) + " " + t.x.toFixed(1) + "," + t.y.toFixed(1), lx: (s.x + 2 * cx + t.x) / 4, ly: (s.y + 2 * cy + t.y) / 4 };
+  }
+
+  function renderGraph(res) {
+    var svg = document.getElementById("graph");
+    var groups = {}, order = [];
+    var act = activeEvents();
+    var doneKeys = {};
+    act.slice(0, res.error ? res.error.index : state.cursor).forEach(function (e) { doneKeys[e.key] = true; });
+    allEvents().forEach(function (e) {
+      var g = e.src + "|" + e.dst + "|" + e.etype;
+      if (!groups[g]) { groups[g] = { src: e.src, dst: e.dst, etype: e.etype, total: 0, done: 0, on: 0, keys: [] }; order.push(g); }
+      groups[g].total++; groups[g].keys.push(e.key);
+      if (e.on) groups[g].on++;
+      if (doneKeys[e.key]) groups[g].done++;
+    });
+    var pairCount = {}, pairSeen = {};
+    order.forEach(function (g) { var p = groups[g].src + "|" + groups[g].dst; pairCount[p] = (pairCount[p] || 0) + 1; });
+    var curKey = res.error ? res.error.ev.key : (state.cursor > 0 && res.last ? res.last.key : null);
+    var defs = "<defs>";
+    ACTIONS.concat(["Delete"]).forEach(function (a) {
+      var lo = a.toLowerCase();
+      defs += "<marker id='ar-" + lo + "' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='6' markerHeight='6' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='var(--c-" + lo + ")'/></marker>";
+    });
+    defs += "</defs>";
+    var edges = "";
+    order.forEach(function (g) {
+      var G = groups[g], p = G.src + "|" + G.dst;
+      var k = pairSeen[p] || 0; pairSeen[p] = k + 1;
+      var n = pairCount[p], off = n === 1 ? 0 : (k - (n - 1) / 2) * 26;
+      var geo = edgePath(BY_ID[G.src], BY_ID[G.dst], off);
+      var lo = G.etype.toLowerCase();
+      var cls = "edge";
+      if (G.on === 0) cls += " off"; else if (G.done > 0) cls += " done";
+      if (curKey && G.keys.indexOf(curKey) >= 0) cls += " cur";
+      edges += "<path class='" + cls + "' d='" + geo.d + "' stroke='var(--c-" + lo + ")' marker-end='url(#ar-" + lo + ")'/>";
+      if (G.total > 1) {
+        edges += "<text class='elabel' x='" + geo.lx.toFixed(1) + "' y='" + (geo.ly - 4).toFixed(1) + "' fill='var(--c-" + lo + ")' text-anchor='middle'>×" + (G.done || 0) + "/" + G.total + "</text>";
+      }
+    });
+    var nodes = "";
+    var hitNodes = {};
+    (res.hits || []).forEach(function (h) { hitNodes[h[0]] = true; });
+    NODES.forEach(function (n) {
+      var on = hitNodes[n.id] || state.selected === n.id;
+      var c = "nshape" + (on ? " on" : "");
+      var sh;
+      if (n.type === "PROCESS") sh = "<rect class='" + c + "' x='" + (n.x - 16) + "' y='" + (n.y - 16) + "' width='32' height='32' rx='7'/>";
+      else if (n.type === "FILE") sh = "<rect class='" + c + "' x='" + (n.x - 20) + "' y='" + (n.y - 12) + "' width='40' height='24' rx='2'/>";
+      else sh = "<path class='" + c + "' d='M" + n.x + "," + (n.y - 18) + " L" + (n.x + 18) + "," + n.y + " L" + n.x + "," + (n.y + 18) + " L" + (n.x - 18) + "," + n.y + " z'/>";
+      var ly = n.type === "NET" && n.y < 60 ? n.y - 24 : n.y + 32;
+      if (n.id === "flow-e019") ly = n.y + 30;
+      nodes += "<g data-node='" + n.id + "' style='cursor:pointer'>" + sh + "<text class='nlabel' x='" + n.x + "' y='" + ly + "' text-anchor='middle'>" + esc(n.label) + "</text></g>";
+    });
+    svg.innerHTML = defs + edges + nodes;
+  }
+
+  function renderStepper() {
+    var res = processUntil(state.cursor);
+    var total = res.total;
+    document.getElementById("progress").textContent = res.error
+      ? "Stopped at event " + (res.error.index + 1) + " of " + total + " with KeyError."
+      : "Processed " + Math.min(state.cursor, total) + " of " + total + " events.";
+    document.getElementById("btnStep").disabled = !!res.error || state.cursor >= total;
+    document.getElementById("btnPlay").disabled = !!res.error || state.cursor >= total;
+    renderEventList(res);
+    renderTrace(res);
+    renderCountMatrix(res);
+    renderGraph(res);
+  }
+
+  /* ---------- sections 4-6: downstream on the full log ---------- */
+  function renderDownstream() {
+    var full = processUntil(Infinity);
+    var dropMx = document.getElementById("dropMx"), normMx = document.getElementById("normMx");
+    var tensors = document.getElementById("tensors"), worked = document.getElementById("worked");
+    if (full.error) {
+      var msg = "<tbody><tr><td style='padding:14px;color:var(--c-delete);font-family:var(--sans)'>Encoding stopped with KeyError: '" + full.error.key + "' at l.147, so nothing after the counting loop runs. Remove the Delete event in section 3 to continue.</td></tr></tbody>";
+      dropMx.innerHTML = msg; normMx.innerHTML = msg;
+      tensors.innerHTML = "<p class='note'>No tensors were written.</p>";
+      worked.innerHTML = "";
+      document.getElementById("fcount").textContent = "n/a";
+      return;
+    }
+    var nodes = sortedNodes(full.present);
+    var dropped = {}, kept = [];
+    COLS.forEach(function (c) {
+      var any = nodes.some(function (n) { return full.x[n.id][c] !== 0; });
+      if (!any) dropped[c] = true; else kept.push(c);
+    });
+    document.getElementById("fcount").textContent = "F = " + kept.length + (kept.length < COLS.length ? "  (dropped: " + COLS.filter(function (c) { return dropped[c]; }).join(", ") + ")" : "");
+    dropMx.innerHTML = headerRows(dropped) + matrixBody(nodes, function (n, c) { return full.x[n.id][c]; }, { dropped: dropped });
+
+    // L2 per row over kept columns (sklearn normalize, axis=1)
+    var norm = {}, length = {};
+    nodes.forEach(function (n) {
+      var s = 0; kept.forEach(function (c) { s += full.x[n.id][c] * full.x[n.id][c]; });
+      var l = Math.sqrt(s); length[n.id] = l;
+      var row = {}; COLS.forEach(function (c) { row[c] = dropped[c] ? 0 : (l > 0 ? full.x[n.id][c] / l : 0); });
+      norm[n.id] = row;
+    });
+    if (!full.present[state.selected]) state.selected = nodes[0] ? nodes[0].id : null;
+    normMx.innerHTML = headerRows(dropped) + matrixBody(nodes, function (n, c) { return norm[n.id][c]; },
+      { dropped: dropped, shade: true, selectable: true, selected: state.selected, fmt: function (v) { return v === 0 ? "0" : v.toFixed(3); } });
+
+    // worked example
+    var sel = BY_ID[state.selected];
+    if (sel) {
+      var nzc = kept.filter(function (c) { return full.x[sel.id][c] !== 0; });
+      var sq = nzc.map(function (c) { return full.x[sel.id][c] + "^2"; }).join(" + ");
+      var sum = nzc.reduce(function (a, c) { return a + full.x[sel.id][c] * full.x[sel.id][c]; }, 0);
+      var L = length[sel.id];
+      var Ltex = Number.isInteger(L) ? String(L) : "\\sqrt{" + sum + "} \\approx " + L.toFixed(3);
+      var rows = nzc.map(function (c) {
+        return "\\tilde c_{\\text{" + c.replace(/_/g, "\\_") + "}} = \\frac{" + full.x[sel.id][c] + "}{" + (Number.isInteger(L) ? L : L.toFixed(3)) + "} = " + (full.x[sel.id][c] / L).toFixed(3);
+      }).join(", \\quad ");
+      worked.innerHTML = "<p style='margin:0 0 6px'><strong>" + esc(sel.label) + "</strong> <span class='mono' style='color:var(--muted)'>" + sel.id + "</span>: " + nzc.length + " non-zero counters out of " + kept.length + ". All other cells stay 0.</p>" +
+        "<p style='margin:0'>$$\\lVert c \\rVert_2 = \\sqrt{" + sq + "} = " + Ltex + "$$</p><p style='margin:0'>$$" + rows + "$$</p>";
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetClear && window.MathJax.typesetClear([worked]);
+        window.MathJax.typesetPromise([worked]).catch(function () {});
+      }
+    }
+
+    // tensors per type (mapping sorted by uuid, l.327-330)
+    var html = "";
+    TYPE_ORDER.forEach(function (tp) {
+      var tn = nodes.filter(function (n) { return n.type === tp; }).sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+      if (!tn.length) return;
+      var nzCols = kept.filter(function (c) { return tn.some(function (n) { return norm[n.id][c] !== 0; }); });
+      var t = "<div class='panel" + (tp === "PROCESS" ? " wide" : "") + "'><h3>features/" + tp + "/node-features.pt</h3><p style='margin:0 0 8px;font-size:0.88rem'>shape <span class='shape'>[" + tn.length + ", " + kept.length + "]</span>, float32. Showing the " + nzCols.length + " columns that are non-zero for this type; the other " + (kept.length - nzCols.length) + " are all 0.</p><div class='scroll'><table class='tz'><thead><tr><th>row</th><th>uuid</th>";
+      nzCols.forEach(function (c) { t += "<th style='color:" + colVar(c) + "'>" + c + "</th>"; });
+      t += "</tr></thead><tbody>";
+      tn.forEach(function (n, i) {
+        t += "<tr><td>" + i + "</td><td title='" + esc(n.label) + "'>" + n.id + "</td>";
+        nzCols.forEach(function (c) { var v = norm[n.id][c]; t += "<td>" + (v === 0 ? "0" : v.toFixed(3)) + "</td>"; });
+        t += "</tr>";
+      });
+      html += t + "</tbody></table></div></div>";
+    });
+    tensors.innerHTML = html;
+  }
+
+  function renderAll() { renderInputs(); renderStepper(); renderDownstream(); }
+
+  /* ---------- events ---------- */
+  function stopPlay() { if (state.timer) { clearInterval(state.timer); state.timer = null; document.getElementById("btnPlay").textContent = "Play all"; } }
+  function step() {
+    var res = processUntil(state.cursor);
+    if (res.error || state.cursor >= res.total) { stopPlay(); return; }
+    state.cursor++;
+    renderStepper();
+    var after = processUntil(state.cursor);
+    if (after.error || state.cursor >= after.total) stopPlay();
+  }
+  document.getElementById("btnStep").addEventListener("click", function () { stopPlay(); step(); });
+  document.getElementById("btnPlay").addEventListener("click", function () {
+    if (state.timer) { stopPlay(); return; }
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { var t = processUntil(0).total; for (var i = 0; i < t; i++) step(); return; }
+    this.textContent = "Pause";
+    state.timer = setInterval(step, 650);
+  });
+  document.getElementById("btnReset").addEventListener("click", function () { stopPlay(); state.cursor = 0; renderStepper(); });
+
+  document.getElementById("eventList").addEventListener("change", function (ev) {
+    var key = ev.target.getAttribute("data-key");
+    if (!key) return;
+    var e = allEvents().filter(function (x) { return x.key === key; })[0];
+    if (e) e.on = ev.target.checked;
+    stopPlay(); state.cursor = 0; renderAll();
+  });
+
+  function selectNode(id) { if (!id || !BY_ID[id]) return; state.selected = id; renderStepper(); renderDownstream(); }
+  document.getElementById("countMx").addEventListener("click", function (ev) { var tr = ev.target.closest("tr[data-node]"); if (tr) selectNode(tr.getAttribute("data-node")); });
+  document.getElementById("normMx").addEventListener("click", function (ev) { var tr = ev.target.closest("tr[data-node]"); if (tr) selectNode(tr.getAttribute("data-node")); });
+  document.getElementById("graph").addEventListener("click", function (ev) { var g = ev.target.closest("g[data-node]"); if (g) selectNode(g.getAttribute("data-node")); });
+
+  document.querySelectorAll("[data-preset]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var p = b.getAttribute("data-preset");
+      EVENTS.forEach(function (e) {
+        if (p === "all") e.on = true;
+        else if (p === "noload") e.on = e.etype !== "Load";
+        else if (p === "nostart") e.on = e.etype !== "Start";
+      });
+      stopPlay(); state.cursor = 0; renderAll();
+    });
+  });
+
+  document.getElementById("btnExtra").addEventListener("click", function () {
+    state.extraAdded = !state.extraAdded;
+    EXTRA.on = true;
+    this.textContent = state.extraAdded ? "Remove the Delete event" : "Add a Delete event";
+    stopPlay(); state.cursor = 0; renderAll();
+    if (state.extraAdded) document.getElementById("btnStep").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+
+  // tabs
+  var tabs = [["tab-gdf", "panel-gdf"], ["tab-tsv", "panel-tsv"]];
+  tabs.forEach(function (pair) {
+    document.getElementById(pair[0]).addEventListener("click", function () {
+      tabs.forEach(function (q) {
+        var on = q[0] === pair[0];
+        document.getElementById(q[0]).setAttribute("aria-selected", on ? "true" : "false");
+        document.getElementById(q[1]).hidden = !on;
+      });
+    });
+  });
+
+  document.getElementById("colList").textContent = COLS.join(", ");
+  renderAll();
+  window.addEventListener("load", function () { renderDownstream(); });
+})();
+</script>
+</body>
+</html>
