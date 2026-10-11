@@ -106,13 +106,15 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   (per-node-type one-class RGCN on behavior features over a provenance graph) but is not an exact
   reproduction.
 - Current focus: the live detection demo. A valid training run (`runs/exp01`) and the live path
-  (`src/live/`) exist; immediate steps: a first `scored` live window, the replay equivalence check,
-  and understanding the trainer (concepts 2–4).
+  (`src/live/`) exist, and the first live window is scored. Immediate steps: the subgraph-score filter
+  (SG-Det, Alg. 1 lines 20–24), wider benign training data + τ calibration, the replay equivalence
+  check, and understanding the trainer (concepts 2–4).
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
-- Order: train on own data first; run the NODLINK W10 baseline later (accepted risk: until the
-  baseline runs, a weak own-data result cannot be attributed to the converter vs the model).
+- End goal (user, 2026-10-11): demonstrate the paper's core concept live: a real attack run during the
+  demo raises a true alert while benign windows stay green. No publishing-style evaluation, metrics
+  or NODLINK baseline are required; the section 6 metrics rules apply only if numbers are ever reported.
 
 When direction or progress changes, update `docs/PROGRESS.md` (replace status lines in place; no
 history of earlier progress) and, if relevant, this section.
@@ -174,7 +176,8 @@ history of earlier progress) and, if relevant, this section.
   `src/features/paper/` (NODLINK W10), `src/pipeline/runs/<exp>/`, live sessions
   `src/live/sessions/<id>/` (raw copy + per-window CSV/JSON; gitignored). NODLINK data: `dataset/nodlink/`.
 - EDA notebooks: `src/exploration/`, `src/features/*/*.ipynb`.
-- Stale: root `README.md` and `src/README.md` describe an unrelated network-IDS lab; do not trust them.
+- Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
+  `src/` and the new-member start path.
 
 ## 10. Known deviations
 
