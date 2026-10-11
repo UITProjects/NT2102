@@ -8,7 +8,7 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
   8 windows over 20 min); every node is copied per window (`w0007_` prefix).
 - Why: the live demo needs bounded, incremental scoring.
 - Impact: nodes whose behaviour spans windows are seen in fragments; idle-time stats are capped by
-  the window length (train max idle = 290 s, `src/features/self-dataset/feature_scaler.json`).
+  the window length (train max idle = 290 s, `src/artifacts/features/self-dataset/feature_scaler.json`).
 - Limits: no claim about whole-log detection quality.
 
 ## D2. Own scripted Windows ETW data

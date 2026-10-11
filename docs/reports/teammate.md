@@ -25,17 +25,17 @@ SilkETW: Kernel-Process / File / Network
 | where | what |
 |---|---|
 | `src/Vagrantfile`, `src/scripts/01..08-*.ps1` | Windows 10 lab VM, provisioned in order: base, tools, workload servers, collector + converter, 20-min capture, benign workload generator, train-dataset orchestrator, live shipper |
-| `src/compose.yaml` | GraphDB 10.8.0 (only needed for later Alg. 1 work, not for the demo) |
+| `src/graphdb/compose.yaml` | GraphDB 10.8.0 (only needed for later Alg. 1 work, not for the demo) |
 | `src/out/etw/experiments/<id>/` | one capture: raw ETW, converted edges, windowed edges, `windows.csv`, `experiment.json` |
 | `src/pipeline/encode_to_features.py` | 15 behaviour features per node (scaler fit on train only) |
 | `src/pipeline/train_gnn_models.py` | our OCRGCN trainer (one model per node type) |
 | `src/pipeline/score_window.py` | scores any edge CSV with the frozen model, scaler and relation list |
-| `src/pipeline/runs/exp01/` | the current valid model |
+| `src/artifacts/features/self-dataset/` | our features (`features_model.csv`) + `feature_scaler.json` (fit on train, reused live) |
+| `src/artifacts/runs/exp01/` | the current valid model |
 | `src/live/` | live demo: `etwship.py` (shipper), `engine.py`, `live_server.py` + `static/index.html`, `compare_replay.py`; run guide in `src/live/README.md` |
 | `src/atomic-attack-pack/` | 10 attack scenarios + labelling scheme (not yet run) |
-| `docs/` | `PROGRESS.md`, `DEVIATIONS.md`, these reports |
-
-The root `README.md` and `src/README.md` describe an unrelated older lab. Ignore them.
+| `src/notebooks/01..05-*/` | EDA notebooks, numbered in reading order |
+| `docs/` | `PROGRESS.md`, `DEVIATIONS.md`, these reports, `explainers/` |
 
 ## 3. How to run
 
@@ -56,14 +56,14 @@ VM at 10.21.2.10). Keep **3D acceleration off**: with it on, the NVIDIA driver c
 
 **Train data → model** (already done for experiment `20261009T145632Z`):
 1. VM: `07-build-train-dataset.ps1` (20-min capture with `06-benign-workload.ps1`, convert, window, check).
-2. Host: `encode_to_features.py` → `src/features/self-dataset/`.
-3. Host: `train_gnn_models.py` → `src/pipeline/runs/<exp>/`.
+2. Host: `encode_to_features.py` → `src/artifacts/features/self-dataset/`.
+3. Host: `train_gnn_models.py` → `src/artifacts/runs/<exp>/`.
 
 **Live demo:**
 ```
 # host
-uv run python src/live/live_server.py --bind 10.21.2.1 --run-dir src/pipeline/runs/exp01 \
-  --scaler src/features/self-dataset/feature_scaler.json \
+uv run python src/live/live_server.py --bind 10.21.2.1 --run-dir src/artifacts/runs/exp01 \
+  --scaler src/artifacts/features/self-dataset/feature_scaler.json \
   --experiment src/out/etw/experiments/20261009T145632Z/experiment.json
 # VM, elevated PowerShell, two windows
 C:\scripts\08-live-shipper.ps1        # capture + ship to the host

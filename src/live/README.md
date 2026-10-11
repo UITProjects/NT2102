@@ -33,15 +33,16 @@ uv run python src/live/sync_ps1.py --check
 
 ## 2. Prerequisite: a valid model
 
-`runs/exp01` is invalid (docs/PROGRESS.md). Train `runs/exp02` as described in PROGRESS "Next 3 steps" #1.
+Use `src/artifacts/runs/exp01`, the current valid run (docs/PROGRESS.md). A retrained run on wider benign
+data (PROGRESS "Next 3 steps" #2) goes next to it as `src/artifacts/runs/exp02`.
 The server refuses a run whose `runs_summary.csv` shows `emb_std ≈ 0`.
 
 ## 3. Offline scorer reproduces the training scores
 
 ```
-uv run python src/pipeline/score_window.py --run-dir src/pipeline/runs/exp02 \
+uv run python src/pipeline/score_window.py --run-dir src/artifacts/runs/exp01 \
   --edges src/out/etw/experiments/20261009T145632Z/SimulatedW10_train_edges.csv \
-  --scaler src/features/self-dataset/feature_scaler.json
+  --scaler src/artifacts/features/self-dataset/feature_scaler.json
 ```
 Expect a flag rate per type ≈ `train_flag_rate` in runs_summary.csv. The scores should equal train_scores.csv.
 
@@ -49,8 +50,8 @@ Expect a flag rate per type ≈ `train_flag_rate` in runs_summary.csv. The score
 
 ```
 # terminal 1: grid aligned to training window w0000 (start_ms from windows.csv), stride 2 like training
-uv run python src/live/live_server.py --bind 127.0.0.1 --run-dir src/pipeline/runs/exp02 \
-  --scaler src/features/self-dataset/feature_scaler.json \
+uv run python src/live/live_server.py --bind 127.0.0.1 --run-dir src/artifacts/runs/exp01 \
+  --scaler src/artifacts/features/self-dataset/feature_scaler.json \
   --experiment src/out/etw/experiments/20261009T145632Z/experiment.json \
   --stride-min 2 --origin-ms 1791557793343
 # terminal 2 (20 min of capture at 60x ≈ 30 s)
@@ -59,8 +60,8 @@ uv run python src/live/etwship.py --server http://127.0.0.1:8000 \
 # then
 uv run python src/live/compare_replay.py --session src/live/sessions/replay-x-20261009T145632Z \
   --experiment src/out/etw/experiments/20261009T145632Z \
-  --features src/features/self-dataset/features_model.csv \
-  --train-scores src/pipeline/runs/exp02/train_scores.csv
+  --features src/artifacts/features/self-dataset/features_model.csv \
+  --train-scores src/artifacts/runs/exp01/train_scores.csv
 ```
 Open http://127.0.0.1:8000 during the replay to watch it. Expect `ALL MATCH`. The dos-map is inferred from
 the raw paths (`\device\harddiskvolume4` → `c:` on this VM).
@@ -69,8 +70,8 @@ the raw paths (`\device\harddiskvolume4` → `c:` on this VM).
 
 Host:
 ```
-uv run python src/live/live_server.py --bind 10.21.2.1 --run-dir src/pipeline/runs/exp02 \
-  --scaler src/features/self-dataset/feature_scaler.json \
+uv run python src/live/live_server.py --bind 10.21.2.1 --run-dir src/artifacts/runs/exp01 \
+  --scaler src/artifacts/features/self-dataset/feature_scaler.json \
   --experiment src/out/etw/experiments/20261009T145632Z/experiment.json
 # only if ufw is active (find the interface with: ip -br addr | grep 10.21.2.1)
 sudo ufw allow in on vboxnet0 to 10.21.2.1 port 8000 proto tcp

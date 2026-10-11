@@ -10,8 +10,8 @@ live_server.py - HTTP layer around engine.Engine: ingest from the VM shipper, JS
     GET  /                    the UI (static/index.html)
 
 Usage (from the repo root)
-    uv run python src/live/live_server.py --run-dir src/pipeline/runs/exp02 \
-        --scaler src/features/self-dataset/feature_scaler.json \
+    uv run python src/live/live_server.py --run-dir src/artifacts/runs/exp01 \
+        --scaler src/artifacts/features/self-dataset/feature_scaler.json \
         --experiment src/out/etw/experiments/20261009T145632Z/experiment.json --bind 10.21.2.1
 """
 from __future__ import annotations

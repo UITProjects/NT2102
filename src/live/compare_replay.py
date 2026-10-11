@@ -12,8 +12,8 @@ Usage (repo root)
     uv run python src/live/compare_replay.py \
         --session src/live/sessions/replay-x-20261009T145632Z \
         --experiment src/out/etw/experiments/20261009T145632Z \
-        --features src/features/self-dataset/features_model.csv \
-        --train-scores src/pipeline/runs/exp02/train_scores.csv
+        --features src/artifacts/features/self-dataset/features_model.csv \
+        --train-scores src/artifacts/runs/exp01/train_scores.csv
 """
 import argparse
 import os

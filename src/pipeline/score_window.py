@@ -13,10 +13,12 @@ Both the scaler and the relation list MUST come from training: a refit scaler wo
 differently, and a re-derived relation list could give "process|write|file" a different id, i.e. a
 different learned matrix W_r.
 
-Usage
-    python score_window.py --selftest
-    python score_window.py --run-dir runs/exp02 --edges SimulatedW10_train_edges.csv \
-        --scaler ../features/self-dataset/feature_scaler.json --out runs/exp02/rescored.csv
+Usage (from the repo root)
+    uv run python src/pipeline/score_window.py --selftest
+    uv run python src/pipeline/score_window.py --run-dir src/artifacts/runs/exp01 \
+        --edges src/out/etw/experiments/<id>/SimulatedW10_train_edges.csv \
+        --scaler src/artifacts/features/self-dataset/feature_scaler.json \
+        --out src/artifacts/runs/exp01/rescored.csv
 """
 from __future__ import annotations
 

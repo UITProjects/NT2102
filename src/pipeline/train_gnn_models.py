@@ -20,10 +20,12 @@ Tags in comments
                 fork (train_gnn_models.py l.13), which is not in the project files.
                 Loss/threshold logic follows upstream PyGOD OCGNN as I know it.
 
-Usage
-    python train_gnn_models.py --selftest
-    python train_gnn_models.py --edges SimulatedW10_train_edges.csv \
-        --features features_model.csv --scaler feature_scaler.json --out-dir runs/exp01
+Usage (from the repo root)
+    uv run python src/pipeline/train_gnn_models.py --selftest
+    uv run python src/pipeline/train_gnn_models.py \
+        --edges src/out/etw/experiments/<id>/SimulatedW10_train_edges.csv \
+        --features src/artifacts/features/self-dataset/features_model.csv \
+        --scaler src/artifacts/features/self-dataset/feature_scaler.json --out-dir src/artifacts/runs/exp01
 """
 from __future__ import annotations
 
@@ -386,7 +388,8 @@ def parse_args(argv=None):
     p.add_argument("--edges", help="pooled SimulatedW10_train_edges.csv")
     p.add_argument("--features", help="features_model.csv from encodeToFeatures.py")
     p.add_argument("--scaler", default=None, help="feature_scaler.json (fixes feature column order)")
-    p.add_argument("--out-dir", default="runs/ocrgcn")
+    p.add_argument("--out-dir", default=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                     "..", "artifacts", "runs", "ocrgcn"))
     # split
     p.add_argument("--val-split", choices=["window", "random"], default="window")
     p.add_argument("--window-sep", default="_", help="node_uuid = <window><sep><id>")

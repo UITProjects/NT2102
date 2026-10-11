@@ -11,17 +11,17 @@ trainer (concepts 2 GCN, 3 RGCN, 4 one-class).
 
 ## Done
 
-- GraphDB environment: `src/compose.yaml` (GraphDB 10.8.0, security on, `nt2102-net` 10.21.3.0/24).
+- GraphDB environment: `src/graphdb/compose.yaml` (GraphDB 10.8.0, security on, `nt2102-net` 10.21.3.0/24).
 - Windows 10 ETW lab VM + collector + converter, end to end: `src/scripts/01..07*.ps1`.
 - Benign train dataset, experiment `20261009T145632Z` (verified, `src/out/etw/experiments/20261009T145632Z/`):
   20-min capture, workload seed 42, launch mode explorer-com; 8 windows (5 min / 2 min stride);
   37,294 edges in → 68,319 windowed edges (484 outside any window); 6,810 node-window copies
   (995 PROCESS / 2,558 FILE / 3,257 NET); `check.json` ok, all 6 edge types non-zero
   (Recv 27,503 · Load 24,831 · Send 13,900 · Write 954 · Start 645 · Read 486).
-- Behavior features for that dataset: `src/features/self-dataset/` (15 features, scaler fit on train).
-- Behavior features for NODLINK SimulatedW10: `src/features/paper/` (from `dataset/nodlink/SimulatedW10/`).
+- Behavior features for that dataset: `src/artifacts/features/self-dataset/` (15 features, scaler fit on train).
+- Behavior features for NODLINK SimulatedW10: `src/artifacts/features/paper/` (from `dataset/nodlink/SimulatedW10/`).
 - Trainer code with selftest: `src/pipeline/train_gnn_models.py`.
-- Valid OCRGCN training run `src/pipeline/runs/exp01` (verified; rerun 2026-10-11 on the matching
+- Valid OCRGCN training run `src/artifacts/runs/exp01` (verified; rerun 2026-10-11 on the matching
   experiment edges + features): no missing feature rows; split 5 train / 2 purged (w0005, w0006) /
   1 val (w0007); emb_std 0.05–0.19 for every type and seed; thresholds differ across seeds;
   train_flag_rate ≈ contamination (process 0.0017 = 1/575). Model saved from run 0 (seed 360).
@@ -78,14 +78,11 @@ Model:
   `06-benign-workload.ps1` for benign live tests.
 
 Environment:
-- `src/compose.yaml`: GraphDB heap `-Xmx8g` exceeds the container `mem_limit` 4g (latent; use ≤ 3g).
+- `src/graphdb/compose.yaml`: GraphDB heap `-Xmx8g` exceeds the container `mem_limit` 4g (latent; use ≤ 3g).
 
 Repo hygiene:
 - `.gitmodules` still declares submodule `dataset/Simulated-Data` (PKU-ASAL), but `/dataset/` is
   gitignored and the data sits in `original-dataset/Simulated-Data`; fix or drop the entry.
-- `src/virtualbox-setup.sh` is a byte-identical copy of `src/setup-virtualbox.sh`; notebook
-  `src/exploration/paper/window12-benign-dataset-exploration.ipynbwindow12-anomoly-dataset-exploration.ipynb`
-  has a broken name. Remove / rename after confirming.
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
@@ -101,7 +98,7 @@ Repo hygiene:
      the UI; `windows.csv` gains `subgraphs_alert`; selftest case 18 × 0.322 → minor; update DEVIATIONS D8.
    - Accept: benign windows (with `06`) raise no ≥ moderate subgraph; the updater window becomes minor.
 2. Widen benign training and calibrate τ: 2–3 benign captures at different times (trigger background
-   tasks such as the Google updater and a Defender scan), retrain `runs/exp02`, set τ from a held-out
+   tasks such as the Google updater and a Defender scan), retrain into `src/artifacts/runs/exp02`, set τ from a held-out
    benign session; report flagged nodes per window, mean ± std over ~10 benign windows.
 3. Replay equivalence without the VM (`src/live/README.md` step 4, `--stride-min 2 --origin-ms
    1791557793343`); `compare_replay.py` must print `ALL MATCH`. After that, the end goal: run an Atomic

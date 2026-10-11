@@ -122,7 +122,7 @@ history of earlier progress) and, if relevant, this section.
 ## 9. Decisions already made (with rationale)
 
 - Environment: Docker Compose on a single host, not Kubernetes, as the reference environment
-  (`src/compose.yaml`). GraphDB 10.8.0 runs there with persistent volumes and security enabled, on
+  (`src/graphdb/compose.yaml`). GraphDB 10.8.0 runs there with persistent volumes and security enabled, on
   `nt2102-net` 10.21.3.0/24 (moved so it no longer overlaps the lab VM's host-only network).
   Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers yet.
 - Live demo transport: the VM ships raw SilkETW lines over HTTP to the host at 10.21.2.1:8000 (host
@@ -172,10 +172,11 @@ history of earlier progress) and, if relevant, this section.
   reorder, windows, scoring thread, Alg.1-lite); `etwship.py --replay` + `compare_replay.py` check the
   live path against the offline pipeline. Run guide: `src/live/README.md`.
 - Artefacts: `src/out/etw/experiments/<id>/` (raw, converted, windowed edges, `windows.csv`,
-  `experiment.json`, `check.json`, benign ledger in `labels/`), `src/features/self-dataset/` and
-  `src/features/paper/` (NODLINK W10), `src/pipeline/runs/<exp>/`, live sessions
+  `experiment.json`, `check.json`, benign ledger in `labels/`), `src/artifacts/features/self-dataset/` and
+  `src/artifacts/features/paper/` (NODLINK W10), `src/artifacts/runs/<exp>/`, live sessions
   `src/live/sessions/<id>/` (raw copy + per-window CSV/JSON; gitignored). NODLINK data: `dataset/nodlink/`.
-- EDA notebooks: `src/exploration/`, `src/features/*/*.ipynb`.
+- EDA notebooks: `src/notebooks/01-silketw-raw` … `05-features-paper` (numbered in reading order).
+- GraphDB: `src/graphdb/compose.yaml`. Explainer page (edges → features): `docs/explainers/`.
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.
 

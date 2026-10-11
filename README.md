@@ -44,8 +44,8 @@ Then follow **[src/README.md → Start here](src/README.md#start-here-new-member
 
 | path | what it is |
 |---|---|
-| `src/` | everything that runs: lab VM (Vagrant + PowerShell), host pipeline, live demo. Map in `src/README.md` |
-| `docs/` | `PROGRESS.md` (status), `DEVIATIONS.md` (differences from the paper), `reports/` (professor brief, teammate guide) |
+| `src/` | lab VM (Vagrant + PowerShell), host pipeline, live demo, trained artifacts, notebooks. Map in `src/README.md` |
+| `docs/` | `PROGRESS.md` (status), `DEVIATIONS.md` (differences from the paper), `reports/` (professor brief, teammate guide), `explainers/` (edges → node features page) |
 | `OCR-APT/` | git submodule: the authors' code ([CoDS-GCS/OCR-APT](https://github.com/CoDS-GCS/OCR-APT)) and the paper PDF |
 | `ocrapt-live-windows.html` | design mock of the live demo UI |
 | `pyproject.toml`, `uv.lock` | Python dependencies, managed with [uv](https://docs.astral.sh/uv/) |
@@ -67,7 +67,7 @@ Then follow **[src/README.md → Start here](src/README.md#start-here-new-member
 - Linux host with [uv](https://docs.astral.sh/uv/) (Python ≥ 3.12).
 - For the lab VM: VirtualBox + Vagrant, about 8 GB free RAM for the VM. Run `src/setup-virtualbox.sh`
   once to allow the 10.21.2.0/24 host-only network, then `cd src && vagrant up`.
-- Docker only for GraphDB (`src/compose.yaml`), which the live demo does not need.
+- Docker only for GraphDB (`src/graphdb/compose.yaml`), which the live demo does not need.
 
 ## Safety
 

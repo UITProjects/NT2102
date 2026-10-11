@@ -10,7 +10,7 @@ Output  features_raw.csv     human-readable: raw counts + idle gaps in float sec
         features_model.csv   what the GNN would see: L2-normalised actions + min-max idle stats  (15 features)
         feature_scaler.json  column order + min/max fitted on THIS file (reuse for test/live windows)
 
-Usage   python encode_to_features.py --edges SimulatedW10_train_edges.csv --out-dir features/
+Usage   python encode_to_features.py --edges SimulatedW10_train_edges.csv --out-dir src/artifacts/features/self-dataset/
         python encode_to_features.py --selftest          # hand-computed toy graph, must print "SELFTEST OK"
 """
 import argparse
