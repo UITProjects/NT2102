@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OCR-APT live</title>
+<!-- Cytoscape draws the alert subgraph. If the host has no internet, download this file into
+     src/live/static/ and point src at it (the server would then also need a static mount). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<style>
+:root{
+  --paper:#F2F4F6; --surface:#FFFFFF; --ink:#1B2230; --muted:#5E6878; --line:#C9D0DA;
+  --win:#2F6DB0; --win-soft:rgba(47,109,176,.14);
+  --anom:#C0392F; --anom-soft:rgba(192,57,47,.12);
+  --ok:#2E7D5B; --ok-soft:rgba(46,125,91,.12);
+  --warn:#B9790A;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"IBM Plex Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#141922; --surface:#1C2330; --ink:#E5E9EF; --muted:#9AA5B5; --line:#344052;
+    --win:#6FA3DD; --win-soft:rgba(111,163,221,.18);
+    --anom:#E26A5F; --anom-soft:rgba(226,106,95,.16);
+    --ok:#5DBB8E; --ok-soft:rgba(93,187,142,.14);
+    --warn:#E0A63A; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 14px/1.45 var(--sans)}
+.wrap{max-width:1400px;margin:0 auto;padding:16px}
+h1{font-size:1.25rem;margin:0}
+h2{font-size:1rem;margin:0 0 8px}
+.mono{font-family:var(--mono);font-size:.9em}
+.muted{color:var(--muted)}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--line);display:inline-block}
+.dot.on{background:var(--ok)} .dot.stale{background:var(--warn)} .dot.off{background:var(--anom)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.tile .k{font-size:.75rem;color:var(--muted)} .tile .v{font:500 1rem var(--mono)}
+.tile.bad{border-color:var(--anom)} .tile.bad .v{color:var(--anom)}
+.tile.warn{border-color:var(--warn)}
+/* timeline */
+.timeline{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.win{flex:0 0 112px;border:1.5px solid var(--line);border-radius:6px;padding:6px 8px;cursor:pointer;
+     position:relative;overflow:hidden;background:var(--surface)}
+.win .t{font:500 .8rem var(--mono)} .win .s{font-size:.75rem;color:var(--muted)}
+.win.scored{border-color:var(--ok);background:var(--ok-soft)}
+.win.alert{border-color:var(--anom);background:var(--anom-soft)}
+.win.alert .s{color:var(--anom);font-weight:600}
+.win.partial,.win.empty{border-style:dashed;opacity:.7}
+.win.error{border-color:var(--warn)}
+.win.open{border-color:var(--win);border-style:dashed}
+.win.open .fill{position:absolute;left:0;top:0;bottom:0;background:var(--win-soft);z-index:0}
+.win > *{position:relative;z-index:1}
+.win.sel{box-shadow:0 0 0 2px var(--ink)}
+/* detail */
+.grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+#cy{height:440px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+.sgnav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.sgnav button{font:500 .8rem var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);
+              border-radius:6px;padding:4px 8px;cursor:pointer}
+.sgnav button.on{border-color:var(--anom);color:var(--anom)}
+.alertcard{font:400 .82rem/1.55 var(--mono);border:1px solid var(--anom);border-radius:8px;padding:10px 12px;
+           max-height:440px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.alertcard b{font-family:var(--sans);color:var(--anom)}
+.tables{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:1100px){.tables{grid-template-columns:1fr}}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.8rem}
+th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+td.attr{font-family:var(--mono);word-break:break-all}
+tr.flag td{color:var(--anom);font-weight:600}
+.legend span{margin-right:12px}
+.note{font-size:.8rem;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>OCR-APT live</h1>
+    <span><span class="dot" id="conn"></span> <span id="connTxt" class="muted">connecting…</span></span>
+    <span class="mono muted" id="sessionTxt"></span>
+    <span class="mono muted" id="modelTxt"></span>
+  </header>
+
+  <section class="panel">
+    <h2>Shipper and pipeline</h2>
+    <div class="tiles" id="tiles"></div>
+    <div class="note" id="tauTxt"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Windows <span class="muted" id="winParams"></span></h2>
+    <div class="timeline" id="timeline"></div>
+    <div class="note legend">
+      <span>green: scored, nothing above τ</span><span style="color:var(--anom)">red: ≥ 1 node above τ</span>
+      <span>dashed: partial / empty (not scored)</span><span style="color:var(--win)">blue: open window filling up</span>
+      · times are your browser's local time
+    </div>
+  </section>
+
+  <section class="panel" id="detail" hidden>
+    <h2 id="dTitle"></h2>
+    <div class="tiles" id="dTiles" style="margin-bottom:12px"></div>
+    <div class="grid">
+      <div>
+        <div class="sgnav" id="sgnav"></div>
+        <div id="cy"></div>
+        <div class="note">circle = process · square = file · diamond = socket · red ring = score above τ of its type ·
+          blue dashed = bridge (normal node linking ≥ 2 anomalous nodes, simplified Alg. 1, no subgraph-score filter)</div>
+      </div>
+      <div class="alertcard" id="alertcard"></div>
+    </div>
+    <h2 style="margin-top:14px">Top nodes per type <span class="muted">(margin = score − τ; positive = outside the hypersphere's normal region)</span></h2>
+    <div class="tables" id="tables"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const hm = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  const hms = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  const num = (v, d=3) => v == null ? "–" : Number(v).toFixed(d);
+  const base = p => String(p || "").split(/[\\/]/).pop() || p;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  let windows = new Map();       // wid -> summary
+  let status = null, selected = null, pinned = false, cy = null, detail = null, sgIdx = 0;
+
+  // ------------------------------------------------------------- status tiles
+  function renderStatus() {
+    const s = status?.session;
+    $("modelTxt").textContent = status ? "model " + base(status.model.run_dir) + " · converter " + status.model.converter_check : "";
+    const p = status?.params;
+    if (p) $("winParams").textContent = `w = ${p.window_min} min, s = ${p.stride_min} min, lateness ${p.lateness_s} s`;
+    if (status) $("tauTxt").textContent = "τ per type: " + Object.entries(status.model.tau).map(([k,v]) => `${k} ${num(v,5)}`).join(" · ");
+    if (!s) { $("tiles").innerHTML = '<div class="muted">waiting for the shipper…</div>'; return; }
+    $("sessionTxt").textContent = `session ${s.id} (${s.mode}${s.host ? ", " + s.host : ""})`;
+    const ago = s.last_seen_s_ago;
+    $("conn").className = "dot " + (ago == null ? "" : ago < 5 ? "on" : ago < 30 ? "stale" : "off");
+    $("connTxt").textContent = ago == null ? "no data" : `shipper seen ${ago}s ago`;
+    const excl = Object.values(s.excluded || {}).reduce((a,b) => a+b, 0);
+    const unres = Object.values(s.unresolved || {}).reduce((a,b) => a+b, 0);
+    const edges = Object.values(s.edges || {}).reduce((a,b) => a+b, 0);
+    const lag = s.event_lag_s;
+    const tiles = [
+      ["lines / s", s.lines_per_s],
+      ["lines total", Object.values(s.lines_total).reduce((a,b)=>a+b,0).toLocaleString()],
+      ["edges built", edges.toLocaleString()],
+      ["VM clock", s.clock_ms ? hms(s.clock_ms) : "–"],
+      ["event lag (VM clock − newest event)", lag == null ? "–" : lag + " s", lag != null && Math.abs(lag) > 600 ? "bad" : ""],
+      ["clock skew (host − VM)", s.clock_skew_s == null ? "–" : s.clock_skew_s + " s", s.clock_skew_s != null && Math.abs(s.clock_skew_s) > 60 ? "warn" : ""],
+      ["late events dropped", s.late_dropped, s.late_dropped ? "warn" : ""],
+      ["bad lines", s.bad_lines, s.bad_lines ? "warn" : ""],
+      ["excluded edges (shipper, collector)", excl],
+      ["unresolved lookups", unres],
+      ["reorder buffer", s.heap],
+      ["scoring queue", s.scoring_queue, s.scoring_queue > 1 ? "warn" : ""],
+    ];
+    $("tiles").innerHTML = tiles.map(([k,v,c]) => `<div class="tile ${c||""}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
+    renderTimeline();
+  }
+
+  // ------------------------------------------------------------- timeline
+  function renderTimeline() {
+    const list = [...windows.values()].sort((a,b) => a.start_ms - b.start_ms).slice(-24);
+    let html = list.map(w => {
+      const cls = w.status === "scored" ? (w.alert ? "alert" : "scored") : w.status;
+      const sub = w.status === "scored" ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs} sg` : `${w.nodes} nodes`)
+                : w.status === "scoring" ? "scoring…" : w.status;
+      return `<div class="win ${cls} ${w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
+        <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div></div>`;
+    }).join("");
+    const ow = status?.session?.open_window, wm = status?.session?.watermark_ms;
+    if (ow) {
+      const pct = wm ? Math.max(0, Math.min(100, (wm - ow.start_ms) / (ow.end_ms - ow.start_ms) * 100)) : 0;
+      html += `<div class="win open"><div class="fill" style="width:${pct}%"></div>
+        <div class="t">${hm(ow.start_ms)}–${hm(ow.end_ms)}</div><div class="s">open · ${pct.toFixed(0)}%</div></div>`;
+    }
+    $("timeline").innerHTML = html || '<div class="muted">no window closed yet</div>';
+    $("timeline").scrollLeft = $("timeline").scrollWidth;
+  }
+  $("timeline").addEventListener("click", e => {
+    const el = e.target.closest("[data-w]");
+    if (!el) return;
+    selected = el.dataset.w; pinned = true; loadDetail();
+  });
+
+  // ------------------------------------------------------------- detail
+  async function loadDetail() {
+    renderTimeline();
+    if (!selected) return;
+    const r = await fetch("api/windows/" + encodeURIComponent(selected));
+    if (!r.ok) return;
+    detail = await r.json(); sgIdx = 0;
+    renderDetail();
+  }
+
+  function renderDetail() {
+    const w = detail.window;
+    $("detail").hidden = false;
+    $("dTitle").textContent = `Window ${hms(w.start_ms)} – ${hms(w.end_ms)}  (${w.status}${w.alert ? ", ALERT" : ""})`;
+    const by = (o) => Object.entries(o || {}).map(([k,v]) => `${k} ${v}`).join(" · ") || "–";
+    $("dTiles").innerHTML = [
+      ["edges", w.edges], ["edges by type", by(w.edges_by_type)], ["nodes by type", by(w.nodes_by_type)],
+      ["above τ by type", by(w.flagged_by_type)], ["subgraphs", w.subgraphs ?? 0],
+      ["scoring time", w.scoring_ms != null ? w.scoring_ms + " ms" : "–"],
+      ["edges dropped (relation unseen in training)", w.edges_dropped_relation ?? 0],
+    ].map(([k,v]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v" style="font-size:.85rem">${esc(v)}</div></div>`).join("")
+      + (w.error ? `<div class="tile bad"><div class="k">error</div><div class="v">${esc(w.error)}</div></div>` : "");
+
+    const sgs = detail.subgraphs || [];
+    $("sgnav").innerHTML = sgs.length
+      ? sgs.map((g,i) => `<button class="${i===sgIdx?"on":""}" data-i="${i}">#${i+1}: ${g.n_anomalous} anom + ${g.n_bridges} bridge</button>`).join("")
+        + (detail.subgraphs_total > sgs.length ? `<span class="muted">showing ${sgs.length} of ${detail.subgraphs_total}</span>` : "")
+        + (detail.truncated ? '<span style="color:var(--warn)">too many flagged nodes: truncated (model problem?)</span>' : "")
+      : '<span class="muted">no node above τ in this window, so no subgraph</span>';
+    drawSubgraph(sgs[sgIdx]);
+    renderAlert(w, sgs[sgIdx]);
+    renderTables();
+  }
+  $("sgnav").addEventListener("click", e => {
+    const b = e.target.closest("button[data-i]");
+    if (!b) return;
+    sgIdx = +b.dataset.i; renderDetail();
+  });
+
+  function drawSubgraph(g) {
+    if (cy) { cy.destroy(); cy = null; }
+    if (!g || typeof cytoscape === "undefined") {
+      $("cy").innerHTML = typeof cytoscape === "undefined" && g ? '<p class="muted" style="padding:12px">cytoscape.js did not load (no internet?). The alert card on the right has the same content.</p>' : "";
+      return;
+    }
+    $("cy").innerHTML = "";
+    const shape = {process: "ellipse", file: "round-rectangle", net: "diamond"};
+    const els = g.nodes.map(n => ({data: {id: n.id, label: base(n.attr) || n.id, shape: shape[n.type] || "ellipse",
+                                          role: n.role, tip: `${n.type} ${n.attr}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}`}}))
+      .concat(g.edges.map((e,i) => ({data: {id: "e"+i, source: e.src, target: e.dst,
+                                            label: e.type + (e.count > 1 ? " ×" + e.count : "")}})));
+    cy = cytoscape({
+      container: $("cy"), elements: els, wheelSensitivity: .2,
+      layout: {name: g.nodes.length > 2 ? "cose" : "grid", animate: false, padding: 30},
+      style: [
+        {selector: "node", style: {"shape": "data(shape)", "background-color": css("--surface"), "border-width": 1.5,
+          "border-color": css("--ink"), "label": "data(label)", "color": css("--ink"), "font-size": 10,
+          "text-valign": "bottom", "text-margin-y": 4, "width": 26, "height": 26}},
+        {selector: "node[role = 'anomalous']", style: {"border-width": 4, "border-color": css("--anom")}},
+        {selector: "node[role = 'bridge']", style: {"border-width": 2.5, "border-style": "dashed", "border-color": css("--win")}},
+        {selector: "edge", style: {"width": 1.4, "line-color": css("--muted"), "target-arrow-color": css("--muted"),
+          "target-arrow-shape": "triangle", "curve-style": "bezier", "label": "data(label)", "font-size": 9,
+          "color": css("--muted"), "text-rotation": "autorotate", "text-background-color": css("--paper"),
+          "text-background-opacity": 1}},
+      ],
+    });
+    // click a node: prepend its type, full attr, score and τ to the alert card
+    cy.on("tap", "node", ev => $("alertcard").insertAdjacentHTML("afterbegin", `<div>${esc(ev.target.data("tip"))}</div><hr>`));
+  }
+
+  function renderAlert(w, g) {
+    if (!g) { $("alertcard").innerHTML = '<span class="muted">no alert</span>'; return; }
+    const lab = Object.fromEntries(g.nodes.map(n => [n.id, base(n.attr) || n.id]));
+    const lines = g.edges.map(e => `${hms(e.first_ms)}${e.last_ms !== e.first_ms ? "–" + hms(e.last_ms) : ""}  ${esc(lab[e.src])} → ${esc(lab[e.dst])} (${esc(e.type)}${e.count > 1 ? " ×" + e.count : ""})`);
+    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(n.attr)}  score ${num(n.score,4)} τ ${num(n.tau,4)}`);
+    $("alertcard").innerHTML = `<b>Alert, window ${hms(w.start_ms)}–${hms(w.end_ms)}, subgraph #${sgIdx+1}</b>\n\n`
+      + (lines.length ? lines.join("\n") : "(single anomalous node, no edge to another anomaly)") + "\n\n" + nodes.join("\n");
+  }
+
+  function renderTables() {
+    const top = detail.top || {};
+    $("tables").innerHTML = Object.keys(top).sort().map(t => `<div class="tbl"><h2>${esc(t)}</h2><table>
+      <tr><th>attr</th><th>score</th><th>margin</th></tr>
+      ${top[t].map(r => `<tr class="${r.flagged ? "flag" : ""}"><td class="attr" title="${esc(r.id)}">${esc(r.attr)}</td>
+        <td class="num">${num(r.score,4)}</td><td class="num">${num(r.margin,4)}</td></tr>`).join("")}
+    </table></div>`).join("") || '<span class="muted">window not scored</span>';
+  }
+
+  // ------------------------------------------------------------- live updates
+  async function init() {
+    try {
+      for (const w of await (await fetch("api/windows")).json()) windows.set(w.window, w);
+      status = await (await fetch("api/status")).json();
+    } catch (e) {}
+    renderStatus();
+    const es = new EventSource("api/stream");
+    es.addEventListener("status", e => { status = JSON.parse(e.data); renderStatus(); });
+    es.addEventListener("session", () => { windows.clear(); selected = null; pinned = false; $("detail").hidden = true; });
+    es.addEventListener("window", e => {
+      const w = JSON.parse(e.data).window;
+      windows.set(w.window, w);
+      // follow the newest scored window unless the user clicked one
+      if (!pinned && w.status === "scored") selected = w.window;
+      if (w.window === selected && (w.status === "scored" || w.status === "error")) loadDetail();
+      else renderTimeline();
+    });
+    es.onerror = () => { $("conn").className = "dot off"; $("connTxt").textContent = "UI lost the server, retrying…"; };
+  }
+  init();
+})();
+</script>
+</body>
+</html>

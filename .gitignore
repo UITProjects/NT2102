@@ -15,3 +15,9 @@ Thumbs.db
 dataset.tar.xz
 .idea
 /src/out/
+
+# Large local data and live session logs (raw ETW, can be GBs)
+/dataset/
+/original-dataset/
+/src/live/sessions/
+__pycache__/

@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OCR-APT live demo: one run, what gets flagged, stride and window</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false})"></script>
+<style>
+:root{
+  --paper:#F2F4F6; --surface:#FFFFFF; --ink:#1B2230; --muted:#5E6878; --line:#C9D0DA;
+  --win:#2F6DB0; --win-soft:rgba(47,109,176,.14);
+  --stride:#B9790A; --stride-soft:rgba(185,121,10,.14);
+  --anom:#C0392F; --anom-soft:rgba(192,57,47,.12);
+  --ok:#2E7D5B; --ok-soft:rgba(46,125,91,.12);
+  --serif:"IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --sans:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#141922; --surface:#1C2330; --ink:#E5E9EF; --muted:#9AA5B5; --line:#344052;
+    --win:#6FA3DD; --win-soft:rgba(111,163,221,.18);
+    --stride:#E0A63A; --stride-soft:rgba(224,166,58,.16);
+    --anom:#E26A5F; --anom-soft:rgba(226,106,95,.16);
+    --ok:#5DBB8E; --ok-soft:rgba(93,187,142,.14);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141922; --surface:#1C2330; --ink:#E5E9EF; --muted:#9AA5B5; --line:#344052;
+  --win:#6FA3DD; --win-soft:rgba(111,163,221,.18);
+  --stride:#E0A63A; --stride-soft:rgba(224,166,58,.16);
+  --anom:#E26A5F; --anom-soft:rgba(226,106,95,.16);
+  --ok:#5DBB8E; --ok-soft:rgba(93,187,142,.14);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{height:100%;margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+img,svg{max-width:100%}
+code,.mono{font-family:var(--mono);font-size:.92em}
+
+/* progress */
+.progress{position:fixed;top:env(safe-area-inset-top,0px);left:0;right:0;height:3px;background:var(--line);z-index:5}
+.progress span{display:block;height:100%;background:var(--win);transition:width .35s ease}
+
+/* deck */
+.deck{height:100%;display:flex;flex-direction:column}
+.stage{flex:1;min-height:0;overflow:auto}
+.slide{display:none;max-width:1080px;margin:0 auto;padding:40px 28px 32px}
+.slide.active{display:block}
+.part{font-size:.85rem;color:var(--muted);margin:0 0 6px}
+h1,h2{font-family:var(--serif);font-weight:600;letter-spacing:-.01em;margin:0 0 10px;line-height:1.2}
+h1{font-size:clamp(2rem,4.6vw,3.1rem);max-width:20ch}
+h2{font-size:clamp(1.5rem,3vw,2.1rem);max-width:30ch}
+.lede{color:var(--muted);max-width:66ch;margin:0 0 22px;font-size:1.05rem}
+p{max-width:68ch}
+
+/* tags */
+.tag{display:inline-block;font:500 .72rem/1 var(--sans);padding:4px 7px 3px;border-radius:4px;border:1px solid;margin-right:6px;vertical-align:2px}
+.tag.paper{color:var(--win);border-color:var(--win)}
+.tag.ours{color:var(--stride);border-color:var(--stride)}
+
+/* step reveal */
+[data-on],[data-only]{transition:opacity .4s ease, transform .4s ease}
+[data-on]:not(.shown){opacity:0;transform:translateY(6px);pointer-events:none}
+svg [data-on]:not(.shown){transform:none}
+[data-only]:not(.shown){display:none}
+.dim{opacity:.35;transition:opacity .4s}
+
+/* panels */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:0 0 16px}
+.panel h3{font:600 1rem/1.3 var(--sans);margin:0 0 6px}
+.panel p{margin:0 0 6px}
+.panel p:last-child{margin-bottom:0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.cols.wide{grid-template-columns:2.2fr 1fr;align-items:start}
+@media (max-width:760px){.cols,.cols.wide,.cols3{grid-template-columns:1fr}}
+
+/* mistake card */
+.mistake{border-left:4px solid var(--anom);background:var(--anom-soft);border-radius:0 10px 10px 0;padding:14px 18px;margin:0 0 16px}
+.mistake .who{font-weight:600;color:var(--anom);margin:0 0 4px}
+.mistake q{font-family:var(--serif);font-size:1.12rem;quotes:"\201C" "\201D"}
+.mistake.struck q{text-decoration:line-through;text-decoration-color:var(--anom);text-decoration-thickness:2px}
+.fix{border-left:4px solid var(--ok);background:var(--ok-soft);border-radius:0 10px 10px 0;padding:14px 18px;margin:0 0 16px}
+.fix p,.mistake p{margin:0 0 6px}
+.fix p:last-child,.mistake p:last-child{margin-bottom:0}
+.fix .who{font-weight:600;color:var(--ok);margin:0 0 4px}
+
+/* pipeline */
+.pipe{list-style:none;padding:0;margin:0 0 18px;display:flex;flex-wrap:wrap;gap:8px;counter-reset:st}
+.pipe li{counter-increment:st;flex:1 1 120px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:.9rem;line-height:1.3;transition:border-color .3s, background .3s, opacity .3s}
+.pipe li::before{content:counter(st);display:block;font:500 .75rem/1 var(--mono);color:var(--muted);margin-bottom:6px}
+.pipe li.focus{border-color:var(--win);background:var(--win-soft);box-shadow:0 0 0 1px var(--win)}
+.pipe li.done{opacity:.55}
+.detail{min-height:190px}
+.shape{font:500 .9rem/1.4 var(--mono);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:inline-block;margin-top:6px}
+
+/* svg */
+.fig{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin:0 0 16px;overflow-x:auto}
+.fig svg{display:block;width:100%;height:auto;min-width:560px}
+.ax{stroke:var(--muted);stroke-width:1}
+.tk{fill:var(--muted);font:400 12px var(--mono)}
+.lbl{fill:var(--ink);font:500 13px var(--sans)}
+.lbl-s{fill:var(--muted);font:400 12px var(--sans)}
+.wbox{fill:var(--win-soft);stroke:var(--win);stroke-width:1.5}
+.sbox{fill:var(--stride-soft);stroke:var(--stride);stroke-width:1.5}
+.abox{fill:var(--anom-soft);stroke:var(--anom);stroke-width:1.5}
+.cut{stroke:var(--anom);stroke-width:2;stroke-dasharray:5 4}
+.edge{stroke:var(--muted);stroke-width:1.4}
+.node{fill:var(--surface);stroke:var(--ink);stroke-width:1.5}
+.ring{fill:none;stroke:var(--anom);stroke-width:3}
+.score{font:500 12px var(--mono);fill:var(--muted)}
+.score.hot{fill:var(--anom)}
+.halo{fill:var(--anom-soft);stroke:var(--anom);stroke-width:1.5;stroke-dasharray:6 5}
+.dot{fill:var(--anom)}
+.dot-t{fill:#fff;font:600 10px var(--sans)}
+
+/* alert card */
+.alert{font:400 .9rem/1.5 var(--mono);background:var(--surface);border:1px solid var(--anom);border-radius:10px;padding:14px 16px}
+.alert b{font-family:var(--sans);color:var(--anom)}
+
+/* table */
+table{border-collapse:collapse;width:100%;font-size:.95rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
+th{font-weight:600}
+tr:last-child td{border-bottom:none}
+.tbl{overflow-x:auto;margin:0 0 16px}
+
+.ex{margin:10px 0 0;padding:8px 12px;border-left:3px solid var(--win);background:var(--win-soft);border-radius:0 6px 6px 0;font-size:.92rem;max-width:68ch}
+.ex ul{margin:2px 0 0;padding-left:18px}
+.ex li{margin:2px 0}
+ul.tight{margin:6px 0 0;padding-left:20px}
+ul.tight li{margin:3px 0}
+details{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 10px}
+summary{cursor:pointer;font-weight:500}
+details p{margin:10px 0 2px;color:var(--ink)}
+
+/* nav */
+.nav{border-top:1px solid var(--line);background:var(--surface);padding:10px 20px calc(10px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:14px}
+.nav button{font:500 .95rem var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer}
+.nav button:hover{border-color:var(--win)}
+.nav button:disabled{opacity:.4;cursor:default}
+.nav button:focus-visible,summary:focus-visible{outline:2px solid var(--win);outline-offset:2px}
+.nav .where{color:var(--muted);font-size:.9rem;margin-right:auto}
+.pips{display:flex;gap:5px}
+.pips i{width:8px;height:8px;border-radius:50%;background:var(--line);display:block;transition:background .3s}
+.pips i.on{background:var(--win)}
+.hint{color:var(--muted);font-size:.85rem}
+@media (max-width:560px){.hint{display:none}.slide{padding:26px 16px}}
+
+@media (prefers-reduced-motion: reduce){
+  *{transition:none !important}
+  [data-on]:not(.shown){transform:none}
+}
+</style>
+</head>
+<body>
+<div class="progress" aria-hidden="true"><span id="bar"></span></div>
+<div class="deck">
+<main class="stage" id="stage">
+
+<!-- 1 TITLE -->
+<section class="slide" aria-label="Title">
+  <p class="part">NT2102 team notes, OCR-APT reproduction</p>
+  <h1>Running OCR-APT live, one window at a time</h1>
+  <p class="lede">Three ideas you need before touching the live demo: what happens in one detection run, what actually gets flagged, and how window and stride decide what the model can see.</p>
+  <div class="panel">
+    <h3>How to read this</h3>
+    <p>Press <b>→</b> or <b>Space</b> to reveal the next step, <b>←</b> to go back. Each slide builds up one idea at a time, so pause on each step before moving on.</p>
+    <p><span class="tag paper">Paper</span>what the OCR-APT paper states (Aly, Mansour, Youssef, CCS 2025).<br>
+       <span class="tag ours">Ours</span>what our demo does differently, and why.</p>
+  </div>
+  <div class="panel" data-on="1">
+    <h3>Two mistakes are highlighted on the way</h3>
+    <p>Both came up when we worked through this, and both are the natural first reading. Spotting why they're wrong is most of the lesson.</p>
+  </div>
+</section>
+
+<!-- 2 CONTEXT -->
+<section class="slide" aria-label="Paper is offline, our demo is micro-batch">
+  <p class="part">Before we start</p>
+  <h2>The paper doesn't run live. Our demo does.</h2>
+  <p class="lede">Everything after this slide is about the gap between these two pictures.</p>
+  <div class="fig">
+    <svg viewBox="0 0 760 150" role="img" aria-label="Whole log scored once versus repeated window runs">
+      <text class="lbl" x="60" y="22">Paper: the whole test log is one graph, scored once</text>
+      <rect class="wbox" x="60" y="32" width="640" height="26" rx="4"/>
+      <text class="lbl-s" x="380" y="50" text-anchor="middle">entire test log → one provenance graph → one pass</text>
+      <g data-on="2">
+        <text class="lbl" x="60" y="94">Ours: every few minutes, score only the most recent minutes</text>
+        <rect class="sbox" x="60"  y="104" width="96" height="26" rx="4"/>
+        <rect class="sbox" x="170" y="104" width="96" height="26" rx="4"/>
+        <rect class="sbox" x="280" y="104" width="96" height="26" rx="4"/>
+        <rect class="sbox" x="390" y="104" width="96" height="26" rx="4"/>
+        <rect class="sbox" x="500" y="104" width="96" height="26" rx="4"/>
+        <rect class="sbox" x="610" y="104" width="90" height="26" rx="4"/>
+        <text class="lbl-s" x="108" y="122" text-anchor="middle">run</text>
+        <text class="lbl-s" x="218" y="122" text-anchor="middle">run</text>
+        <text class="lbl-s" x="328" y="122" text-anchor="middle">run</text>
+        <text class="lbl-s" x="438" y="122" text-anchor="middle">run</text>
+        <text class="lbl-s" x="548" y="122" text-anchor="middle">run</text>
+        <text class="lbl-s" x="655" y="122" text-anchor="middle">run</text>
+      </g>
+    </svg>
+  </div>
+  <div class="cols">
+    <div class="panel" data-on="1">
+      <h3><span class="tag paper">Paper</span>Offline, whole log</h3>
+      <p>Inference "processes provenance graphs containing both benign and malicious traces" (§5.1.3). Table 3 reports 59.21 s and 10.48 GB for host W10: that is one batch pass over the full test log, not a per-event latency.</p>
+    </div>
+    <div class="panel" data-on="2">
+      <h3><span class="tag ours">Ours</span>Micro-batch over windows</h3>
+      <p>The same pipeline, executed over and over on recent data. Each execution is called a <b>run</b>. This is an adaptation, so our numbers are not comparable to the paper's (data, labels and inference mode all differ).</p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 ONE RUN -->
+<section class="slide" aria-label="What happens in one run">
+  <p class="part">Part 1 of 3: one run</p>
+  <h2>What happens in one detection run</h2>
+  <p class="lede">A <b>run</b> is one pass through the seven stages below: read recent events, score them, maybe raise an alert. The demo starts a run at fixed minutes, and we name each run by the minute it starts, written $t$: "the run at 10" is the one that starts at minute 10. To keep it simple, for now: <b>a run every 5 minutes (at 5, 10, 15), each reading only the 5 minutes before it.</b> Part 3 explains why you might run more often.</p>
+  <ol class="pipe">
+    <li data-focus="1">Collect events</li>
+    <li data-focus="2">Build graph</li>
+    <li data-focus="3">Featurize</li>
+    <li data-focus="4">Score nodes</li>
+    <li data-focus="5">Threshold</li>
+    <li data-focus="6">Grow subgraphs</li>
+    <li data-focus="7">Alert</li>
+  </ol>
+  <div class="detail">
+    <div class="panel" data-only="0">
+      <h3>The whole run in one line</h3>
+      <p>Take the last $w$ minutes of audit events, turn them into a graph, score every node, keep the clearly abnormal ones, and connect them into small attack stories.</p>
+    </div>
+    <div class="panel" data-only="1">
+      <h3>1. Collect all events in $[t - w,\ t)$</h3>
+      <p>Here $w = 5$ min. "[" includes the start, ")" excludes the end.</p>
+      <div class="ex">Runs happen at minute 5, 10, 15, and each starts its window 5 minutes earlier, so start $= t - 5$:
+        <ul>
+          <li>run at $t = 5$: $[5 - 5,\ 5) = [0, 5)$, events from 00:00 up to 04:59</li>
+          <li>run at $t = 10$: $[10 - 5,\ 10) = [5, 10)$, events from 05:00 up to 09:59</li>
+        </ul>An event at exactly 05:00 is not in the first run; it belongs to $[5, 10)$.</div>
+    </div>
+    <div class="panel" data-only="2">
+      <h3>2. Build the provenance graph for this window</h3>
+      <p>Nodes are processes, files and sockets; edges are actions (start, write, connect) with timestamps. <span class="tag ours">Ours</span>Node IDs are prefixed with the window, so each window is an independent graph.</p>
+      <span class="shape">edge_index [2, E_t]   edge_type [E_t]</span>
+    </div>
+    <div class="panel" data-only="3">
+      <h3>3. Compute behavior features per node</h3>
+      <p><span class="tag paper">Paper</span>Action counts plus idle-period statistics (min, max, mean gap between actions), §5.1.2. <span class="tag ours">Ours</span>12 L2-normalised action counts and 3 min-max idle stats, scaled with the scaler frozen from training.</p>
+      <span class="shape">X_t ∈ ℝ^(N_t × 15)</span>
+    </div>
+    <div class="panel" data-only="4">
+      <h3>4. Score each node with its type's OCRGCN</h3>
+      <p><span class="tag paper">Paper</span>One model per node type (process, file, socket). Each is an RGCN, so messages flow over typed edges from all neighbor types; it learns a hypersphere around normal embeddings (§5.1). A node's score grows the further it sits outside that normal region.</p>
+      <span class="shape">scores ∈ ℝ^(N_type)   one number per node</span>
+    </div>
+    <div class="panel" data-only="5">
+      <h3>5. Keep nodes above the threshold</h3>
+      <p><span class="tag paper">Paper</span>A node is anomalous when its score exceeds the pre-computed threshold for its type (§5.1.3): $s_i > \tau_{\text{type}}$. Most nodes stay normal.</p>
+      <div class="ex">With an illustrative $\tau_{\text{process}} = 0.80$:
+        <ul>
+          <li>powershell.exe scores 0.91: $0.91 > 0.80$, anomalous</li>
+          <li>winword.exe scores 0.41: $0.41 \le 0.80$, normal</li>
+        </ul>Files and sockets have their own thresholds, because each type has its own model.</div>
+    </div>
+    <div class="panel" data-only="6">
+      <h3>6. Grow anomalous subgraphs (Alg. 1)</h3>
+      <p>A <b>hop</b> is one edge, followed in either direction. A node's <b>one-hop neighbours</b> are the nodes linked to it by a single edge.</p>
+      <div class="ex">If powershell.exe is anomalous:
+        <ul>
+          <li>winword.exe started it, so winword is one hop away</li>
+          <li>explorer.exe started winword, so explorer is two hops away (explorer → winword → powershell)</li>
+        </ul></div>
+      <p style="margin-top:10px"><span class="tag paper">Paper</span>Alg. 1 (§5.2, Fig. 3) links anomalous nodes that share an edge, adds their one-hop neighbours, keeps only the neighbours that lead to another anomalous node, then drops subgraphs with a low overall score. That last filter is where much of the precision comes from (Table 4, "Without SG-Det"). Part 2 walks through it on an example.</p>
+    </div>
+    <div class="panel" data-only="7">
+      <h3>7. Emit the subgraph as the alert</h3>
+      <p>The analyst gets a handful of nodes and edges with timestamps. Optionally, the LLM investigator (Alg. 2) turns it into a written report, but that can run asynchronously after the alert.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 4 WHAT GETS FLAGGED -->
+<section class="slide" aria-label="What gets flagged">
+  <p class="part">Part 2 of 3: what gets flagged</p>
+  <h2>Nodes get scored, subgraphs get alerted, the window never does</h2>
+  <div class="mistake" data-strike="5">
+    <p class="who">Common mistake</p>
+    <q>If something inside the 5-minute window scores as anomalous, the whole window is the alert.</q>
+  </div>
+  <div class="cols wide">
+    <div class="fig" style="margin:0">
+      <svg viewBox="0 0 760 310" role="img" aria-label="One window graph with node scores, anomalous nodes and the alerted subgraph">
+        <defs>
+          <marker id="ar5" viewBox="0 0 10 10" refX="30" refY="5" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+          </marker>
+        </defs>
+        <rect x="10" y="28" width="740" height="272" rx="12" fill="none" stroke="var(--win)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <text class="lbl" x="18" y="18" fill="var(--win)" style="fill:var(--win)">window of the run at minute 10: [5, 10)</text>
+
+        <!-- halo (step 3) -->
+        <rect class="halo" x="300" y="28" width="436" height="180" rx="24" data-on="4"/>
+
+        <!-- edges -->
+        <g marker-end="url(#ar5)">
+          <line class="edge" x1="80"  y1="160" x2="210" y2="90"  marker-end="url(#ar5)"/>
+          <line class="edge" x1="210" y1="90"  x2="350" y2="90"  marker-end="url(#ar5)"/>
+          <line class="edge" x1="350" y1="90"  x2="500" y2="62"  marker-end="url(#ar5)"/>
+          <line class="edge" x1="350" y1="90"  x2="500" y2="160" marker-end="url(#ar5)"/>
+          <line class="edge" x1="500" y1="160" x2="500" y2="62"  marker-end="url(#ar5)"/>
+          <line class="edge" x1="500" y1="160" x2="660" y2="160" marker-end="url(#ar5)"/>
+          <line class="edge" x1="80"  y1="160" x2="210" y2="240" marker-end="url(#ar5)"/>
+          <line class="edge" x1="210" y1="240" x2="360" y2="240" marker-end="url(#ar5)"/>
+          <line class="edge" x1="210" y1="240" x2="520" y2="270" marker-end="url(#ar5)"/>
+        </g>
+
+        <!-- nodes: process = circle, file = square, socket = diamond -->
+        <circle class="node" cx="80"  cy="160" r="14"/>
+        <circle class="node" cx="210" cy="90"  r="14"/>
+        <circle class="node" cx="350" cy="90"  r="14"/>
+        <rect   class="node" x="488" y="50" width="24" height="24" rx="3"/>
+        <circle class="node" cx="500" cy="160" r="14"/>
+        <polygon class="node" points="660,145 675,160 660,175 645,160"/>
+        <circle class="node" cx="210" cy="240" r="14"/>
+        <rect   class="node" x="348" y="228" width="24" height="24" rx="3"/>
+        <polygon class="node" points="520,255 535,270 520,285 505,270"/>
+
+        <g class="lbl-s">
+          <text x="80"  y="192" text-anchor="middle">explorer.exe</text>
+          <text x="210" y="122" text-anchor="middle">winword.exe</text>
+          <text x="350" y="122" text-anchor="middle">powershell.exe</text>
+          <text x="528" y="74">a.dll</text>
+          <text x="500" y="192" text-anchor="middle">rundll32.exe</text>
+          <text x="660" y="192" text-anchor="middle">203.0.113.7:443</text>
+          <text x="210" y="272" text-anchor="middle">chrome.exe</text>
+          <text x="400" y="244">cache.db</text>
+          <text x="548" y="274">142.250.x:443</text>
+        </g>
+
+        <!-- scores (step 1) -->
+        <g data-on="1">
+          <text class="score" x="98"  y="150">0.03</text>
+          <text class="score" x="228" y="80">0.41</text>
+          <text class="score hot" x="374" y="74">0.91</text>
+          <text class="score" x="524" y="40">0.62</text>
+          <text class="score hot" x="526" y="146">0.94</text>
+          <text class="score hot" x="686" y="146">0.86</text>
+          <text class="score" x="228" y="230">0.12</text>
+          <text class="score" x="378" y="222">0.05</text>
+          <text class="score" x="538" y="258">0.08</text>
+        </g>
+
+        <!-- threshold (step 2) -->
+        <g data-on="2">
+          <circle class="ring" cx="350" cy="90"  r="20"/>
+          <circle class="ring" cx="500" cy="160" r="20"/>
+          <circle class="ring" cx="660" cy="160" r="22"/>
+          <text class="lbl" x="742" y="292" text-anchor="end" style="fill:var(--anom)">τ = 0.80</text>
+        </g>
+
+        <!-- one-hop neighbours (step 3) -->
+        <g data-on="3" fill="none" stroke="var(--win)" stroke-width="2.5" stroke-dasharray="4 3">
+          <circle cx="210" cy="90" r="21"/>
+          <rect x="481" y="43" width="38" height="38" rx="6"/>
+        </g>
+
+        <!-- prune winword (step 4) -->
+        <g data-on="4" stroke="var(--anom)" stroke-width="3" stroke-linecap="round">
+          <line x1="196" y1="76" x2="224" y2="104"/>
+          <line x1="224" y1="76" x2="196" y2="104"/>
+        </g>
+      </svg>
+    </div>
+    <div>
+      <div class="panel" data-only="0">
+        <h3>Which window is this?</h3>
+        <p>Reminder: a run is one pass of the seven-stage pipeline from part 1, started at a fixed minute. Runs start at minute 5, 10, 15. The attack chain happens between 06:30 and 07:40, so it lands in the run at minute 10.</p>
+        <div class="ex">Each run looks at the 5 minutes before it:
+          <ul>
+            <li>run at 5: $[0, 5)$, ends before the chain starts</li>
+            <li>run at 10: start $= 10 - 5 = 5$, so $[5, 10)$, 05:00 up to 09:59, contains 06:30 to 07:40</li>
+          </ul></div>
+      </div>
+      <div class="panel" data-only="0">
+        <h3>One window, nine nodes</h3>
+        <p>Circles are processes, squares files, diamonds sockets. Step through to see what the model produces.</p>
+      </div>
+      <div class="panel" data-only="1">
+        <h3>1. Every node gets its own score</h3>
+        <p>OCRGCN outputs one number per node. There is no "window score".</p>
+      </div>
+      <div class="panel" data-only="2">
+        <h3>2. Three nodes cross $\tau$</h3>
+        <p>powershell (0.91), rundll32 (0.94) and the external socket (0.86). a.dll scores 0.62, below its threshold. The other six nodes are normal.</p>
+      </div>
+      <div class="panel" data-only="3">
+        <h3>3. Look one hop around them</h3>
+        <p>A hop is one edge, in either direction. Alg. 1 collects every node one edge away from an anomalous node (blue dashed).</p>
+        <div class="ex"><ul>
+          <li>powershell: winword started it, it wrote a.dll, so both are one hop away</li>
+          <li>rundll32: it loaded a.dll, so a.dll is one hop away from it too</li>
+        </ul>explorer is two hops from powershell, so it isn't considered.</div>
+      </div>
+      <div class="panel" data-only="4">
+        <h3>4. Keep only neighbours that lead to another anomaly</h3>
+        <div class="ex"><ul>
+          <li>a.dll: kept. It sits between two anomalous nodes (powershell wrote it, rundll32 loaded it), so it connects the story.</li>
+          <li>winword: dropped. Beyond powershell it only reaches explorer, which is normal: a dead end.</li>
+        </ul></div>
+        <p style="margin-top:8px"><span class="tag paper">Paper</span>Alg. 1 l.9–10, Fig. 3. Normal nodes can join the story, but only as bridges between anomalies.</p>
+      </div>
+      <div class="alert" data-on="5">
+        <b>Alert, run at 10, window [5, 10)</b><br>
+        powershell → a.dll (write)<br>
+        powershell → rundll32 (start)<br>
+        rundll32 → a.dll (load)<br>
+        rundll32 → 203.0.113.7:443<br>
+        edges between 07:10 and 07:40
+      </div>
+    </div>
+  </div>
+  <div class="fix" data-on="5" style="margin-top:16px">
+    <p class="who">Correct reading</p>
+    <p>The alert is a small subgraph: these nodes, these edges, at these times. <span class="tag paper">Paper</span>This is the point of OCR-APT versus window-level detectors such as KAIROS, which flag an entire time window and leave the analyst to search it. Context the pruning dropped (here, that Word started PowerShell) is still in the graph for the analyst or the LLM step to query.</p>
+  </div>
+</section>
+
+<!-- 5 WINDOW AND STRIDE (TUMBLING) -->
+<section class="slide" aria-label="Window and stride, both five minutes">
+  <p class="part">Part 3 of 3: stride and window</p>
+  <h2>Two knobs. So far, both were 5 minutes.</h2>
+  <p class="lede">Everything until now assumed one simple setup. Here it is, named.</p>
+  <div class="cols">
+    <div class="panel">
+      <h3>Window $w$: how far each run looks back</h3>
+      <p>So far $w = 5$. It must match the window used in training.</p>
+      <div class="ex"><ul><li>run at 10, $w = 5$: sees $[5, 10)$</li><li>run at 10, $w = 10$: would see $[0, 10)$</li></ul></div>
+    </div>
+    <div class="panel">
+      <h3>Stride $s$: how many minutes between runs</h3>
+      <p>So far $s = 5$. The window moves forward by $s$ each run.</p>
+      <div class="ex"><ul><li>$s = 5$: runs at 5, 10, 15</li><li>$s = 2$: runs at 5, 7, 9, 11</li></ul></div>
+    </div>
+  </div>
+  <div class="fig" data-on="1">
+    <svg viewBox="0 0 760 128" role="img" aria-label="Tumbling windows with a short attack placed inside one window">
+      <line class="ax" x1="50" y1="28" x2="710" y2="28"/>
+      <line class="ax" x1="50" y1="22" x2="50" y2="34"/>
+      <line class="ax" x1="94" y1="25" x2="94" y2="31"/>
+      <line class="ax" x1="138" y1="25" x2="138" y2="31"/>
+      <line class="ax" x1="182" y1="25" x2="182" y2="31"/>
+      <line class="ax" x1="226" y1="25" x2="226" y2="31"/>
+      <line class="ax" x1="270" y1="22" x2="270" y2="34"/>
+      <line class="ax" x1="314" y1="25" x2="314" y2="31"/>
+      <line class="ax" x1="358" y1="25" x2="358" y2="31"/>
+      <line class="ax" x1="402" y1="25" x2="402" y2="31"/>
+      <line class="ax" x1="446" y1="25" x2="446" y2="31"/>
+      <line class="ax" x1="490" y1="22" x2="490" y2="34"/>
+      <line class="ax" x1="534" y1="25" x2="534" y2="31"/>
+      <line class="ax" x1="578" y1="25" x2="578" y2="31"/>
+      <line class="ax" x1="622" y1="25" x2="622" y2="31"/>
+      <line class="ax" x1="666" y1="25" x2="666" y2="31"/>
+      <line class="ax" x1="710" y1="22" x2="710" y2="34"/>
+      <g class="tk"><text x="50" y="18" text-anchor="middle">0</text><text x="270" y="18" text-anchor="middle">5</text><text x="490" y="18" text-anchor="middle">10</text><text x="710" y="18" text-anchor="middle">15 min</text></g>
+      <rect class="wbox" x="51.0" y="44" width="218.0" height="26" rx="4"/><text class="lbl-s" x="160.0" y="61.5" text-anchor="middle">run at 5: [0, 5)</text><rect class="wbox" x="271.0" y="44" width="218.0" height="26" rx="4"/><text class="lbl-s" x="380.0" y="61.5" text-anchor="middle">run at 10: [5, 10)</text><rect class="wbox" x="491.0" y="44" width="218.0" height="26" rx="4"/><text class="lbl-s" x="600.0" y="61.5" text-anchor="middle">run at 15: [10, 15)</text>
+      <g data-on="2">
+        <rect class="abox" x="283.2" y="82" width="22.0" height="14" rx="3"/>
+        <text class="lbl" x="315.2" y="94">Atomic test, started right after the boundary at 5</text>
+        <text class="lbl-s" x="315.2" y="114">lasts seconds, so it sits inside [5, 10)</text>
+      </g>
+    </svg>
+  </div>
+  <div class="panel" data-on="1">
+    <p>With $s = w$ the windows sit end to end: no overlap, no gap. These are called <b>tumbling windows</b>.</p>
+  </div>
+  <div class="cols">
+    <div class="fix" data-on="2">
+      <p class="who">For our small demo, this is enough</p>
+      <p>We control when the attack runs, and an Atomic Red Team test lasts seconds. Start it just after a boundary and the whole chain lands in one window.</p>
+    </div>
+    <div class="panel" data-on="3">
+      <h3>What it saves</h3>
+      <ul class="tight">
+        <li>Each event is in exactly one window, so it's processed once.</li>
+        <li>One attack gives one alert: no duplicate alerts, no dedup logic.</li>
+        <li>Only 12 runs per hour.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 6 THE CUT -->
+<section class="slide" aria-label="Real attacks cross boundaries">
+  <p class="part">Part 3 of 3: stride and window</p>
+  <h2>Real attacks don't wait for the boundary</h2>
+  <p class="lede">An attacker doesn't know where our windows start. Take the same chain as in part 2, but starting at 04:30 instead of 06:30. Now it crosses minute 5.</p>
+  <div class="fig">
+    <svg viewBox="0 0 760 108" role="img" aria-label="Attack chain cut by a tumbling boundary">
+      <line class="ax" x1="50" y1="28" x2="710" y2="28"/>
+      <line class="ax" x1="50" y1="22" x2="50" y2="34"/>
+      <line class="ax" x1="94" y1="25" x2="94" y2="31"/>
+      <line class="ax" x1="138" y1="25" x2="138" y2="31"/>
+      <line class="ax" x1="182" y1="25" x2="182" y2="31"/>
+      <line class="ax" x1="226" y1="25" x2="226" y2="31"/>
+      <line class="ax" x1="270" y1="22" x2="270" y2="34"/>
+      <line class="ax" x1="314" y1="25" x2="314" y2="31"/>
+      <line class="ax" x1="358" y1="25" x2="358" y2="31"/>
+      <line class="ax" x1="402" y1="25" x2="402" y2="31"/>
+      <line class="ax" x1="446" y1="25" x2="446" y2="31"/>
+      <line class="ax" x1="490" y1="22" x2="490" y2="34"/>
+      <line class="ax" x1="534" y1="25" x2="534" y2="31"/>
+      <line class="ax" x1="578" y1="25" x2="578" y2="31"/>
+      <line class="ax" x1="622" y1="25" x2="622" y2="31"/>
+      <line class="ax" x1="666" y1="25" x2="666" y2="31"/>
+      <line class="ax" x1="710" y1="22" x2="710" y2="34"/>
+      <g class="tk"><text x="50" y="18" text-anchor="middle">0</text><text x="270" y="18" text-anchor="middle">5</text><text x="490" y="18" text-anchor="middle">10</text><text x="710" y="18" text-anchor="middle">15 min</text></g>
+      <rect x="248.0" y="36" width="51.3" height="14" rx="3" fill="var(--anom)"/><line x1="277.3" y1="38" x2="277.3" y2="48" stroke="var(--surface)" stroke-width="2"/><line x1="288.3" y1="38" x2="288.3" y2="48" stroke="var(--surface)" stroke-width="2"/><text class="lbl" x="309.3" y="48" style="fill:var(--anom)">attack chain, 04:30 to 05:40</text>
+      <g data-on="1">
+        <rect class="wbox" x="51.0" y="64" width="218.0" height="26" rx="4"/><text class="lbl-s" x="160.0" y="81.5" text-anchor="middle">run at 5: [0, 5)</text><rect class="wbox" x="271.0" y="64" width="218.0" height="26" rx="4"/><text class="lbl-s" x="380.0" y="81.5" text-anchor="middle">run at 10: [5, 10)</text><rect class="wbox" x="491.0" y="64" width="218.0" height="26" rx="4"/><text class="lbl-s" x="600.0" y="81.5" text-anchor="middle">run at 15: [10, 15)</text>
+        <line class="cut" x1="270" y1="30" x2="270" y2="100"/>
+      </g>
+    </svg>
+  </div>
+  <div class="cols">
+    <div class="panel">
+      <h3>The chain</h3>
+      <p class="mono" style="font-size:.86rem;line-height:1.7">
+      1 04:30 winword → powershell (start)<br>
+      2 05:10 powershell → a.dll (write)<br>
+      3 05:25 powershell → rundll32 (start)<br>
+      4 05:40 rundll32 → 203.0.113.7:443</p>
+    </div>
+    <div>
+      <div class="panel" data-only="1">
+        <h3>What each tumbling window sees</h3>
+        <p><b>[0, 5):</b> only Word starting PowerShell. Suspicious, maybe not enough.</p>
+        <p><b>[5, 10):</b> a different node, <code>w2:powershell</code>, with no parent. A DLL write and a connection, but without the Office origin.</p>
+      </div>
+      <div class="panel" data-on="2">
+        <h3>Why the cut hurts this model</h3>
+        <ul class="tight">
+          <li>Features are per-window counts: each half-node has half the behavior.</li>
+          <li>Message passing only uses edges in the same graph, so rundll32 never "sees" winword.</li>
+          <li>Alg. 1 can't join two windows, so we get two weak half-stories that the subgraph filter may drop.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="panel" data-on="3">
+    <p><b>Idea:</b> what if each window overlapped the previous one, so a chain near a boundary still fits whole in some window? Next slide.</p>
+  </div>
+</section>
+
+<!-- 7 SLIDING -->
+<section class="slide" aria-label="Window and stride defined">
+  <p class="part">Part 3 of 3: stride and window</p>
+  <h2>The fix: run more often than the window is long</h2>
+  <p class="lede">Keep $w = 5$, but set $s = 2$: a run at 5, 7, 9, 11, each still looking at the 5 minutes before it. Neighbouring windows now share $5 - 2 = 3$ minutes. These are called <b>sliding windows</b>.</p>
+  <div class="fig">
+    <svg viewBox="0 0 760 200" role="img" aria-label="Sliding windows of 5 minutes moving by 2 minutes">
+      <line class="ax" x1="50" y1="28" x2="710" y2="28"/>
+      <line class="ax" x1="50" y1="22" x2="50" y2="34"/>
+      <line class="ax" x1="94" y1="25" x2="94" y2="31"/>
+      <line class="ax" x1="138" y1="25" x2="138" y2="31"/>
+      <line class="ax" x1="182" y1="25" x2="182" y2="31"/>
+      <line class="ax" x1="226" y1="25" x2="226" y2="31"/>
+      <line class="ax" x1="270" y1="22" x2="270" y2="34"/>
+      <line class="ax" x1="314" y1="25" x2="314" y2="31"/>
+      <line class="ax" x1="358" y1="25" x2="358" y2="31"/>
+      <line class="ax" x1="402" y1="25" x2="402" y2="31"/>
+      <line class="ax" x1="446" y1="25" x2="446" y2="31"/>
+      <line class="ax" x1="490" y1="22" x2="490" y2="34"/>
+      <line class="ax" x1="534" y1="25" x2="534" y2="31"/>
+      <line class="ax" x1="578" y1="25" x2="578" y2="31"/>
+      <line class="ax" x1="622" y1="25" x2="622" y2="31"/>
+      <line class="ax" x1="666" y1="25" x2="666" y2="31"/>
+      <line class="ax" x1="710" y1="22" x2="710" y2="34"/>
+      <g class="tk"><text x="50" y="18" text-anchor="middle">0</text><text x="270" y="18" text-anchor="middle">5</text><text x="490" y="18" text-anchor="middle">10</text><text x="710" y="18" text-anchor="middle">15 min</text></g>
+      <g data-on="4">
+        <rect x="248.0" y="34" width="51.3" height="162" fill="var(--anom-soft)"/>
+        <rect x="248.0" y="36" width="51.3" height="14" rx="3" fill="var(--anom)"/><line x1="277.3" y1="38" x2="277.3" y2="48" stroke="var(--surface)" stroke-width="2"/><line x1="288.3" y1="38" x2="288.3" y2="48" stroke="var(--surface)" stroke-width="2"/><text class="lbl" x="309.3" y="48" style="fill:var(--anom)">the cut chain, 04:30 to 05:40</text>
+      </g>
+      <g data-on="1"><rect class="wbox" x="51.0" y="62" width="218.0" height="26" rx="4"/><text class="lbl-s" x="160.0" y="79.5" text-anchor="middle">run at 5: [0, 5), w = 5 min</text></g>
+      <g data-on="2"><rect class="sbox" x="51.0" y="96" width="86.0" height="26" rx="4"/><text class="lbl-s" x="94.0" y="113.5" text-anchor="middle">s = 2</text><rect class="wbox" x="139.0" y="96" width="218.0" height="26" rx="4"/><text class="lbl-s" x="248.0" y="113.5" text-anchor="middle">run at 7: [2, 7)</text></g>
+      <g data-on="3"><rect class="wbox" x="227.0" y="130" width="218.0" height="26" rx="4"/><text class="lbl-s" x="336.0" y="147.5" text-anchor="middle">run at 9: [4, 9)</text><rect class="wbox" x="315.0" y="164" width="218.0" height="26" rx="4"/><text class="lbl-s" x="424.0" y="181.5" text-anchor="middle">run at 11: [6, 11)</text></g>
+    </svg>
+  </div>
+  <div class="cols3">
+    <div class="panel" data-on="1">
+      <h3>Window $w$: unchanged</h3>
+      <p>Still 5 min, still start $= t - 5$. Only the run times changed.</p>
+      <div class="ex"><ul><li>run at 7: $[7 - 5,\ 7) = [2, 7)$</li><li>run at 9: $[9 - 5,\ 9) = [4, 9)$</li></ul></div>
+    </div>
+    <div class="panel" data-on="2">
+      <h3>Stride $s$: now 2</h3>
+      <p>Runs every 2 minutes instead of 5. Worst-case alert delay is about $s + t_{\text{proc}}$.</p>
+      <div class="ex">With $s = 2$ (runs at 7, 9, 11):
+        <ul><li>event at 07:01: first seen by the run at 9, about 2 min wait</li><li>event at 08:58: also the run at 9, about 2 s wait</li></ul>Plus processing time $t_{\text{proc}}$ in both cases.</div>
+    </div>
+    <div class="panel" data-on="4">
+      <h3>Overlap $w - s$</h3>
+      <p>When $s &lt; w$, windows overlap and each event is processed $w/s$ times on average ($5/2 = 2.5$ here). That's the price.</p>
+      <div class="ex">With $w = 5,\ s = 2$:
+        <ul><li>chain start, 04:30: in $[0, 5)$, $[2, 7)$, $[4, 9)$, so 3 times</li><li>chain end, 05:40: in $[2, 7)$, $[4, 9)$, so 2 times</li></ul></div>
+    </div>
+  </div>
+  <div class="panel" data-on="4">
+    <p><span class="tag ours">Ours</span>Training can use its own stride: slicing the benign capture with $s = 2$ gives more training windows. Only $w$ has to match between training and inference.</p>
+  </div>
+</section>
+
+<!-- 8 CHAIN FIXED -->
+<section class="slide" aria-label="Overlap keeps the chain together">
+  <p class="part">Part 3 of 3: stride and window</p>
+  <h2>Back to the cut chain: overlap keeps it whole</h2>
+  <div class="fig">
+    <svg viewBox="0 0 760 176" role="img" aria-label="The cut chain covered by the sliding window of the run at 7">
+      <line class="ax" x1="50" y1="28" x2="710" y2="28"/>
+      <line class="ax" x1="50" y1="22" x2="50" y2="34"/>
+      <line class="ax" x1="94" y1="25" x2="94" y2="31"/>
+      <line class="ax" x1="138" y1="25" x2="138" y2="31"/>
+      <line class="ax" x1="182" y1="25" x2="182" y2="31"/>
+      <line class="ax" x1="226" y1="25" x2="226" y2="31"/>
+      <line class="ax" x1="270" y1="22" x2="270" y2="34"/>
+      <line class="ax" x1="314" y1="25" x2="314" y2="31"/>
+      <line class="ax" x1="358" y1="25" x2="358" y2="31"/>
+      <line class="ax" x1="402" y1="25" x2="402" y2="31"/>
+      <line class="ax" x1="446" y1="25" x2="446" y2="31"/>
+      <line class="ax" x1="490" y1="22" x2="490" y2="34"/>
+      <line class="ax" x1="534" y1="25" x2="534" y2="31"/>
+      <line class="ax" x1="578" y1="25" x2="578" y2="31"/>
+      <line class="ax" x1="622" y1="25" x2="622" y2="31"/>
+      <line class="ax" x1="666" y1="25" x2="666" y2="31"/>
+      <line class="ax" x1="710" y1="22" x2="710" y2="34"/>
+      <g class="tk"><text x="50" y="18" text-anchor="middle">0</text><text x="270" y="18" text-anchor="middle">5</text><text x="490" y="18" text-anchor="middle">10</text><text x="710" y="18" text-anchor="middle">15 min</text></g>
+      <rect x="248.0" y="36" width="51.3" height="14" rx="3" fill="var(--anom)"/><line x1="277.3" y1="38" x2="277.3" y2="48" stroke="var(--surface)" stroke-width="2"/><line x1="288.3" y1="38" x2="288.3" y2="48" stroke="var(--surface)" stroke-width="2"/><text class="lbl" x="309.3" y="48" style="fill:var(--anom)">attack chain, 04:30 to 05:40</text>
+      <g style="opacity:.45"><rect class="wbox" x="51.0" y="64" width="218.0" height="26" rx="4"/><text class="lbl-s" x="160.0" y="81.5" text-anchor="middle">tumbling [0, 5)</text><rect class="wbox" x="271.0" y="64" width="218.0" height="26" rx="4"/><text class="lbl-s" x="380.0" y="81.5" text-anchor="middle">tumbling [5, 10)</text></g>
+      <line class="cut" x1="270" y1="30" x2="270" y2="96"/>
+      <g data-on="1"><rect class="wbox" x="139.0" y="104" width="218.0" height="26" rx="4"/><text class="lbl-s" x="248.0" y="121.5" text-anchor="middle">run at 7: [2, 7), whole chain inside</text></g>
+      <g data-on="1"><rect class="wbox" x="227.0" y="138" width="218.0" height="26" rx="4"/><text class="lbl-s" x="336.0" y="155.5" text-anchor="middle">run at 9: [4, 9), also whole</text></g>
+    </svg>
+  </div>
+  <div class="panel" data-on="1">
+    <h3>Why the run at 7 catches it</h3>
+    <div class="ex"><ul><li>window start $= 7 - 5 = 2$, so $[2, 7)$ is 02:00 up to 06:59</li><li>the chain runs 04:30 to 05:40, entirely inside it</li></ul>The run at 9, $[4, 9)$, also contains it, so the same attack will show up twice. That's why sliding needs dedup.</div>
+  </div>
+  <div class="fix" data-on="2">
+    <p class="who">What overlap guarantees</p>
+    <p>Any activity of duration $d \le w - s$ fits entirely inside some window. With $w = 5,\ s = 2$: $d \le 5 - 2 = 3$ minutes. With tumbling windows, $w - s = 0$: any chain can be cut.</p>
+    <div class="ex" style="border-left-color:var(--ok);background:transparent">
+      <ul>
+        <li>3-min chain, 05:30 to 08:30: fits in $[4, 9)$, intact</li>
+        <li>4-min chain, 05:30 to 09:30: $[4, 9)$ ends too early, $[6, 11)$ starts too late, so it is cut</li>
+      </ul></div>
+  </div>
+</section>
+
+<!-- 9 MISTAKE: FEED WHOLE WINDOW -->
+<section class="slide" aria-label="Mistake one: feeding only the stride">
+  <p class="part">Part 3 of 3: stride and window</p>
+  <h2>Feed the whole window, not just the new minutes</h2>
+  <div class="mistake" data-strike="2">
+    <p class="who">Common mistake</p>
+    <q>With sliding windows, a run happens every 2 minutes, so take only those 2 new minutes, encode them, and score them.</q>
+  </div>
+  <div class="fig">
+    <svg viewBox="0 0 760 122" role="img" aria-label="Stride slice versus full window">
+      <line class="ax" x1="50" y1="28" x2="710" y2="28"/>
+      <line class="ax" x1="50" y1="22" x2="50" y2="34"/>
+      <line class="ax" x1="94" y1="25" x2="94" y2="31"/>
+      <line class="ax" x1="138" y1="25" x2="138" y2="31"/>
+      <line class="ax" x1="182" y1="25" x2="182" y2="31"/>
+      <line class="ax" x1="226" y1="25" x2="226" y2="31"/>
+      <line class="ax" x1="270" y1="22" x2="270" y2="34"/>
+      <line class="ax" x1="314" y1="25" x2="314" y2="31"/>
+      <line class="ax" x1="358" y1="25" x2="358" y2="31"/>
+      <line class="ax" x1="402" y1="25" x2="402" y2="31"/>
+      <line class="ax" x1="446" y1="25" x2="446" y2="31"/>
+      <line class="ax" x1="490" y1="22" x2="490" y2="34"/>
+      <line class="ax" x1="534" y1="25" x2="534" y2="31"/>
+      <line class="ax" x1="578" y1="25" x2="578" y2="31"/>
+      <line class="ax" x1="622" y1="25" x2="622" y2="31"/>
+      <line class="ax" x1="666" y1="25" x2="666" y2="31"/>
+      <line class="ax" x1="710" y1="22" x2="710" y2="34"/>
+      <g class="tk"><text x="50" y="18" text-anchor="middle">0</text><text x="270" y="18" text-anchor="middle">5</text><text x="490" y="18" text-anchor="middle">10</text><text x="710" y="18" text-anchor="middle">15 min</text></g>
+      <g data-on="1"><rect class="sbox" x="359.0" y="44" width="86.0" height="26" rx="4"/><text class="lbl" x="456" y="61">tempting: the run at 9 reads only [7, 9)</text></g>
+      <g data-on="2" stroke="var(--anom)" stroke-width="2">
+        <line x1="354" y1="40" x2="450" y2="74"/><line x1="354" y1="74" x2="450" y2="40"/>
+      </g>
+      <g data-on="3"><rect class="wbox" x="227.0" y="84" width="218.0" height="26" rx="4"/><text class="lbl-s" x="336.0" y="101.5" text-anchor="middle">correct: the run at 9 reads [4, 9)</text></g>
+    </svg>
+    <div class="ex" data-on="3">Same rule for every run:
+      <ul>
+        <li>run at $t = 9$: tempting slice $[7, 9)$, correct window $[4, 9)$</li>
+        <li>run at $t = 11$: tempting slice $[9, 11)$, correct window $[6, 11)$</li>
+      </ul></div>
+  </div>
+  <div class="cols">
+    <div class="panel" data-on="2">
+      <h3>Why it breaks</h3>
+      <p>The model and the feature scaler were fit on 5-minute windows. A 2-minute slice has smaller action counts and idle gaps capped at 120 s, so its features come from a different distribution. Nodes look odd because the input is odd, not because of an attack.</p>
+    </div>
+    <div class="fix" data-on="3">
+      <p class="who">Rule</p>
+      <p>The inference window must equal the training window. Stride only decides <i>when</i> the next run starts; each run still looks back the full $w$.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 10 TRADEOFF -->
+<section class="slide" aria-label="Trade-off and limits">
+  <p class="part">Part 3 of 3: stride and window</p>
+  <h2>Choosing the stride is a trade-off</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th></th><th>Tumbling, $s = w = 5$</th><th>Sliding, $w = 5,\ s = 2$</th></tr></thead>
+      <tbody>
+        <tr><td>Worst-case alert delay</td><td>about 5 min</td><td>about 2 min</td></tr>
+        <tr><td>Chains guaranteed intact</td><td>none</td><td>up to 3 min</td></tr>
+        <tr><td>Runs per hour</td><td>12</td><td>30</td></tr>
+        <tr><td>Times each event is processed</td><td>1</td><td>2.5</td></tr>
+        <tr><td>Duplicate alerts</td><td>no</td><td>yes, dedup needed</td></tr>
+        <tr><td>Good for</td><td>our scripted demo</td><td>attacks we don't control</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="cols">
+    <div class="panel" data-on="1">
+      <h3>If you slide, deduplicate</h3>
+      <p>The same malicious rundll32 will be flagged in consecutive runs. Strip the window prefix and key alerts on a stable identity: image + PID + start time for processes, path for files, IP:port for sockets.</p>
+    </div>
+    <div class="panel" data-on="2">
+      <h3>What no stride can fix</h3>
+      <ul class="tight">
+        <li>Chains longer than $w - s$ (3 min here) can still get split.</li>
+        <li>History older than $w$ is invisible: a parent started 20 min ago has no edge in the window.</li>
+        <li>A beacon every 10 min shows up as one lone connection per 5-min window; its long idle gaps can't be measured.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="fix" data-on="3">
+    <p class="who">What we can honestly claim</p>
+    <p>A windowed, micro-batch adaptation of OCR-APT's detector that can catch short, contained attack chains, validated offline on our own labeled capture first. Not long multi-stage campaigns, and not comparable to the paper's W10 results.</p>
+  </div>
+</section>
+
+<!-- 11 CHECK -->
+<section class="slide" aria-label="Check yourself">
+  <p class="part">Check yourself</p>
+  <h2>Five questions before you touch the demo</h2>
+  <p class="lede">Answer in your head first, then open each one.</p>
+  <details>
+    <summary>1. With $w = 5$, which events go into the run at minute 9? Why not only minutes 7 to 9?</summary>
+    <p>Everything in $[4, 9)$. Using only the newest 2 minutes shrinks counts and caps idle gaps, so the features no longer match the 5-minute training distribution.</p>
+  </details>
+  <details>
+    <summary>2. What does the analyst receive when a run finds an attack?</summary>
+    <p>A small subgraph: the anomalous nodes, the normal nodes Alg. 1 used to connect them, and the edges with timestamps. Never "this window is anomalous".</p>
+  </details>
+  <details>
+    <summary>3. With $s = 2$, a malicious rundll32 is flagged at minutes 7 and 9. How many alerts should reach you?</summary>
+    <p>One. Both copies are the same process once the window prefix is stripped; key on image + PID + start time and merge.</p>
+  </details>
+  <details>
+    <summary>4. Switch to tumbling ($s = 5$). What happens to alert delay, chain coverage, and training windows from a 20-minute capture?</summary>
+    <p>Delay rises to about 5 min, no chain is guaranteed intact, and training windows drop from $\lfloor (20-5)/2 \rfloor + 1 = 8$ to $\lfloor (20-5)/5 \rfloor + 1 = 4$ (unless training keeps its own smaller stride).</p>
+  </details>
+  <details>
+    <summary>5. Keep $s = 2$ but raise $w$ to 10. Longest guaranteed chain? Times each event is processed?</summary>
+    <p>$w - s = 10 - 2 = 8$ min, and $w/s = 10/2 = 5$ times. More context and coverage, paid for with more compute and more duplicates, and the model must be retrained on 10-minute windows.</p>
+  </details>
+</section>
+
+</main>
+
+<nav class="nav" aria-label="Slide navigation">
+  <span class="where" id="where">1 / 11</span>
+  <span class="hint" id="hint"></span>
+  <span class="pips" id="pips" aria-hidden="true"></span>
+  <button id="prev" type="button" aria-label="Previous step">← Back</button>
+  <button id="next" type="button" aria-label="Next step">Next</button>
+</nav>
+</div>
+
+<script>
+(function(){
+  const slides=[...document.querySelectorAll('.slide')];
+  const keys=['on','only','focus'];
+  const maxStep=s=>{let m=0;s.querySelectorAll('[data-on],[data-only],[data-focus]').forEach(e=>keys.forEach(k=>{if(e.dataset[k]!==undefined)m=Math.max(m,+e.dataset[k])}));return m};
+  const maxes=slides.map(maxStep);
+  let cur=0, step=0;
+  const m=/^#(\d+)(?:\.(\d+))?$/.exec(location.hash);
+  if(m){cur=Math.min(slides.length-1,Math.max(0,+m[1]-1));step=Math.min(maxes[cur],+(m[2]||0))}
+  const $=id=>document.getElementById(id);
+
+  function render(){
+    slides.forEach((s,i)=>s.classList.toggle('active',i===cur));
+    const s=slides[cur];
+    s.querySelectorAll('[data-on]').forEach(e=>e.classList.toggle('shown',step>=+e.dataset.on));
+    s.querySelectorAll('[data-only]').forEach(e=>e.classList.toggle('shown',step===+e.dataset.only));
+    s.querySelectorAll('[data-focus]').forEach(e=>{const n=+e.dataset.focus;e.classList.toggle('focus',n===step);e.classList.toggle('done',n<step)});
+    s.querySelectorAll('[data-strike]').forEach(e=>e.classList.toggle('struck',step>=+e.dataset.strike));
+    const mx=maxes[cur];
+    $('where').textContent=(cur+1)+' / '+slides.length;
+    $('hint').textContent=mx?('step '+step+' of '+mx):'';
+    $('pips').innerHTML=mx?Array.from({length:mx+1},(_,i)=>'<i class="'+(i<=step?'on':'')+'"></i>').join(''):'';
+    $('prev').disabled=(cur===0&&step===0);
+    $('next').disabled=(cur===slides.length-1&&step===mx);
+    $('next').textContent=(step<mx)?'Next step':'Next slide';
+    $('bar').style.width=(((cur+(mx?step/(mx+1):0))/(slides.length-1))*100)+'%';
+    history.replaceState(null,'','#'+(cur+1)+(step?'.'+step:''));
+  }
+  function next(){ if(step<maxes[cur])step++; else if(cur<slides.length-1){cur++;step=0;$('stage').scrollTop=0} render(); }
+  function prev(){ if(step>0)step--; else if(cur>0){cur--;step=maxes[cur];$('stage').scrollTop=0} render(); }
+  $('next').addEventListener('click',next);
+  $('prev').addEventListener('click',prev);
+  document.addEventListener('keydown',e=>{
+    if(e.target.closest&&e.target.closest('summary,button')&&(e.key===' '||e.key==='Enter'))return;
+    if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();next()}
+    else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();prev()}
+    else if(e.key==='Home'){cur=0;step=0;render()}
+    else if(e.key==='End'){cur=slides.length-1;step=maxes[cur];render()}
+  });
+  render();
+})();
+</script>
+</body>
+</html>

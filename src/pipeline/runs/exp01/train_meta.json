@@ -1,0 +1,77 @@
+{
+  "inputs": {
+    "../out/etw/experiments/20261009T145632Z/SimulatedW10_train_edges.csv": {
+      "path": "/home/akira/code/NT2102/src/out/etw/experiments/20261009T145632Z/SimulatedW10_train_edges.csv",
+      "sha256": "c4c44f691b74ceff5830d06a64ac1b3a4c1b30185ae01793904f9eb0d5f36105"
+    },
+    "../features/self-dataset/features_model.csv": {
+      "path": "/home/akira/code/NT2102/src/features/self-dataset/features_model.csv",
+      "sha256": "7c482244e143213b101771e6b85f358bc3e888146ebb38aed3850fd43821792e"
+    },
+    "../features/self-dataset/feature_scaler.json": {
+      "path": "/home/akira/code/NT2102/src/features/self-dataset/feature_scaler.json",
+      "sha256": "9de489dc8b31b2d25a0659bcad51a864cad92746eceac8212aa83314c5610127"
+    }
+  },
+  "relations": [
+    "process|load|file",
+    "process|read|file",
+    "process|recv|net",
+    "process|send|net",
+    "process|start|process",
+    "process|write|file",
+    "file|inv_load|process",
+    "file|inv_read|process",
+    "net|inv_recv|process",
+    "net|inv_send|process",
+    "process|inv_start|process",
+    "file|inv_write|process"
+  ],
+  "feature_order": [
+    "out_write",
+    "in_write",
+    "out_read",
+    "in_read",
+    "out_send",
+    "in_send",
+    "out_recv",
+    "in_recv",
+    "out_start",
+    "in_start",
+    "out_load",
+    "in_load",
+    "avg_idle_time",
+    "max_idle_time",
+    "min_idle_time"
+  ],
+  "node_types": [
+    "file",
+    "net",
+    "process"
+  ],
+  "args": {
+    "selftest": false,
+    "edges": "../out/etw/experiments/20261009T145632Z/SimulatedW10_train_edges.csv",
+    "features": "../features/self-dataset/features_model.csv",
+    "scaler": "../features/self-dataset/feature_scaler.json",
+    "out_dir": "runs/exp01",
+    "val_split": "window",
+    "window_sep": "_",
+    "val_windows": 1,
+    "purge_windows": 2,
+    "val_frac": 0.15,
+    "layers": 3,
+    "hidden": 32,
+    "lr": 0.005,
+    "beta": 0.5,
+    "warmup": 2,
+    "epochs": 100,
+    "dropout": 0.0,
+    "contamination": 0.001,
+    "patience": 5,
+    "runs": 3,
+    "seed": 360,
+    "verbose": false
+  },
+  "label_source": "none (benign-only training; validation = held-out benign nodes)"
+}
