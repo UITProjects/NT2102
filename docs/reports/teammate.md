@@ -35,7 +35,7 @@ SilkETW: Kernel-Process / File / Network
 | `src/live/` | live demo: `etwship.py` (shipper), `engine.py`, `live_server.py` + `static/index.html`, `compare_replay.py`; run guide in `src/live/README.md` |
 | `src/atomic-attack-pack/` | 10 attack scenarios + labelling scheme (not yet run) |
 | `src/notebooks/01..05-*/` | EDA notebooks, numbered in reading order |
-| `docs/` | `PROGRESS.md`, `DEVIATIONS.md`, these reports, `explainers/` |
+| `docs/` | `PROGRESS.md`, `DEVIATIONS.md`, these reports, `notes/data-flow.md` (how Windows logs become model input), `explainers/` |
 
 ## 3. How to run
 

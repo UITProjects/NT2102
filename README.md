@@ -45,7 +45,7 @@ Then follow **[src/README.md → Start here](src/README.md#start-here-new-member
 | path | what it is |
 |---|---|
 | `src/` | lab VM (Vagrant + PowerShell), host pipeline, live demo, trained artifacts, notebooks. Map in `src/README.md` |
-| `docs/` | `PROGRESS.md` (status), `DEVIATIONS.md` (differences from the paper), `reports/` (professor brief, teammate guide), `explainers/` (edges → node features page) |
+| `docs/` | `PROGRESS.md` (status), `DEVIATIONS.md` (differences from the paper), `reports/` (professor brief, teammate guide), `notes/data-flow.md` (Windows logs → model input, end to end), `explainers/` (edges → node features page) |
 | `OCR-APT/` | git submodule: the authors' code ([CoDS-GCS/OCR-APT](https://github.com/CoDS-GCS/OCR-APT)) and the paper PDF |
 | `ocrapt-live-windows.html` | design mock of the live demo UI |
 | `pyproject.toml`, `uv.lock` | Python dependencies, managed with [uv](https://docs.astral.sh/uv/) |

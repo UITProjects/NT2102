@@ -33,7 +33,8 @@ provisioners (`C:\lab-out`, `C:\scripts`) and `live/engine.py` / `live/sync_ps1.
 Read in this order (about 30 minutes):
 
 1. `../docs/reports/professor.md`: the 5-minute overview, with architecture diagrams.
-2. `../docs/explainers/edges-to-node-features.html` (open it in a browser): how graph edges become the 15 node features.
+2. `../docs/notes/data-flow.md`: how Windows logs become the model's input, end to end (raw events → edges → windows → features → tensors).
+   Then `../docs/explainers/edges-to-node-features.html` (open it in a browser): how graph edges become the 15 node features.
 3. `../docs/reports/teammate.md`: how to run things, known pitfalls, open tasks.
 4. `live/README.md`: the live demo step by step.
 
