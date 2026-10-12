@@ -61,20 +61,41 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
   Python deps via uv (`uv.lock`), torch / torch-geometric, no PyGOD.
 - Impact: none expected for the detector; GraphDB-dependent stages untested.
 
-## D8. Live inference path (`src/live/`, `src/pipeline/score_window.py`)
+## D8. Live inference path (`src/live/`, `src/pipeline/score_window.py`, `src/pipeline/alg1.py`)
 - What: [PAPER] offline prediction on the whole test graph (§5.1.3), then Alg. 1 subgraphs with a
   subgraph anomaly-score filter (§5.2). [OURS] the VM streams raw SilkETW lines to the host; the host
   re-orders events by time (20 s lateness), runs the training converter code (same sha256, taken from
   `04-collector.ps1`), cuts tumbling 5-min windows aligned to the clock, and scores each window with the
   frozen train scaler, train relation list and per-type models. Windows that start before the capture
   are `partial` and not scored. Edges of the shipper's own PID are dropped. Relations unseen in training
-  are dropped (counted). Subgraphs come from "Alg.1-lite": flagged nodes + bridges (unflagged nodes
-  adjacent to ≥ 2 flagged nodes), connected components, **no subgraph-score filter**. No dedup across
-  windows (stride = window by default). State is held in memory for one session.
-- Why: live demo; same code path as offline so a replay of the training capture can be checked
+  are dropped (counted). No dedup across windows (stride = window by default). State is held in memory
+  for one session.
+- Alg. 1 per window (`alg1.py`, in memory, no GraphDB): follows [REPO] `detect_anomalous_subgraphs.py`.
+  That means initSG = edges touching an anomalous node; top 15 seeds per type; 1-hop forward/backward
+  traversal to unvisited anomalous nodes; ≥ 3 nodes; each reached node correlated once; Louvain above
+  5000 edges; identical subgraphs removed.
+  - Subgraph score: Σ over the anomalous nodes of prob = clamp((score − train_min_t) / (train_max_t −
+    train_min_t), 0, 1). This is the [REPO] definition (`subgraph_anomaly_score` sums PyGOD
+    `Prediction_probability`, 'linear'). [PAPER] §5.2 only says "sum of the scores". Raw scores are on
+    different scales per type (NET is negative), so the repo definition is used. train_min/max come from
+    `train_scores.csv` (split = train). The saved model reproduces that file to 1.3e-5.
+  - Levels as in [REPO] (≤1 Negligible, ≤10 Minor, ≤100 Moderate, ≤1000 Significant, else Critical).
+    A window alerts only if ≥ 1 subgraph is ≥ Moderate.
+  - [OURS] no fallback when nothing reaches Moderate. The repo lowers the level and finally reports the
+    top-k subgraphs (l.433–461); live, that would make every window red.
+  - [OURS] a partition still above max_e is kept whole (`oversize`), not sampled per edge type.
+  - [OURS] optional numeric cut-off `--sg-min-score`, to be calibrated on benign sessions only.
+  - [OURS] the anomalous set is capped at the 300 highest margins (UI guard).
+- Why: live demo; same code path as offline, so a replay of the training capture can be checked
   against the offline artefacts (`compare_replay.py`).
 - Impact: events arriving later than the lateness are dropped (shown in the UI); processes started
-  before a window have no Start edge inside it; without the SG-Det filter, expect more and noisier
-  subgraphs than the paper (Table 4 "Without SG-Det" is the relevant comparison).
-- Limits: demonstrates near-live node scoring on our own data. No detection-quality claim until
-  windows are labelled (D6); no claim about Alg. 1 precision.
+  before a window have no Start edge inside it.
+  - Since prob ≤ 1, the paper's cut-off (> 10) means "more than ~10 anomalous nodes in one story".
+    [INFERENCE] The paper set these absolute levels for DARPA-scale graphs, not for our 5-min windows
+    (~100–850 nodes), and they are not calibrated here.
+  - Measured on benign session `live-20261011T112141Z` (replayed): windows with ≥ 1 node above τ drop
+    from 5 to 1 red. The one left is the 11:25 `updater` window: 18 unseen-context DLLs, score 18,
+    Moderate.
+  - An attack that flags ≤ 10 nodes in one window would be filtered out.
+- Limits: demonstrates near-live node scoring + Alg. 1 on our own data. No detection-quality claim until
+  windows are labelled (D6); no claim about Alg. 1 precision; the level cut-off is the paper's, not ours.

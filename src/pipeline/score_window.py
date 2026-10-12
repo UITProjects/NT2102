@@ -33,6 +33,7 @@ import pandas as pd
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import alg1  # noqa: E402
 import encode_to_features as enc  # noqa: E402
 import train_gnn_models as tgm  # noqa: E402
 
@@ -44,6 +45,7 @@ class Run:
     feature_order: list[str]
     models: dict = field(default_factory=dict)   # node_type (lower-case) -> OCRGCN (eval mode)
     tau: dict = field(default_factory=dict)      # node_type -> threshold
+    score_range: dict = field(default_factory=dict)   # node_type -> (train min, train max), for Alg. 1 prob
 
 
 def load_run(run_dir: str, scaler: dict, allow_collapsed: bool = False) -> Run:
@@ -73,6 +75,7 @@ def load_run(run_dir: str, scaler: dict, allow_collapsed: bool = False) -> Run:
         if ck["num_relations"] != len(run.relations):
             sys.exit(f"[ERROR] {p}: num_relations {ck['num_relations']} != {len(run.relations)} in train_meta.json")
         run.models[ntype], run.tau[ntype] = m, float(ck["threshold"])
+    run.score_range = alg1.load_score_range(run_dir)
     return run
 
 
@@ -162,6 +165,7 @@ def selftest():
         scaler = load_scaler(f"{d}/scaler.json")
         run = load_run(f"{d}/run", scaler)
         assert set(run.models) == {"process", "file", "net"}, run.models.keys()
+        assert set(run.score_range) == set(run.models), run.score_range
         nodes, feats2, info = score_edges(pd.read_csv(f"{d}/edges.csv", dtype=str).astype(
             {"timestamp": "int64"}), run, scaler)
         assert info["edges"] == len(e) and info["edges_dropped_relation"] == 0, info

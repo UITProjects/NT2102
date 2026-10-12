@@ -1,13 +1,13 @@
-# PROGRESS (status as of 2026-10-11)
+# PROGRESS (status as of 2026-10-12)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 
 ## Current focus
 
-Live detection demo: the first live window is scored; benign-but-unseen activity is flagged (2.3 % of
-nodes). Next: add the paper's subgraph-score filter (SG-Det), widen benign training data and calibrate
-τ, then prove the live path matches the offline pipeline (replay check). In parallel: understand the
-trainer (concepts 2 GCN, 3 RGCN, 4 one-class).
+Live detection demo: full Alg. 1 with the subgraph-score filter (SG-Det) now decides the window alert.
+On the benign session, 1 window is still red (the `updater` DLLs). Next: widen benign training data and
+calibrate, then prove the live path matches the offline pipeline (replay check), then run an Atomic
+scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 one-class) and Alg. 1.
 
 ## Done
 
@@ -33,8 +33,14 @@ trainer (concepts 2 GCN, 3 RGCN, 4 one-class).
   (`live-20261011T112141Z`, 11:25–11:30Z, VM running `03-workload.ps1`): 7,813 edges, 835 nodes, 19 flagged
   (2.3 %), all FILE (445 file nodes; process 0/147, net 0/243). 18 of the 19 are syswow64 DLLs loaded once
   by a short-lived `updater` process (0 `updater` processes in training; the DLLs themselves are in
-  training). Identical score 0.3220 vs τ_file 0.2297 (train max 0.2312). Under the paper's SG-Det levels
-  the subgraph would be "minor" (18 × 0.322 = 5.80 < 10).
+  training). Identical score 0.3220 vs τ_file 0.2297 (train max 0.2312), so prob = 1 each (clamped).
+- Alg. 1 + SG-Det (code + selftest, verified on real data 2026-10-12): `src/pipeline/alg1.py` (in memory,
+  [REPO] score = Σ clamped min-max prob, levels, keep ≥ Moderate), used by `engine.py`; flags in
+  `live_server.py`; UI shows level/score and greys subgraphs below the cut-off. The saved exp01 models
+  reproduce `train_scores.csv` (max |diff| 1.3e-5), so the prob range is valid. Replay of
+  `live-20261011T112141Z` through the live server: 11 scored windows, 5 with nodes above τ → 1 red
+  (11:25 `updater`, 18 DLLs, score 18.0, Moderate). Other windows ≤ Minor (max 5.83). `alg1.py
+  --session-dir` re-judges saved sessions without the VM.
 - VM crash 2026-10-11 18:02 diagnosed (verified in `journalctl -k`, `VBox.log.1`): not OOM, a VirtualBox
   VMSVGA segfault in `libnvidia-glcore.so.595.84` (3D acceleration). Fixed: `accelerate3d off` on
   `w10-etw` and in `src/Vagrantfile`.
@@ -52,8 +58,9 @@ trainer (concepts 2 GCN, 3 RGCN, 4 one-class).
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
   score_window.py / engine.py / etwship.py; a benign live run with `06-benign-workload.ps1`.
-- Test split capture, node labels, test scoring, NODLINK W10 detector baseline, full subgraph
-  construction (Alg. 1 with the subgraph-score filter; only Alg.1-lite exists), LLM investigator (Alg. 2).
+- Test split capture, node labels, test scoring, NODLINK W10 detector baseline, LLM investigator (Alg. 2).
+- SG-Det cut-off not checked against an attack: with the paper's level (> 10 ≈ more than 10 anomalous
+  nodes in one subgraph), a small Atomic scenario may be filtered out.
 
 ## Open items
 
@@ -80,6 +87,11 @@ Model:
 Environment:
 - `src/graphdb/compose.yaml`: GraphDB heap `-Xmx8g` exceeds the container `mem_limit` 4g (latent; use ≤ 3g).
 
+Live tooling:
+- `etwship.py --replay --speed 0` never advances the virtual clock (step = interval × speed = 0), so it
+  hangs; at 600× each POST carries 10 min of events and the shipper times out. 120× works (52 min in 29 s).
+- Replayed window 11:35 has 13,045 edges vs 12,516 live: the live run dropped late events (lateness 20 s).
+
 Repo hygiene:
 - `.gitmodules` still declares submodule `dataset/Simulated-Data` (PKU-ASAL), but `/dataset/` is
   gitignored and the data sits in `original-dataset/Simulated-Data`; fix or drop the entry.
@@ -88,18 +100,13 @@ Repo hygiene:
 
 ## Next 3 steps
 
-1. SG-Det, the subgraph-score filter ([PAPER] Alg. 1 lines 20–24, §5.2, §7.2.1; Table 4), in
-   `src/live/engine.py` (`alg1_lite` / `_score`):
-   - per subgraph `sg_score` = Σ scores of its anomalous nodes [PAPER], plus `sg_margin` = Σ (score − τ)
-     [OURS; NET scores can be negative]; levels minor < 10 ≤ moderate < 100 ≤ significant < 1000 ≤ critical;
-   - base cut-off as a flag (`--sg-min`, default 10 as in the paper; [INFERENCE] not transferable to our
-     score scale), later calibrated on benign sessions, never on the window being judged;
-   - window `alert` only if ≥ 1 subgraph ≥ moderate; minor subgraphs stay in `subgraphs.json`, greyed in
-     the UI; `windows.csv` gains `subgraphs_alert`; selftest case 18 × 0.322 → minor; update DEVIATIONS D8.
-   - Accept: benign windows (with `06`) raise no ≥ moderate subgraph; the updater window becomes minor.
-2. Widen benign training and calibrate τ: 2–3 benign captures at different times (trigger background
-   tasks such as the Google updater and a Defender scan), retrain into `src/artifacts/runs/exp02`, set τ from a held-out
-   benign session; report flagged nodes per window, mean ± std over ~10 benign windows.
-3. Replay equivalence without the VM (`src/live/README.md` step 4, `--stride-min 2 --origin-ms
-   1791557793343`); `compare_replay.py` must print `ALL MATCH`. After that, the end goal: run an Atomic
-   scenario during the live demo and show its window raising a true alert (no metrics required).
+1. Widen benign training and calibrate (the 11:25 `updater` false positive survives SG-Det; it needs
+   coverage, not a filter): 2–3 benign captures at different times (trigger background tasks such as the
+   Google updater and a Defender scan), retrain into `src/artifacts/runs/exp02`. Run benign live sessions
+   with `06-benign-workload.ps1` and re-judge them with `alg1.py --session-dir`; record max benign
+   `sg_score` per window, mean ± std over ~10 windows.
+2. Replay equivalence without the VM (`src/live/README.md` step 4, `--stride-min 2 --origin-ms
+   1791557793343`); `compare_replay.py` must print `ALL MATCH`.
+3. End goal: run one Atomic scenario during a live session. Check that its window reaches ≥ Moderate.
+   If not, set `--sg-min-score` between the benign max (step 1) and the attack score, and record it as
+   calibration in DEVIATIONS D8 (decided on benign data, confirmed on the attack, not tuned to it).

@@ -10,7 +10,8 @@ engine.py - live windowed OCR-APT scoring, no web code (live_server.py is the th
                      loaded from scripts/04-collector.ps1) + the shipper's own PID excluded
       -> edge buffer (sorted by ts)
       -> window [start, start + w) closes when watermark >= end
-      -> scoring thread: score_window.score_edges (train scaler + train relations) -> alg1_lite
+      -> scoring thread: score_window.score_edges (train scaler + train relations)
+                         -> alg1.construct (Alg. 1 + SG-Det; window alert = >= 1 subgraph kept)
       -> sessions/<id>/windows/<wid>/*.csv|json  + listeners (SSE in live_server.py)
 
 Time: only the shipper's clock is used (clock_ms), never this host's wall clock, so a replay at
@@ -43,6 +44,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(SRC, "pipeline"))
+import alg1  # noqa: E402
 import score_window as sw  # noqa: E402
 
 EDGE_HEADER = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
@@ -103,79 +105,6 @@ def make_live_graph(conv):
     return LiveGraph
 
 
-# --------------------------------------------------------------------------- Alg. 1 (simplified)
-def alg1_lite(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict) -> tuple[list, bool]:
-    """[OURS] simplified OCR-APT Alg. 1 on ONE window graph.
-
-    A       = flagged nodes (score > tau of their type)
-    bridges = unflagged nodes adjacent to >= 2 distinct flagged nodes (they connect the story)
-    subgraphs = connected components of A + bridges, over edges with >= 1 flagged endpoint.
-    NOT done (vs paper §5.2): no subgraph anomaly-score filter ("Without SG-Det", Table 4), no
-    multi-hop expansion. Expect more, noisier subgraphs than the paper's.
-    """
-    flagged = nodes[nodes["flagged"]].sort_values("margin", ascending=False)
-    truncated = len(flagged) > MAX_FLAGGED_FOR_SUBGRAPHS
-    flagged = flagged.head(MAX_FLAGGED_FOR_SUBGRAPHS)
-    A = set(flagged["node_uuid"])
-    if not A:
-        return [], False
-    known = set(nodes["node_uuid"])                    # edges dropped by the relation filter are not in the graph
-    edges = edges[edges["source-id"].isin(known) & edges["destination-id"].isin(known)]
-    s, d = edges["source-id"].to_numpy(), edges["destination-id"].to_numpy()
-    nbr_flagged = {}                                   # unflagged node -> set of flagged neighbours
-    for a, b in zip(s, d):
-        if a == b:
-            continue
-        if a in A and b not in A:
-            nbr_flagged.setdefault(b, set()).add(a)
-        elif b in A and a not in A:
-            nbr_flagged.setdefault(a, set()).add(b)
-    bridges = {n for n, fs in nbr_flagged.items() if len(fs) >= 2}
-    keep = A | bridges
-
-    parent = {n: n for n in keep}                     # union-find
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    mask = [(a in keep and b in keep and (a in A or b in A)) for a, b in zip(s, d)]
-    sub = edges[mask]
-    for a, b in zip(sub["source-id"], sub["destination-id"]):
-        parent[find(a)] = find(b)
-
-    info = nodes.set_index("node_uuid")
-    comps = {}
-    for n in keep:
-        comps.setdefault(find(n), []).append(n)
-    out = []
-    for members in comps.values():
-        mset = set(members)
-        if not (mset & A):
-            continue
-        e = sub[sub["source-id"].isin(mset) & sub["destination-id"].isin(mset)]
-        agg = (e.groupby(["source-id", "destination-id", "edge-type"])["timestamp"]
-               .agg(["size", "min", "max"]).reset_index()) if len(e) else pd.DataFrame()
-        nlist = []
-        for n in members:
-            r = info.loc[n]
-            nlist.append({"id": n, "type": r["node_type"], "attr": attrs.get(n, ""),
-                          "score": _f(r["score"]), "tau": _f(r["tau"]), "margin": _f(r["margin"]),
-                          "role": "anomalous" if n in A else "bridge"})
-        nlist.sort(key=lambda x: (x["role"] != "anomalous", -(x["margin"] or 0)))
-        elist = [{"src": r["source-id"], "dst": r["destination-id"], "type": r["edge-type"],
-                  "count": int(r["size"]), "first_ms": int(r["min"]), "last_ms": int(r["max"])}
-                 for _, r in agg.iterrows()] if len(agg) else []
-        elist.sort(key=lambda x: x["first_ms"])
-        out.append({"n_anomalous": len(mset & A), "n_bridges": len(mset & bridges),
-                    "max_margin": max(x["margin"] for x in nlist if x["role"] == "anomalous"),
-                    "nodes": nlist, "edges": elist})
-    out.sort(key=lambda g: (-g["n_anomalous"], -g["max_margin"]))
-    return out, truncated
-
-
 def _f(v):
     return None if v is None or (isinstance(v, float) and math.isnan(v)) else float(v)
 
@@ -191,7 +120,8 @@ def utc_iso(ms: int) -> str:
 # --------------------------------------------------------------------------- engine
 class Engine:
     def __init__(self, run_dir, scaler_path, sessions_dir, window_min=5, stride_min=None, lateness_s=20,
-                 origin_ms=0, ps1_path=DEFAULT_PS1, experiment_json=None, allow_collapsed=False, top_k=20):
+                 origin_ms=0, ps1_path=DEFAULT_PS1, experiment_json=None, allow_collapsed=False, top_k=20,
+                 n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None):
         self.conv, self.conv_sha = load_converter(ps1_path)
         self.conv_check = "not checked (no --experiment)"
         if experiment_json:
@@ -210,6 +140,9 @@ class Engine:
         self.lateness_ms = int(lateness_s * 1000)
         self.origin_ms = int(origin_ms)
         self.top_k = top_k
+        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate; [REPO] min_nodes 3
+        self.sg = {"n_seed": n_seed, "min_nodes": min_nodes, "max_edges": max_edges,
+                   "min_level": sg_min_level, "min_score": sg_min_score}
 
         self.lock = threading.RLock()
         self.listeners = []                       # callables(event_dict), called from any thread
@@ -244,11 +177,13 @@ class Engine:
                 "scaler": self.scaler_path, "converter_sha256": self.conv_sha, "converter_check": self.conv_check,
                 "window_min": self.w_ms / 60000, "stride_min": self.s_ms / 60000,
                 "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms,
-                "tau": self.run.tau, "created_utc": utc_iso(int(time.time() * 1000))}
+                "tau": self.run.tau, "score_range": self.run.score_range, "alg1": self.sg,
+                "created_utc": utc_iso(int(time.time() * 1000))}
         json.dump(meta, open(os.path.join(sdir, "session.json"), "w"), indent=2)
         with open(os.path.join(sdir, "windows.csv"), "w", newline="") as fh:
             csv.writer(fh).writerow(["window", "start_ms", "end_ms", "start_utc", "status", "edges", "nodes",
-                                     "flagged", "subgraphs", "edges_dropped_relation"])
+                                     "flagged", "subgraphs", "subgraphs_kept", "max_sg_score", "max_level",
+                                     "alert", "edges_dropped_relation"])
         print(f"[engine] new session {sid} ({self.session['mode']}) -> {sdir}  dos_map={dmap}  exclude={exclude}")
         self._emit({"type": "session", "session": sid})
 
@@ -343,7 +278,8 @@ class Engine:
             rec = {"window": wid, "start_ms": start, "end_ms": end, "start_utc": utc_iso(start),
                    "edges": len(w_rows), "edges_by_type": dict(Counter(r[4] for r in w_rows)),
                    "status": "partial" if start < S["first_t"] else ("empty" if not w_rows else "scoring"),
-                   "nodes": 0, "flagged": 0, "flagged_by_type": {}, "subgraphs": 0, "alert": False}
+                   "nodes": 0, "flagged": 0, "flagged_by_type": {}, "subgraphs": 0, "subgraphs_kept": 0,
+                   "max_sg_score": 0.0, "max_level": "", "alert": False}
             S["windows"].append(rec)
             S["by_id"][wid] = rec
             if rec["status"] == "scoring":
@@ -384,7 +320,16 @@ class Engine:
         t0 = time.time()
         edges = pd.DataFrame(w_rows, columns=EDGE_HEADER)
         nodes, feats, info = sw.score_edges(edges, self.run, self.scaler)
-        subgraphs, truncated = alg1_lite(nodes, sw.tgm.normalise_edges(edges), attrs)
+        # a broken model flags everything; cap the anomalous set so Alg. 1 and the UI stay usable
+        cand = nodes
+        truncated = int(nodes["flagged"].sum()) > MAX_FLAGGED_FOR_SUBGRAPHS
+        if truncated:
+            keep = set(nodes[nodes["flagged"]].nlargest(MAX_FLAGGED_FOR_SUBGRAPHS, "margin")["node_uuid"])
+            cand = nodes.assign(flagged=nodes["flagged"] & nodes["node_uuid"].isin(keep))
+        subgraphs, sg_stats = alg1.construct(cand, sw.tgm.normalise_edges(edges), attrs, self.run.score_range,
+                                             self.sg["n_seed"], self.sg["min_nodes"], self.sg["max_edges"],
+                                             self.sg["min_level"], self.sg["min_score"])
+        sg_sum = alg1.summarise(subgraphs)
         nodes["attr"] = nodes["node_uuid"].map(attrs)
         ms = int((time.time() - t0) * 1000)
 
@@ -402,7 +347,8 @@ class Engine:
                 os.path.join(wdir, "node_attrs.csv"), index=False)
             feats.to_csv(os.path.join(wdir, "features_model.csv"), index_label="node_uuid", float_format="%.6f")
             nodes.sort_values("score", ascending=False).to_csv(os.path.join(wdir, "scores.csv"), index=False)
-            json.dump({"window": wid, "truncated": truncated, "subgraphs": subgraphs},
+            json.dump({"window": wid, "truncated": truncated, "alg1": self.sg, "stats": sg_stats,
+                       "subgraphs": subgraphs},
                       open(os.path.join(wdir, "subgraphs.json"), "w"), indent=1)
 
             top = {}
@@ -415,11 +361,11 @@ class Engine:
             rec.update(status="scored", nodes=int(len(nodes)), flagged=int(len(fl)),
                        nodes_by_type=nodes["node_type"].value_counts().to_dict(),
                        flagged_by_type=fl["node_type"].value_counts().to_dict(),
-                       subgraphs=len(subgraphs), alert=bool(len(fl)), scoring_ms=ms,
+                       **sg_sum, alert=sg_sum["subgraphs_kept"] > 0, scoring_ms=ms,
                        edges_dropped_relation=info["edges_dropped_relation"],
                        max_margin=_f(nodes["margin"].max()))
             S["details"][wid] = {"top": top, "subgraphs": subgraphs[:25], "truncated": truncated,
-                                 "subgraphs_total": len(subgraphs)}
+                                 "subgraphs_total": len(subgraphs), "alg1_stats": sg_stats}
             self._write_index(S, rec, info)
             self._emit({"type": "window", "window": rec})
 
@@ -427,6 +373,7 @@ class Engine:
         with open(os.path.join(S["dir"], "windows.csv"), "a", newline="") as fh:
             csv.writer(fh).writerow([rec["window"], rec["start_ms"], rec["end_ms"], rec["start_utc"], rec["status"],
                                      rec["edges"], rec["nodes"], rec["flagged"], rec["subgraphs"],
+                                     rec["subgraphs_kept"], rec["max_sg_score"], rec["max_level"], rec["alert"],
                                      info.get("edges_dropped_relation", "")])
 
     # ---------------------------------------------------------------- read side
@@ -435,7 +382,8 @@ class Engine:
             base = {"model": {"run_dir": self.run_dir, "tau": self.run.tau, "scaler": self.scaler_path,
                               "converter_sha256": self.conv_sha, "converter_check": self.conv_check},
                     "params": {"window_min": self.w_ms / 60000, "stride_min": self.s_ms / 60000,
-                               "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms},
+                               "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms,
+                               "alg1": self.sg},
                     "server_ms": int(time.time() * 1000), "session": None}
             S = self.session
             if S is None:
@@ -619,8 +567,13 @@ def selftest():
         assert raw_lines == len(streams["kfile"]), (raw_lines, len(streams["kfile"]))
         assert any(x["type"] == "window" for x in seen)
         assert eng.window_detail(w1)["top"], "no top nodes"
+        for w in wins:
+            if w["status"] == "scored":
+                assert "subgraphs_kept" in w and w["alert"] == (w["subgraphs_kept"] > 0), w
+        idx_csv = pd.read_csv(os.path.join(sdir, "windows.csv"))
+        assert {"subgraphs_kept", "max_sg_score", "max_level", "alert"} <= set(idx_csv.columns)
     print("\n[SELFTEST OK] dedup, 409 on gap, late events counted, shipper PID excluded, "
-          "partial window skipped, 3 windows scored, artefacts written")
+          "partial window skipped, 3 windows scored, Alg. 1 alert fields, artefacts written")
 
 
 if __name__ == "__main__":
