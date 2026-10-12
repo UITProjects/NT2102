@@ -106,9 +106,9 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   (per-node-type one-class RGCN on behavior features over a provenance graph) but is not an exact
   reproduction.
 - Current focus: the live detection demo. A valid training run (`runs/exp01`) and the live path
-  (`src/live/`) exist, and the first live window is scored. Immediate steps: the subgraph-score filter
-  (SG-Det, Alg. 1 lines 20–24), wider benign training data + τ calibration, the replay equivalence
-  check, and understanding the trainer (concepts 2–4).
+  (`src/live/`) exist, and Alg. 1 + the subgraph-score filter (SG-Det) decides the window alert. Immediate
+  steps: wider benign training data + calibration, the replay equivalence check, one Atomic scenario
+  live, and understanding the trainer (concepts 2–4).
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
@@ -169,8 +169,9 @@ history of earlier progress) and, if relevant, this section.
   `encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
   `score_window.py` (score any edge CSV with the train scaler + relations).
 - Live (host): `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
-  reorder, windows, scoring thread, Alg.1-lite); `etwship.py --replay` + `compare_replay.py` check the
-  live path against the offline pipeline. Run guide: `src/live/README.md`.
+  reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
+  sessions); `etwship.py --replay` + `compare_replay.py` check the live path against the offline
+  pipeline. Run guide: `src/live/README.md`.
 - Artefacts: `src/out/etw/experiments/<id>/` (raw, converted, windowed edges, `windows.csv`,
   `experiment.json`, `check.json`, benign ledger in `labels/`), `src/artifacts/features/self-dataset/` and
   `src/artifacts/features/paper/` (NODLINK W10), `src/artifacts/runs/<exp>/`, live sessions
@@ -193,7 +194,8 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
   window-based validation split, patience-based early stop, deterministic seeds.
 - Labels: indicator + time oracle from injected attacks, not analyst ground truth.
 - Live inference: clock-aligned tumbling windows, partial windows not scored, shipper PID excluded,
-  Alg.1-lite without the subgraph-score filter, no cross-window dedup.
+  no cross-window dedup. Alg. 1 runs in memory per window with the [REPO] subgraph score (Σ clamped
+  min-max prob, not the paper text's "sum of scores"), paper levels (alert ≥ Moderate), no top-k fallback.
 
 ## 11. Status, open items, next steps
 

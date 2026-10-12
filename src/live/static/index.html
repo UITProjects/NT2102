@@ -64,6 +64,7 @@ header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12p
 .sgnav button{font:500 .8rem var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);
               border-radius:6px;padding:4px 8px;cursor:pointer}
 .sgnav button.on{border-color:var(--anom);color:var(--anom)}
+.sgnav button.dim{opacity:.55;border-style:dashed}
 .alertcard{font:400 .82rem/1.55 var(--mono);border:1px solid var(--anom);border-radius:8px;padding:10px 12px;
            max-height:440px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 .alertcard b{font-family:var(--sans);color:var(--anom)}
@@ -98,7 +99,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     <h2>Windows <span class="muted" id="winParams"></span></h2>
     <div class="timeline" id="timeline"></div>
     <div class="note legend">
-      <span>green: scored, nothing above τ</span><span style="color:var(--anom)">red: ≥ 1 node above τ</span>
+      <span>green: scored, no subgraph kept by SG-Det</span><span style="color:var(--anom)">red: ≥ 1 subgraph at or above the cut-off (default Moderate, score &gt; 10)</span>
       <span>dashed: partial / empty (not scored)</span><span style="color:var(--win)">blue: open window filling up</span>
       · times are your browser's local time
     </div>
@@ -112,7 +113,8 @@ tr.flag td{color:var(--anom);font-weight:600}
         <div class="sgnav" id="sgnav"></div>
         <div id="cy"></div>
         <div class="note">circle = process · square = file · diamond = socket · red ring = score above τ of its type ·
-          blue dashed = bridge (normal node linking ≥ 2 anomalous nodes, simplified Alg. 1, no subgraph-score filter)</div>
+          blue dashed = connector (normal node on a 1-hop path to another anomalous node, Alg. 1) ·
+          dashed button = subgraph below the cut-off (shown, not alerted)</div>
       </div>
       <div class="alertcard" id="alertcard"></div>
     </div>
@@ -173,7 +175,9 @@ tr.flag td{color:var(--anom);font-weight:600}
     const list = [...windows.values()].sort((a,b) => a.start_ms - b.start_ms).slice(-24);
     let html = list.map(w => {
       const cls = w.status === "scored" ? (w.alert ? "alert" : "scored") : w.status;
-      const sub = w.status === "scored" ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs} sg` : `${w.nodes} nodes`)
+      const sub = w.status === "scored"
+                ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs_kept}/${w.subgraphs} sg kept`
+                   : w.flagged ? `${w.flagged} above τ · filtered` : `${w.nodes} nodes`)
                 : w.status === "scoring" ? "scoring…" : w.status;
       return `<div class="win ${cls} ${w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
         <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div></div>`;
@@ -210,7 +214,9 @@ tr.flag td{color:var(--anom);font-weight:600}
     const by = (o) => Object.entries(o || {}).map(([k,v]) => `${k} ${v}`).join(" · ") || "–";
     $("dTiles").innerHTML = [
       ["edges", w.edges], ["edges by type", by(w.edges_by_type)], ["nodes by type", by(w.nodes_by_type)],
-      ["above τ by type", by(w.flagged_by_type)], ["subgraphs", w.subgraphs ?? 0],
+      ["above τ by type", by(w.flagged_by_type)],
+      ["subgraphs kept / built", `${w.subgraphs_kept ?? 0} / ${w.subgraphs ?? 0}`],
+      ["max subgraph score", w.subgraphs ? `${num(w.max_sg_score,2)} (${w.max_level})` : "–"],
       ["scoring time", w.scoring_ms != null ? w.scoring_ms + " ms" : "–"],
       ["edges dropped (relation unseen in training)", w.edges_dropped_relation ?? 0],
     ].map(([k,v]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v" style="font-size:.85rem">${esc(v)}</div></div>`).join("")
@@ -218,10 +224,10 @@ tr.flag td{color:var(--anom);font-weight:600}
 
     const sgs = detail.subgraphs || [];
     $("sgnav").innerHTML = sgs.length
-      ? sgs.map((g,i) => `<button class="${i===sgIdx?"on":""}" data-i="${i}">#${i+1}: ${g.n_anomalous} anom + ${g.n_bridges} bridge</button>`).join("")
+      ? sgs.map((g,i) => `<button class="${i===sgIdx?"on":""} ${g.kept?"":"dim"}" data-i="${i}" title="seed ${esc(g.seed)}">#${i+1}: ${esc(g.level)} ${num(g.sg_score,2)} · ${g.n_anomalous} anom + ${g.n_connectors} conn</button>`).join("")
         + (detail.subgraphs_total > sgs.length ? `<span class="muted">showing ${sgs.length} of ${detail.subgraphs_total}</span>` : "")
         + (detail.truncated ? '<span style="color:var(--warn)">too many flagged nodes: truncated (model problem?)</span>' : "")
-      : '<span class="muted">no node above τ in this window, so no subgraph</span>';
+      : `<span class="muted">${w.flagged ? "anomalous nodes are isolated or in groups of < 3 nodes, so no subgraph" : "no node above τ in this window, so no subgraph"}</span>`;
     drawSubgraph(sgs[sgIdx]);
     renderAlert(w, sgs[sgIdx]);
     renderTables();
@@ -241,7 +247,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     $("cy").innerHTML = "";
     const shape = {process: "ellipse", file: "round-rectangle", net: "diamond"};
     const els = g.nodes.map(n => ({data: {id: n.id, label: base(n.attr) || n.id, shape: shape[n.type] || "ellipse",
-                                          role: n.role, tip: `${n.type} ${n.attr}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}`}}))
+                                          role: n.role, tip: `${n.type} ${n.attr}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}  prob ${num(n.prob,3)}`}}))
       .concat(g.edges.map((e,i) => ({data: {id: "e"+i, source: e.src, target: e.dst,
                                             label: e.type + (e.count > 1 ? " ×" + e.count : "")}})));
     cy = cytoscape({
@@ -252,7 +258,7 @@ tr.flag td{color:var(--anom);font-weight:600}
           "border-color": css("--ink"), "label": "data(label)", "color": css("--ink"), "font-size": 10,
           "text-valign": "bottom", "text-margin-y": 4, "width": 26, "height": 26}},
         {selector: "node[role = 'anomalous']", style: {"border-width": 4, "border-color": css("--anom")}},
-        {selector: "node[role = 'bridge']", style: {"border-width": 2.5, "border-style": "dashed", "border-color": css("--win")}},
+        {selector: "node[role = 'connector']", style: {"border-width": 2.5, "border-style": "dashed", "border-color": css("--win")}},
         {selector: "edge", style: {"width": 1.4, "line-color": css("--muted"), "target-arrow-color": css("--muted"),
           "target-arrow-shape": "triangle", "curve-style": "bezier", "label": "data(label)", "font-size": 9,
           "color": css("--muted"), "text-rotation": "autorotate", "text-background-color": css("--paper"),
@@ -265,10 +271,13 @@ tr.flag td{color:var(--anom);font-weight:600}
 
   function renderAlert(w, g) {
     if (!g) { $("alertcard").innerHTML = '<span class="muted">no alert</span>'; return; }
+    const head = g.kept ? `<b>Alert, window ${hms(w.start_ms)}–${hms(w.end_ms)}, subgraph #${sgIdx+1}</b>`
+                        : `<span class="muted">Below cut-off (not alerted), window ${hms(w.start_ms)}–${hms(w.end_ms)}, subgraph #${sgIdx+1}</span>`;
+    const score = `subgraph score ${num(g.sg_score,3)} = Σ prob of ${g.n_anomalous} anomalous nodes → ${esc(g.level)}${g.oversize ? " · oversize" : ""}`;
     const lab = Object.fromEntries(g.nodes.map(n => [n.id, base(n.attr) || n.id]));
     const lines = g.edges.map(e => `${hms(e.first_ms)}${e.last_ms !== e.first_ms ? "–" + hms(e.last_ms) : ""}  ${esc(lab[e.src])} → ${esc(lab[e.dst])} (${esc(e.type)}${e.count > 1 ? " ×" + e.count : ""})`);
-    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(n.attr)}  score ${num(n.score,4)} τ ${num(n.tau,4)}`);
-    $("alertcard").innerHTML = `<b>Alert, window ${hms(w.start_ms)}–${hms(w.end_ms)}, subgraph #${sgIdx+1}</b>\n\n`
+    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(n.attr)}  score ${num(n.score,4)} τ ${num(n.tau,4)}${n.role === "anomalous" ? " prob " + num(n.prob,3) : ""}`);
+    $("alertcard").innerHTML = head + "\n" + score + "\n\n"
       + (lines.length ? lines.join("\n") : "(single anomalous node, no edge to another anomaly)") + "\n\n" + nodes.join("\n");
   }
 

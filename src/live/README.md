@@ -5,7 +5,8 @@ VM  SilkService → raw\test\live-<UTC>\{kfile,knet,kproc}.json
     08-live-shipper.ps1 → etwship.py (tail + POST every 1 s) ──HTTP──► 10.21.2.1:8000
 host live_server.py → engine.py: reorder by event time → etw2nodlink.Graph (same code as training,
      taken from scripts/04-collector.ps1) → 5-min windows → train scaler + train relations →
-     OCRGCN per type → score > τ → Alg.1-lite subgraphs → sessions/<id>/windows/<wid>/ + UI (SSE)
+     OCRGCN per type → score > τ → Alg. 1 subgraphs + SG-Det (alert = ≥ 1 subgraph ≥ Moderate)
+     → sessions/<id>/windows/<wid>/ + UI (SSE)
 ```
 
 | file | role |
@@ -13,11 +14,12 @@ host live_server.py → engine.py: reorder by event time → etw2nodlink.Graph (
 | `etwship.py` | stdlib shipper. Live tail on the VM, `--replay` on the host, `--selftest` |
 | `../scripts/08-live-shipper.ps1` | VM entry point: starts a capture, runs the embedded copy of etwship.py |
 | `sync_ps1.py` | copies `etwship.py` into the 08 script (run after editing etwship.py) |
-| `engine.py` | ingest, reorder buffer, windows, scoring thread, Alg.1-lite (`--selftest`) |
+| `engine.py` | ingest, reorder buffer, windows, scoring thread, calls Alg. 1 (`--selftest`) |
 | `live_server.py` | FastAPI: `/ingest`, `/api/*`, SSE `/api/stream`, UI at `/` |
 | `static/index.html` | UI |
 | `compare_replay.py` | checks that the live path reproduces the offline pipeline on the training capture |
 | `../pipeline/score_window.py` | the scorer shared with offline test scoring (`--selftest`) |
+| `../pipeline/alg1.py` | Alg. 1 subgraphs + subgraph-score filter; re-judges saved sessions (`--selftest`) |
 
 Run everything from the repo root. First, once: `uv add fastapi "uvicorn[standard]"`.
 
@@ -26,6 +28,7 @@ Run everything from the repo root. First, once: `uv add fastapi "uvicorn[standar
 ```
 uv run python src/pipeline/train_gnn_models.py --selftest
 uv run python src/pipeline/score_window.py --selftest
+uv run python src/pipeline/alg1.py --selftest
 uv run python src/live/engine.py --selftest
 uv run python src/live/etwship.py --selftest
 uv run python src/live/sync_ps1.py --check
@@ -85,9 +88,22 @@ In the UI at http://10.21.2.1:8000, a window closes about 20 s (`--lateness-s`) 
 Benign windows should be mostly green, with a flag rate near the contamination rate (0.1 %). Run one Atomic
 scenario just after a boundary and watch that window.
 
+### Alert rule (Alg. 1 + SG-Det, `src/pipeline/alg1.py`, DEVIATIONS D8)
+A window is red only if ≥ 1 subgraph reaches the cut-off. The subgraph score is Σ prob over its anomalous
+nodes, where prob = (score − train min) / (train max − train min), clamped to [0, 1]. Default: ≥ Moderate
+(score > 10). Subgraphs below the cut-off are still listed (dashed buttons in the UI).
+Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate [--sg-min-score X]`.
+To try another cut-off on a saved session without the VM (writes `subgraphs_alg1.{json,csv}` per window):
+```
+uv run python src/pipeline/alg1.py --run-dir src/artifacts/runs/exp01 \
+  --session-dir src/live/sessions/<id> [--sg-min-score X]
+```
+Replay speed: use `--speed 120` (0 hangs; 600 makes POSTs too large and the shipper times out).
+
 A red window is an observation, not a detection result, until the window has labels (docs/DEVIATIONS.md D6, D8).
 
 ## Outputs per session (`src/live/sessions/<id>/`)
 `session.json` (model, scaler, converter sha256, dos_map, parameters) · `raw/<stream>.json` (verbatim, can be
 replayed or converted into a labelled test split) · `windows.csv` · `windows/<wid>/{edges.csv, node_attrs.csv,
-features_model.csv, scores.csv, subgraphs.json}`.
+features_model.csv, scores.csv, subgraphs.json}`; `windows.csv` has `subgraphs_kept, max_sg_score,
+max_level, alert`.

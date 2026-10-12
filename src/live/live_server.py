@@ -5,7 +5,7 @@ live_server.py - HTTP layer around engine.Engine: ingest from the VM shipper, JS
     POST /ingest              shipper batches (JSON, optionally gzip). 409 = offset gap, body.expected
     GET  /api/status          shipper / session / model status
     GET  /api/windows         every window of the current session (summary rows)
-    GET  /api/windows/{wid}   one window: top nodes per type, Alg.1-lite subgraphs
+    GET  /api/windows/{wid}   one window: top nodes per type, Alg. 1 subgraphs (score, level, kept)
     GET  /api/stream          Server-Sent Events: "window" (a window changed), "status" (every 2 s)
     GET  /                    the UI (static/index.html)
 
@@ -111,14 +111,25 @@ def main():
     ap.add_argument("--sessions-dir", default=os.path.join(HERE, "sessions"))
     ap.add_argument("--token", default=os.environ.get("LAB_TOKEN"), help="optional shared secret (X-Lab-Token)")
     ap.add_argument("--allow-collapsed", action="store_true")
+    g = ap.add_argument_group("Alg. 1 / SG-Det (src/pipeline/alg1.py)")
+    g.add_argument("--n-seed", type=int, default=15, help="[PAPER] seed nodes per node type")
+    g.add_argument("--min-nodes", type=int, default=3, help="[REPO] smallest subgraph kept by construction")
+    g.add_argument("--max-edges", type=int, default=5000, help="[PAPER] max_e; larger subgraphs are split (0 = no cap)")
+    g.add_argument("--sg-min-level", default="Moderate", choices=["Negligible", "Minor", "Moderate", "Significant", "Critical"],
+                   help="window alerts only if a subgraph reaches this level ([PAPER] Moderate = score > 10)")
+    g.add_argument("--sg-min-score", type=float, default=None,
+                   help="[OURS] numeric cut-off instead of the level (alert if sg_score > X); calibrate on BENIGN sessions")
     a = ap.parse_args()
 
     if a.window_min != 5:
         print(f"[live] WARNING window {a.window_min} min: the models were trained on 5-min windows "
               f"(see experiment.json windowing.window_min); features will be off-distribution")
     engine = Engine(a.run_dir, a.scaler, a.sessions_dir, a.window_min, a.stride_min, a.lateness_s,
-                    a.origin_ms, experiment_json=a.experiment, allow_collapsed=a.allow_collapsed)
+                    a.origin_ms, experiment_json=a.experiment, allow_collapsed=a.allow_collapsed,
+                    n_seed=a.n_seed, min_nodes=a.min_nodes, max_edges=a.max_edges,
+                    sg_min_level=a.sg_min_level, sg_min_score=a.sg_min_score)
     print(f"[live] model {engine.run_dir}  tau={engine.run.tau}")
+    print(f"[live] Alg. 1 {engine.sg}  train score range {engine.run.score_range}")
     print(f"[live] converter sha256 {engine.conv_sha} ({engine.conv_check})")
     print(f"[live] UI: http://{a.bind}:{a.port}/")
     uvicorn.run(create_app(engine, a.token), host=a.bind, port=a.port, log_level="warning")
