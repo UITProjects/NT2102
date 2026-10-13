@@ -1,13 +1,6 @@
 <#
-  06 — C2 BEACON  (tactic: Command & Control)
-  Technique: T1071.001 (application-layer protocol: web) — implemented CUSTOM so the beacon
-  hits YOUR sink at a fixed cadence. Periodicity + single remote endpoint is the signature
-  of a C2 node; this is the clearest "network" malicious node for your graph.
-  Observable nodes: process (powershell.exe) + repeated network edges to one dst.
-  Admin required: no.
-
-  Start lib\Start-LocalSink.ps1 first (on a reachable host / the VM's own 10.21.2.10).
-  Tunables below; env override $env:C2_SINK_HOST / _PORT.
+  06 - C2 beacon (T1071.001), custom: periodic HTTP to one sink endpoint. Details: SCENARIOS.md.
+  Start lib\Start-LocalSink.ps1 first. Tunables below; env override $env:C2_SINK_HOST / _PORT.
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

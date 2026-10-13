@@ -32,8 +32,8 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
 - What: [REPO] `transform_to_RDF.py` for all datasets. [OURS] SimulatedW10 CSV only, train split only
   for now, ground-truth file optional (missing = all benign), stricter Turtle escaping.
 - Why: only the W10 path is needed; train-only lets the pipeline run before a test capture exists.
-- Impact: nothing downstream of GraphDB (subgraph construction) can be evaluated yet.
-- Limits: no Alg. 1 / Alg. 2 claims.
+- Impact: none on the live demo. Alg. 1 runs in memory without GraphDB (D8), so this RDF path is unused.
+- Limits: no claim about the repo's GraphDB-based Alg. 1 / Alg. 2 l.16–25 path.
 
 ## D5. Trainer re-implemented (`src/pipeline/train_gnn_models.py`)
 - What: [REPO] authors' PyGOD fork (`OCRGCN`), random 15 % validation, stop at first TNR decline,
@@ -63,53 +63,50 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
 
 ## D8. Live inference path (`src/live/`, `src/pipeline/score_window.py`, `src/pipeline/alg1.py`)
 - What: [PAPER] offline prediction on the whole test graph (§5.1.3), then Alg. 1 subgraphs with a
-  subgraph anomaly-score filter (§5.2). [OURS] the VM streams raw SilkETW lines to the host; the host
-  re-orders events by time (20 s lateness), runs the training converter code (same sha256, taken from
-  `04-collector.ps1`), cuts tumbling 5-min windows aligned to the clock, and scores each window with the
-  frozen train scaler, train relation list and per-type models. Windows that start before the capture
-  are `partial` and not scored. Edges of the shipper's own PID are dropped. Relations unseen in training
-  are dropped (counted). No dedup across windows (stride = window by default). State is held in memory
-  for one session.
-- Alg. 1 per window (`alg1.py`, in memory, no GraphDB): follows [REPO] `detect_anomalous_subgraphs.py`.
-  That means initSG = edges touching an anomalous node; top 15 seeds per type; 1-hop forward/backward
-  traversal to unvisited anomalous nodes; ≥ 3 nodes; each reached node correlated once; Louvain above
-  5000 edges; identical subgraphs removed.
-  - Subgraph score: Σ over the anomalous nodes of prob = clamp((score − train_min_t) / (train_max_t −
-    train_min_t), 0, 1). This is the [REPO] definition (`subgraph_anomaly_score` sums PyGOD
-    `Prediction_probability`, 'linear'). [PAPER] §5.2 only says "sum of the scores". Raw scores are on
-    different scales per type (NET is negative), so the repo definition is used. train_min/max come from
-    `train_scores.csv` (split = train). The saved model reproduces that file to 1.3e-5.
-  - [OURS] level scale tuned for live windows (user decision, 2026-10-13): ≤1 Negligible, < 30 Minor,
-    30–100 Moderate, ≤1000 Significant, else Critical. [REPO] l.394 uses ≤10 Minor (Moderate > 10); the
-    other bounds are unchanged. Flag `--sg-moderate-from` (default 30; `10.0001` gives the [REPO] scale).
-    A window alerts only if ≥ 1 subgraph is ≥ Moderate, i.e. sg_score ≥ 30.
-  - [OURS] no fallback when nothing reaches Moderate. The repo lowers the level and finally reports the
-    top-k subgraphs (l.433–461); live, that would make every window red.
+  subgraph anomaly-score filter (§5.2). [OURS]:
+  - The VM streams raw SilkETW lines; the host reorders by event time (20 s lateness), runs the training
+    converter (same sha256, from `04-collector.ps1`), cuts clock-aligned tumbling 5-min windows, and
+    scores each with the frozen train scaler, train relation list and per-type models.
+  - Windows starting before the capture are `partial` and not scored. The shipper's own PID is dropped.
+    Relations unseen in training are dropped (counted). No cross-window dedup. State is in memory.
+- Alg. 1 per window (`alg1.py`, in memory, no GraphDB) follows [REPO] `detect_anomalous_subgraphs.py`:
+  initSG = edges touching an anomalous node; top 15 seeds per type; 1-hop forward/backward traversal to
+  unvisited anomalous nodes; ≥ 3 nodes; each node correlated once; Louvain above 5000 edges; identical
+  subgraphs removed.
+  - Subgraph score = Σ over anomalous nodes of prob = clamp((score − train_min_t) / (train_max_t −
+    train_min_t), 0, 1). [REPO] definition (`subgraph_anomaly_score` sums PyGOD
+    `Prediction_probability`, 'linear'); [PAPER] §5.2 only says "sum of the scores", but raw scores
+    differ in scale per type (NET is negative). train_min/max from `train_scores.csv` (split = train);
+    the saved model reproduces that file to 1.3e-5.
+  - [OURS] level scale (user decision, 2026-10-13): ≤ 1 Negligible, < 30 Minor, 30–100 Moderate,
+    ≤ 1000 Significant, else Critical. [REPO] l.394 has Moderate > 10; other bounds unchanged.
+    `--sg-moderate-from` (default 30; `10.0001` = [REPO] scale). A window alerts only if ≥ 1 subgraph
+    is ≥ Moderate.
+  - [OURS] no top-k fallback when nothing reaches Moderate ([REPO] l.433–461); live, it would make every
+    window red.
   - [OURS] a partition still above max_e is kept whole (`oversize`), not sampled per edge type.
   - [OURS] optional numeric cut-off `--sg-min-score`, to be calibrated on benign sessions only.
   - [OURS] the anomalous set is capped at the 300 highest margins (UI guard).
-- Why: live demo; same code path as offline, so a replay of the training capture can be checked
-  against the offline artefacts (`compare_replay.py`).
-  - Level scale: [PAPER] §5.2 says the final subgraph set "can be adjusted based on the desired
-    abnormality threshold", so the bounds are a tunable. Live, a 5-min window is far smaller than the
-    paper's whole-log graphs, and the [REPO] cut-off (> 10) left the benign 11:25 `updater` window red.
-    30 was set from that benign window (score 18) plus margin.
-- Impact: events arriving later than the lateness are dropped (shown in the UI); processes started
-  before a window have no Start edge inside it.
-  - Since prob ≤ 1, our cut-off (≥ 30) means "at least ~30 anomalous nodes in one connected story"
-    (the paper's > 10 means more than ~10). [INFERENCE] The paper set its absolute levels for
-    DARPA-scale graphs, not for our 5-min windows (~100–850 nodes).
-  - Measured on benign session `live-20261011T112141Z` (replayed): windows with ≥ 1 node above τ: 5.
-    With the [REPO] scale 1 stays red (11:25 `updater`: 18 unseen-context DLLs, score 18). With our
-    scale 0 are red: the updater subgraph is Minor.
-  - An attack whose best subgraph scores < 30 in one window is filtered out. The attack side is not
-    measured yet; 30 comes from ONE benign window. When the Atomic scenario runs, check its score
-    against 30; do not re-tune the scale on the attack window (that would fit the threshold to the test).
-  - The scale hides the updater false positive, it does not fix it: an updater loading ≥ 30 unseen DLLs
-    would be red again. Wider benign training (PROGRESS) is still the real fix.
-- Limits: demonstrates near-live node scoring + Alg. 1 on our own data. No detection-quality claim until
-  windows are labelled (D6); no claim about Alg. 1 precision; the level cut-off (Moderate ≥ 30) is ours, set on one benign window,
-  not the paper's.
+- Why: live demo, with the same code path as offline so a replay of the training capture can be checked
+  against the offline artefacts (`compare_replay.py`). Level scale: [PAPER] §5.2 says the subgraph set
+  "can be adjusted based on the desired abnormality threshold". A 5-min window is far smaller than the
+  paper's whole-log graphs, and the [REPO] cut-off (> 10) left the benign 11:25 `updater` window red.
+  30 = that window's score (18) plus margin.
+- Impact:
+  - Events later than the lateness are dropped (shown in the UI); processes started before a window
+    have no Start edge inside it.
+  - Since prob ≤ 1, ≥ 30 means "at least ~30 anomalous nodes in one connected story" (paper: > ~10).
+    [INFERENCE] the paper's levels were set for DARPA-scale graphs, not 5-min windows (~100–850 nodes).
+  - Benign replay `live-20261011T112141Z`: 5 windows with ≥ 1 node above τ; [REPO] scale → 1 red
+    (11:25 `updater`, 18 unseen-context DLLs, score 18); our scale → 0 red.
+  - An attack whose best subgraph scores < 30 in a window is filtered out. The attack side is not
+    measured; 30 comes from ONE benign window. Check the Atomic / demo attack against 30, do not re-tune
+    on the attack window (that fits the threshold to the test).
+  - The scale hides the updater false positive, it does not fix it (≥ 30 unseen DLLs would be red
+    again). Wider benign training (PROGRESS) is the real fix.
+- Limits: shows near-live node scoring + Alg. 1 on our own data. No detection-quality claim until windows
+  are labelled (D6); no claim about Alg. 1 precision; the cut-off (Moderate ≥ 30) is ours, set on one
+  benign window, not the paper's.
 
 ## D9. LLM step after SG-Det: triage + partial Alg. 2 (`src/pipeline/alg2.py`)
 - What: [PAPER] Alg. 2 (§6, App. B) turns every anomalous subgraph into an attack report. It never

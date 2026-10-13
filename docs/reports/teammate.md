@@ -1,119 +1,41 @@
-# NT2102 team handoff: OCR-APT live demo (status 2026-10-11)
+# NT2102 team handoff (status 2026-10-13)
 
-Practical guide for a teammate joining the project: what exists, how to run it, what is still open.
-Source of truth for status is `docs/PROGRESS.md`. Deviations from the paper are in `docs/DEVIATIONS.md`.
+Practical start for a teammate. Status lives in `docs/PROGRESS.md`, differences from the paper in
+`docs/DEVIATIONS.md`, the folder map and pitfalls in `src/README.md`. This page only points the way.
 
 ## 1. What the project is
 
-We build a smaller version of **OCR-APT** (Aly, Mansour, Youssef, CCS 2025). It trains one-class graph
-neural networks on benign host audit logs and flags process, file and network nodes that don't fit.
-We keep the paper's core detector (OCRGCN: one RGCN + hypersphere model per node type, on behaviour
-features) and run it on **our own Windows 10 ETW logs**. A live demo scores every 5-minute window.
-Scope is about 40 % of the paper. Alg. 1 is simplified, and the LLM investigator (Alg. 2) is not built.
+- **Goal:** catch a demo attack (e.g. CVE exploit → RCE → ATT&CK techniques) live on a Windows 10 VM,
+  from kernel audit logs, while benign windows stay green. Not limited to APTs.
+- **Method:** OCR-APT's core idea (CCS 2025), not a full reproduction. One one-class RGCN per node
+  type (process / file / network) on 15 behaviour features, trained on benign data only.
+- **Live path:** VM ships raw ETW lines → host builds a 5-min window graph → scores nodes → Alg. 1
+  subgraphs → window is red only if a subgraph's score (Σ clamped min-max prob of its anomalous nodes)
+  reaches Moderate (≥ 30, our scale) → optional LLM verdict + report. Diagram: `src/live/README.md`.
 
-```
-VM (Windows 10)                                   host (Linux, uv)
-SilkETW: Kernel-Process / File / Network
-  └─ 07: capture → etw2nodlink → windows ──copy──► features (encode_to_features.py)
-                                                    └─ trainer (train_gnn_models.py) → runs/exp01
-  └─ 08: live capture → etwship.py ──HTTP──────────► live_server.py → engine.py
-                                    10.21.2.1:8000     reorder → convert → 5-min window → score → UI
-```
+## 2. How to run (repo root, after `uv sync`)
 
-## 2. Repo map
-
-| where | what |
+| want | command |
 |---|---|
-| `src/Vagrantfile`, `src/scripts/01..08-*.ps1` | Windows 10 lab VM, provisioned in order: base, tools, workload servers, collector + converter, 20-min capture, benign workload generator, train-dataset orchestrator, live shipper |
-| `src/graphdb/compose.yaml` | GraphDB 10.8.0 (only needed for later Alg. 1 work, not for the demo) |
-| `src/out/etw/experiments/<id>/` | one capture: raw ETW, converted edges, windowed edges, `windows.csv`, `experiment.json` |
-| `src/pipeline/encode_to_features.py` | 15 behaviour features per node (scaler fit on train only) |
-| `src/pipeline/train_gnn_models.py` | our OCRGCN trainer (one model per node type) |
-| `src/pipeline/score_window.py` | scores any edge CSV with the frozen model, scaler and relation list |
-| `src/artifacts/features/self-dataset/` | our features (`features_model.csv`) + `feature_scaler.json` (fit on train, reused live) |
-| `src/artifacts/runs/exp01/` | the current valid model |
-| `src/live/` | live demo: `etwship.py` (shipper), `engine.py`, `live_server.py` + `static/index.html`, `compare_replay.py`; run guide in `src/live/README.md` |
-| `src/atomic-attack-pack/` | 10 attack scenarios + labelling scheme (not yet run) |
-| `src/notebooks/01..05-*/` | EDA notebooks, numbered in reading order |
-| `docs/` | `PROGRESS.md`, `DEVIATIONS.md`, these reports, `notes/data-flow.md` (how Windows logs become model input), `explainers/` |
+| prove the code runs | `./selftest.sh` |
+| live server for the VM / for a replay | `./serve.sh` / `./serve.sh local` |
+| replay a recorded capture | `./replay.sh <session-id\|raw-dir>` |
+| re-judge a saved session (cut-off, LLM) | `./rejudge.sh <session-id> [llm-provider]` |
+| build the VM | `src/README.md` → VM provisioners |
+| train data → model | `07-build-train-dataset.ps1` (VM) → `encode_to_features.py` → `train_gnn_models.py` (`src/README.md` → Data flow) |
 
-## 3. How to run
+Step-by-step live runbook (replay check, live with the VM, alert rule, outputs): `src/live/README.md`.
+Before you touch anything, read the pitfalls table at the end of `src/README.md`.
 
-Python dependencies are managed with **uv**. Run commands from the repo root.
+## 3. What to work on
 
-**Selftests (prove "it runs", not "it detects"):**
-```
-uv run python src/pipeline/train_gnn_models.py --selftest
-uv run python src/pipeline/score_window.py --selftest
-uv run python src/live/engine.py --selftest
-uv run python src/live/etwship.py --selftest
-uv run python src/live/sync_ps1.py --check
-```
+The current "Next 3 steps" are in `docs/PROGRESS.md`. In short:
 
-**VM:** `cd src && vagrant up` builds `w10-etw` (8 GB RAM, 4 CPUs, host-only network 10.21.2.0/24,
-VM at 10.21.2.10). Keep **3D acceleration off**: with it on, the NVIDIA driver crashed VirtualBox
-(see pitfalls below).
+1. **More benign data**: 2–3 captures at different times (trigger the Google updater, a Defender scan),
+   retrain into `src/artifacts/runs/exp02`, and record the max benign subgraph score per window.
+2. **Replay check**: `src/live/README.md` step 4 → `ALL MATCH`.
+3. **Attack demo**: one Atomic scenario during a live session (`src/atomic-attack-pack/`). Does its window
+   reach ≥ 30? Do not re-tune the cut-off on the attack window.
+4. **CVE → RCE scenario** (target demo, not built yet): exploit a lab service, then ATT&CK follow-on.
 
-**Train data → model** (already done for experiment `20261009T145632Z`):
-1. VM: `07-build-train-dataset.ps1` (20-min capture with `06-benign-workload.ps1`, convert, window, check).
-2. Host: `encode_to_features.py` → `src/artifacts/features/self-dataset/`.
-3. Host: `train_gnn_models.py` → `src/artifacts/runs/<exp>/`.
-
-**Live demo:**
-```
-# host
-uv run python src/live/live_server.py --bind 10.21.2.1 --run-dir src/artifacts/runs/exp01 \
-  --scaler src/artifacts/features/self-dataset/feature_scaler.json \
-  --experiment src/out/etw/experiments/20261009T145632Z/experiment.json
-# VM, elevated PowerShell, two windows
-C:\scripts\08-live-shipper.ps1        # capture + ship to the host
-C:\scripts\06-benign-workload.ps1     # benign activity, the same as in training
-```
-Open http://10.21.2.1:8000. A window closes about 20 s after each 5-minute boundary. The first window
-is `partial` (the capture started mid-window) and is not scored by design. Outputs go to
-`src/live/sessions/<id>/` (gitignored).
-
-## 4. Current state
-
-**Verified**
-- Benign training dataset: 20 minutes, 8 windows (5 min long, 2 min stride), 68,319 windowed edges,
-  6,810 node-window copies (995 process / 2,558 file / 3,257 net).
-- Valid model `runs/exp01`: embeddings not collapsed (`emb_std` 0.05–0.19), training flag rate ≈ 0.1 %.
-- Live path end to end: converter hash matches training, the shipper excludes its own PID, and the
-  first window was scored: 835 nodes, 19 flagged (2.3 %), all file nodes. 18 of the 19 are DLLs loaded
-  once by a Google-updater-like process that never appears in training: benign novelty, not an attack.
-
-**Runs but not validated**
-- Replay equivalence (`compare_replay.py`, live path == offline pipeline) has not been run.
-- Benign flag rate under `06-benign-workload.ps1` has not been measured. The window above came from running `03-workload.ps1`.
-
-**Not done**
-- Subgraph-score filter (SG-Det), labelled attack capture, test metrics, NODLINK W10 baseline,
-  full Alg. 1 on GraphDB, LLM investigator.
-
-## 5. Pitfalls we already hit
-
-- **Wrong edges file.** `src/out/etw/SimulatedW10_train_edges.csv` is an old capture without windows.
-  Pairing it with the windowed features gave all-zero features and a collapsed model. Always use the
-  edges inside `experiments/<id>/`.
-- **`03` vs `06`.** `03-workload.ps1` *installs* software (choco, configs). It is not a benign workload.
-  Use `06` for benign tests, or the model will flag the installer activity.
-- **VM "memory kill" that wasn't.** The VM died on a VMSVGA segfault in `libnvidia-glcore` (3D
-  acceleration), not an OOM. Fixed with `accelerate3d off`. If it happens again, check `journalctl -k`
-  and the VM's `Logs/VBox.log.1` before blaming RAM.
-- **GraphDB memory.** `compose.yaml` sets an 8g Java heap but a 4g container limit. Lower
-  `GRAPHDB_HEAP` to ≤ 3g before loading big graphs.
-- **Restart the live server** after the VM dies: a dead connection can leave it without a listener.
-- **Shipper copy.** After editing `src/live/etwship.py`, run `sync_ps1.py` so the copy embedded in
-  `08-live-shipper.ps1` stays the same.
-
-## 6. Open tasks you can pick up
-
-1. **SG-Det** (next step): score each subgraph as the sum of its anomalous nodes' scores, map it to
-   minor/moderate/significant/critical, and alert only on ≥ moderate (paper Alg. 1 lines 20–24, §7.2.1).
-   The full spec is in `docs/PROGRESS.md` "Next 3 steps".
-2. **More benign data:** 2–3 extra benign captures at different times, with background tasks triggered
-   (Google updater, Defender scan), then retrain `runs/exp02` and calibrate τ on a held-out benign session.
-3. **Replay check:** `src/live/README.md` step 4 → `ALL MATCH`.
-4. **Labelled attack run:** one Atomic scenario during `06`, labels via `src/atomic-attack-pack/LABELING.md`.
-5. **Clean-up:** rewrite or remove the stale root `README.md`.
+Smaller open items (code bugs and data checks) are under PROGRESS "Open items".

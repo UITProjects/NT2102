@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 <#
-  Collector provisioner for the ETW lab VM (OCR-APT reproduction). Runs AFTER base.ps1 and tools.ps1.
+  04-collector.ps1 - collector provisioner for the ETW lab VM. Runs after 01-base.ps1 and 02-tools.ps1.
 
   Sets up:
     1. Embeddable Python (pinned) in C:\Tools\python-embed\<ver>   - runs the converter, stdlib only
@@ -8,16 +8,15 @@
     3. Windows service "SilkService" (SilkETW's service mode), startup = Manual
     4. Optionally starts a capture run (default: train) if the collector is not already running
 
-  Output (synced to host ./out/etw):
+  Output (synced to host src/out/etw):
     C:\lab-out\etw\raw\<split>\<run>\{kproc,kfile,knet}.json      raw SilkETW JSON lines
     C:\lab-out\etw\<Graph>_<split>_{edges,node_attrs}.csv           after 'etwctl convert -Split <split>'
 
   Safe to re-run: every file is only rewritten if its content changed; a running capture is never
   touched; Python is only downloaded once (and hash-checked when pinned).
-
-  Vagrantfile:
-    config.vm.provision "collector", type: "shell", path: "provision/collector.ps1"
-    # args: "-StartSplit none"   to install without starting a capture
+  -StartSplit none installs without starting a capture.
+  The $converter here-string below is hashed by src/live/engine.py: any edit inside it, even a comment,
+  breaks the live "converter sha256 match" check against experiment.json.
 #>
 param(
     [string]$PythonVersion   = "3.12.7",
@@ -541,7 +540,7 @@ $cfg = [ordered]@{
     Graph          = $Graph
     Python         = $PyExe
     Converter      = "$LabHome\etw2nodlink.py"
-    # Keyword masks: verify against C:\Tools\provider-dumps\keywords-<provider>.txt (dumped by tools.ps1)
+    # Keyword masks: verify against C:\Tools\provider-dumps\keywords-<provider>.txt (dumped by 02-tools.ps1)
     Collectors     = @(
         [ordered]@{ Stem = "kproc"; Required = $true;  Guid = "6f1a2c10-0b7e-4c1d-9a51-3e1f00000001"
                     Provider = "Microsoft-Windows-Kernel-Process"; Keywords = "0x50"  }  # PROCESS|IMAGE

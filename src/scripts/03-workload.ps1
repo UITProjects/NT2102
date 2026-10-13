@@ -4,7 +4,7 @@
   Vagrant provisioner "workload": install + autostart benign server software on the
   ETW lab VM, approximating the benign process profile of NODLINK SimulatedW10.
 .NOTES
-  Idempotent (safe to re-run).
+  Idempotent (safe to re-run). Installs only: for benign activity use 06-benign-workload.ps1.
   Core   : Apache httpd (httpd.exe), PostgreSQL 16 (postgres.exe)  -> always installed
   -Extras: Chrome (chrome.exe + GoogleUpdate*), Temurin 17 JRE (java.exe), Everything
   Skipped on purpose: Windows built-ins (explorer, svchost, csrss, dwm, ...) already exist;
@@ -132,7 +132,7 @@ $hbaWant = "host    all    all    $LabSubnet    scram-sha-256    # lab-managed"
 $hbaOld  = @(Get-Content $hba)
 $hbaNew  = @($hbaOld | Where-Object {
              $_ -notmatch '# lab-managed$' -and
-             $_ -ne "host    all    all    $LabSubnet    scram-sha-256" }) + $hbaWant   # 2nd clause: line written by v1 of this script
+             $_ -ne "host    all    all    $LabSubnet    scram-sha-256" }) + $hbaWant   # 2nd clause: also drops the unmarked line older runs wrote
 if (($hbaOld -join "`n") -ne ($hbaNew -join "`n")) { Set-Content $hba $hbaNew -Encoding ASCII; $pgChanged = $true }
 
 $conf = Join-Path $pgData 'postgresql.conf'

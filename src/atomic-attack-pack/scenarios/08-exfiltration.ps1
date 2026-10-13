@@ -1,9 +1,5 @@
 <#
-  08 — EXFILTRATION  (tactic: Exfiltration)
-  Technique: T1041 (exfil over C2 channel) — ship the archive from 07 to the sink.
-  Observable nodes: file READ (the archive) + network edge (to the same sink as the C2).
-  Reusing the C2 endpoint ties exfil to the C2 node — a realistic, detectable linkage.
-  Admin required: no.
+  08 - Exfiltration (T1041): send the 07 archive to the same sink as the C2 beacon. Run 07 first. Details: SCENARIOS.md.
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

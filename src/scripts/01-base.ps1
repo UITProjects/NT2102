@@ -16,7 +16,7 @@ if ($ip) {
 Set-TimeZone -Id "UTC"
 w32tm /resync /force 2>$null | Out-Null
 
-# 3. Never sleep during multi-day benign capture
+# 3. Never sleep during a capture
 powercfg /change standby-timeout-ac 0
 powercfg /change monitor-timeout-ac 0
 powercfg /hibernate off
@@ -25,10 +25,10 @@ powercfg /hibernate off
 Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
 Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-# 5. Lab folders (ETW output stays local; copy out after capture)
+# 5. Lab folders (C:\etw is unused now: captures go to C:\lab-out\etw, see 04-collector)
 "C:\Tools", "C:\etw", "C:\lab-labels" | ForEach-Object { New-Item -ItemType Directory -Force -Path $_ | Out-Null }
 
-# 6. Freeze Windows Update for a stable capture campaign (record in DEVIATIONS)
+# 6. Freeze Windows Update so captures stay comparable
 Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
 Set-Service wuauserv -StartupType Disabled
 

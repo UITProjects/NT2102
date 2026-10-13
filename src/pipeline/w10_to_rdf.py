@@ -1,16 +1,16 @@
 """
-w10_to_rdf.py — minimal, Windows-only version of OCR-APT's transform_to_RDF.py.
+w10_to_rdf.py - minimal, Windows-only version of upstream OCR-APT/src/transform_to_RDF.py ([REPO] l.N).
+Not used by the live demo (Alg. 1 runs in memory); kept for the GraphDB path. Deviations: DEVIATIONS D4.
 
 Scope: dataset=nodlink, host=SimulatedW10, CSV input only (what etw2nodlink.py produces).
 Outputs (same names/format the downstream repo scripts read):
-  <root>/<graph>.tsv            s/p/o triples      -> encode_to_PyG.py:269
-  <root>/<graph>_graph_df.csv   clean edge list    -> encode_to_PyG.py:270
+  <root>/<graph>.tsv            s/p/o triples      -> [REPO] encode_to_PyG.py l.269
+  <root>/<graph>_graph_df.csv   clean edge list    -> [REPO] encode_to_PyG.py l.270
   <root>/<graph>_rdfs.ttl       Turtle-star        -> GraphDB (SPARQL in sparql_queries.py)
-Dropped vs repo: the .nt file, tc3/optc/networkx branches, --adjust-uuid, --filter-node-type.
+[OURS] dropped: the .nt file, tc3/optc/networkx branches, --adjust-uuid, --filter-node-type.
 
-Usage:
-  python w10_to_rdf.py --root-path ./out/etw/                  # train + test (default)
-  python w10_to_rdf.py --root-path ./out/etw/ --splits train   # train-only: learning / pipeline smoke test
+Usage (from the repo root; experiments hold only a train split so far):
+  uv run python src/pipeline/w10_to_rdf.py --root-path src/out/etw/experiments/<id> --splits train
 """
 import argparse
 import re
@@ -20,12 +20,12 @@ from pathlib import Path
 import pandas as pd
 
 HOST = "SimulatedW10"
-PREFIX = f"https://NODLINK.graph/{HOST}/"           # same namespace as repo l.47-48
+PREFIX = f"https://NODLINK.graph/{HOST}/"           # same namespace as [REPO] l.47-48
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 # Fixed vocabularies the downstream code assumes for this host:
-EDGE_TYPES = {"Write", "Read", "Send", "Recv", "Start", "Load"}   # database_config.py:85-86
-NODE_TYPES = {"PROCESS", "FILE", "NET"}                           # database_config.py:105-106
+EDGE_TYPES = {"Write", "Read", "Send", "Recv", "Start", "Load"}   # [REPO] database_config.py l.85-86
+NODE_TYPES = {"PROCESS", "FILE", "NET"}                           # [REPO] database_config.py l.105-106
 EDGE_COLS = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
 ID_OK = re.compile(r"^[A-Za-z0-9._:\-]+$")   # safe inside an IRI, and no "/" (repo splits on it)
 MS_MIN, MS_MAX = 946_684_800_000, 4_102_444_800_000  # 2000-01-01 .. 2100-01-01 in epoch ms
@@ -46,8 +46,8 @@ def load_edges(root, graph, split):
         die(f"{split}: missing columns {missing}")
     df = df[EDGE_COLS]
     n0 = len(df)
-    df = df.dropna(subset=["edge-type"])                                 # repo l.91 meant to do this (no-op bug)
-    df["edge-type"] = df["edge-type"].astype(str).str.split("/").str[-1]  # repo l.90
+    df = df.dropna(subset=["edge-type"])                                 # [REPO] l.91 meant to do this (no-op bug)
+    df["edge-type"] = df["edge-type"].astype(str).str.split("/").str[-1]  # [REPO] l.90
     bad_edge = ~df["edge-type"].isin(EDGE_TYPES)
     bad_node = ~df["source-type"].isin(NODE_TYPES) | ~df["destination-type"].isin(NODE_TYPES)
     if bad_edge.any():
@@ -65,7 +65,7 @@ def load_edges(root, graph, split):
     df["timestamp"] = pd.to_numeric(df["timestamp"], errors="raise").astype("int64")
     lo, hi = df["timestamp"].min(), df["timestamp"].max()
     if lo < MS_MIN or hi > MS_MAX:
-        # encode_to_PyG.py:167-168 divides W10 gaps by 1000 -> timestamps must be epoch MILLISECONDS
+        # [REPO] encode_to_PyG.py l.167-168 divides W10 gaps by 1000 -> timestamps must be epoch MILLISECONDS
         die(f"{split}: timestamps {lo}..{hi} are not epoch ms (s~1.7e9, ns~1.7e18, FILETIME~1.3e17)")
     return df
 
@@ -78,7 +78,7 @@ def nodes_of(df):
 
 
 def rare_types(train, test, k):
-    """Repo l.266-293: drop node types with <= k nodes in train OR test."""
+    """[REPO] l.266-293: drop node types with <= k nodes in train OR test."""
     rare = set()
     for df in (train, test):
         if df.empty:          # train-only mode: test contributes nothing
@@ -121,7 +121,7 @@ def main():
     keep = lambda df: df[~df["source-type"].isin(rare) & ~df["destination-type"].isin(rare)]
     train, test = keep(train), keep(test)
 
-    # 3. Node table with split flag. Test first; a node seen in both splits counts as test (repo l.106-109).
+    # 3. Node table with split flag. Test first; a node seen in both splits counts as test ([REPO] l.106-109).
     test_nodes = nodes_of(test).assign(is_Train="False")
     train_nodes = nodes_of(train).merge(test_nodes[["node", "type"]], how="left", indicator=True)
     train_nodes = train_nodes[train_nodes["_merge"] == "left_only"].drop(columns="_merge").assign(is_Train="True")
@@ -129,7 +129,7 @@ def main():
     if nodes["node"].duplicated().any():
         die(f"node ids with >1 type: {nodes.loc[nodes['node'].duplicated(), 'node'].head(3).tolist()}")
 
-    # 4. Labels. Repo requires this file; here it is optional, and a missing file means all benign.
+    # 4. Labels. [REPO] requires this file; [OURS] optional, and a missing file means all benign.
     gt = root / f"{HOST}_ground_truth.txt"
     if gt.exists() and gt.stat().st_size > 0:
         mal = set(pd.read_csv(gt, header=None, dtype=str)[0].str.strip())

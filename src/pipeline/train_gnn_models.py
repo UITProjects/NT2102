@@ -1,24 +1,17 @@
 #!/usr/bin/env python3
 """
-train_gnn_models.py  (NT2102 POC, simplified from CoDS-GCS/OCR-APT train_gnn_models.py)
+train_gnn_models.py - train one OCRGCN per node type on benign data (simplified from upstream
+OCR-APT/src/train_gnn_models.py; [REPO] l.N refers to that file).
 
-What it does
-    benign edges CSV (NODLINK schema) + features_model.csv (from encodeToFeatures.py)
+    benign edges CSV (NODLINK schema) + features_model.csv (from encode_to_features.py)
     -> one heterogeneous graph with inverse relations
     -> one OCRGCN per node type (RGCN encoder + one-class hypersphere loss)
     -> threshold = training-score quantile at (1 - contamination)
     -> early stop on benign-validation TNR
-    -> models + metadata saved for later test / live-window scoring
+    -> models + metadata for test / live-window scoring (score_window.py)
 
-What it does NOT do (out of POC scope)
-    GraphDB / RDF, the authors' PyGOD fork, baseline detectors, test-set P/R/F1,
-    the 2-hop metric, embedding export, subgraph construction (Alg. 1), LLM (Alg. 2).
-
-Tags in comments
-    [PAPER] paper text   [REPO] verified in repo source   [OURS] our change
-    [INFERENCE] not verifiable here: the OCRGCN class lives in the authors' PyGOD
-                fork (train_gnn_models.py l.13), which is not in the project files.
-                Loss/threshold logic follows upstream PyGOD OCGNN as I know it.
+Own re-implementation, not the authors' PyGOD fork; loss/threshold follow upstream PyGOD OCGNN
+([INFERENCE]): docs/DEVIATIONS.md D5. No GraphDB, baselines or test metrics here.
 
 Usage (from the repo root)
     uv run python src/pipeline/train_gnn_models.py --selftest
@@ -49,7 +42,7 @@ EDGE_COLS = ["source-id", "source-type", "destination-id", "destination-type", "
 
 # --------------------------------------------------------------------------- data
 def normalise_edges(df: pd.DataFrame) -> pd.DataFrame:
-    """Same normalisation as encodeToFeatures.py, so relation names match feature names."""
+    """Same normalisation as encode_to_features.py, so relation names match feature names."""
     df = df.dropna(subset=EDGE_COLS).copy()
     df["source-id"] = df["source-id"].astype(str)
     df["destination-id"] = df["destination-id"].astype(str)
@@ -168,7 +161,7 @@ def make_split(nodes: pd.DataFrame, a) -> np.ndarray:
 class OCRGCN(nn.Module):
     """RGCN encoder + Deep-SVDD style hypersphere (center c, radius r).
 
-    [PAPER §5.1.1] RGCN layers aggregate 1-hop neighbours per edge type; final embeddings go to
+    [PAPER] §5.1.1 RGCN layers aggregate 1-hop neighbours per edge type; final embeddings go to
     a one-class objective; score = distance to the hypersphere center; above radius -> anomalous.
     [INFERENCE] c and r are not trainable parameters: they are re-estimated during the first
     `warmup` epochs and frozen afterwards (upstream PyGOD OCGNNBase.loss_func).
@@ -217,7 +210,7 @@ class OCRGCN(nn.Module):
 def train_one_type(x, edge_index, edge_type, num_rel, train_idx, val_idx, a, seed):
     """Train the OCRGCN of one node type.
 
-    [PAPER §5.1.2] each model is trained on one node type but aggregates from all neighbour types:
+    [PAPER] §5.1.2 each model is trained on one node type but aggregates from all neighbour types:
     the encoder runs on the FULL graph, the loss uses only this type's training nodes.
     [REPO] same pattern: split_per_node_type() sets masks for the target type only (l.222-235).
     """
@@ -243,9 +236,9 @@ def train_one_type(x, edge_index, edge_type, num_rel, train_idx, val_idx, a, see
         with torch.no_grad():
             emb = model(x, edge_index, edge_type)
             s_tr, s_va = model.score(emb[train_idx]), model.score(emb[val_idx])
-            thr = torch.quantile(s_tr, q)                       # [PAPER §5.1.2] threshold from contamination
+            thr = torch.quantile(s_tr, q)                       # [PAPER] §5.1.2 threshold from contamination
             tnr = (s_va <= thr).float().mean().item() if len(val_idx) else 1.0
-        # [PAPER §5.1.2] no malicious validation nodes -> stop when validation TNR declines.
+        # [PAPER] §5.1.2 no malicious validation nodes -> stop when validation TNR declines.
         # [OURS] patience instead of stopping on the first decline; ties keep the later epoch.
         if tnr >= best["tnr"]:
             best = {"tnr": tnr, "epoch": epoch, "loss": loss.item(),
@@ -386,7 +379,7 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Simplified OCRGCN training (NT2102 POC)")
     p.add_argument("--selftest", action="store_true")
     p.add_argument("--edges", help="pooled SimulatedW10_train_edges.csv")
-    p.add_argument("--features", help="features_model.csv from encodeToFeatures.py")
+    p.add_argument("--features", help="features_model.csv from encode_to_features.py")
     p.add_argument("--scaler", default=None, help="feature_scaler.json (fixes feature column order)")
     p.add_argument("--out-dir", default=os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                      "..", "artifacts", "runs", "ocrgcn"))
@@ -396,7 +389,7 @@ def parse_args(argv=None):
     p.add_argument("--val-windows", type=int, default=1)
     p.add_argument("--purge-windows", type=int, default=2, help="ceil(window/stride) - 1")
     p.add_argument("--val-frac", type=float, default=0.15, help="only for --val-split random")
-    # model: [PAPER §7.2.1] 3 RGCN layers, 32-d, lr 0.005, beta 0.5; [REPO] warmup 2, epochs 100, dropout 0
+    # model: [PAPER] §7.2.1 3 RGCN layers, 32-d, lr 0.005, beta 0.5; [REPO] warmup 2, epochs 100, dropout 0
     p.add_argument("--layers", type=int, default=3)
     p.add_argument("--hidden", type=int, default=32)
     p.add_argument("--lr", type=float, default=0.005)

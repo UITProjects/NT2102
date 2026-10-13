@@ -13,7 +13,7 @@
   3. collect     move the run's raw JSON into  <exp>\raw\train\x-<UTC>\
   4. convert     etw2nodlink.py on <exp>\raw only   ->  <exp>\converted\  (un-windowed, + _summary.json)
   5. window      etwwindow.py                        ->  <exp>\
-                   SimulatedW10_train_edges.csv        pooled windows, node IDs prefixed w0007_  <- feed to w10_to_rdf.py
+                   SimulatedW10_train_edges.csv        pooled windows, node IDs prefixed w0007_  <- host: encode_to_features.py
                    SimulatedW10_train_node_attrs.csv   same prefixes
                    windows.csv, manifest.json          per-window counts, parameters, totals
   6. check       check_rdf_input.py: the pair meets transform_to_RDF.py's input contract -> <exp>\check.json
@@ -30,8 +30,7 @@
   Run in an ELEVATED PowerShell inside the VM's RDP/console desktop (not vagrant powershell / WinRM).
   Elevation is needed for SilkService; the workload still starts apps through explorer.exe, so they run
   un-elevated with explorer as parent, like a real user.
-  Needs: 06-benign-workload.ps1 with the -BeforeLedger parameter, and etwwindow.py installed by
-  05-collect-10-minutes-window.ps1 (run '05... -WindowOnly' once if it is missing).
+  Needs etwwindow.py, installed by 05-collect-for-20-minutes.ps1 (run it once with -WindowOnly if missing).
 #>
 [CmdletBinding()]
 param(
@@ -212,7 +211,7 @@ function Invoke-Native([string]$Exe, [string[]]$ArgList, [int[]]$Ok = @(0)) {
 }
 
 # ---------------------------------------------------------------- config + tools
-$Cfg = Get-Content (Join-Path $LabDir 'etwlab.json') -Raw | ConvertFrom-Json   # written by collector.ps1
+$Cfg = Get-Content (Join-Path $LabDir 'etwlab.json') -Raw | ConvertFrom-Json   # written by 04-collector.ps1
 foreach ($p in @($Cfg.Python, $Cfg.Converter, $EtwctlPs1)) {
     if (-not (Test-Path $p)) { throw "missing $p - re-run the collector provisioner" }
 }

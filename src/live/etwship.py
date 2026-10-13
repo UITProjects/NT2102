@@ -9,7 +9,8 @@ Live mode (on the VM, while SilkService writes C:\\lab-out\\etw\\raw\\test\\live
   duplicates after a retry are dropped server-side (it keys on byte offsets).
 
 Replay mode (on the host, no VM): send a recorded run with a virtual clock, --speed times faster.
-    python etwship.py --replay src/out/etw/experiments/<id>/raw/train/<run> --server http://127.0.0.1:8000 --speed 60
+    python etwship.py --replay src/out/etw/experiments/<id>/raw/train/<run> --server http://127.0.0.1:8000 --speed 120
+  (./replay.sh wraps this.)
   The dos-map (\\device\\harddiskvolumeN -> c:) is inferred from the raw paths unless --dos-map is given.
 
     python etwship.py --print-dos-map      (on the VM: the mapping the live mode sends)
@@ -281,7 +282,7 @@ def main():
     ap.add_argument("--session", help="default: run folder name")
     ap.add_argument("--token", default=os.environ.get("LAB_TOKEN"))
     ap.add_argument("--interval", type=float, default=1.0, help="seconds between POSTs (virtual seconds in replay)")
-    ap.add_argument("--speed", type=float, default=60, help="replay: virtual seconds per wall second (0 = no sleep)")
+    ap.add_argument("--speed", type=float, default=60, help="replay: virtual seconds per wall second (use >= 1; 0 hangs, ~120 is safe)")
     ap.add_argument("--tail-s", type=float, default=360, help="replay: keep the clock running after the last event")
     ap.add_argument("--dos-map", nargs="*", help=r"replay: \device\harddiskvolume4=c: (default: inferred)")
     ap.add_argument("--exclude-pid", type=int, default=None,

@@ -1,13 +1,7 @@
 <#
-  05 — CREDENTIAL ACCESS  (tactic: Credential Access)
-  Technique: T1003.001 — dump LSASS memory (commonly via rundll32 + comsvcs.dll MiniDump).
-  This is a STRONG, unambiguous malicious signal and a textbook OCR-APT target node:
-  a benign-looking signed binary (rundll32) touching lsass and writing a .dmp file.
-  Observable nodes: process (rundll32.exe) + file (the .dmp) + access to lsass.exe.
-  Admin required: YES (reading LSASS needs SeDebug / admin). Run the VM session elevated.
-
-  Defender is already off in your lab per the VM build; on a defended host this is blocked.
-  Confirm the comsvcs test number first:  Invoke-AtomicTest T1003.001 -ShowDetailsBrief
+  05 - Credential access (T1003.001, rundll32 + comsvcs MiniDump). Admin: YES. Details: SCENARIOS.md.
+  Visible: rundll32 + the .dmp write; the lsass handle access itself is probably not collected [INFERENCE].
+  Confirm the comsvcs test number first: Invoke-AtomicTest T1003.001 -ShowDetailsBrief
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

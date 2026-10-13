@@ -3,9 +3,8 @@
 How one second of Windows activity becomes the tensors the OCRGCN reads. One toy capture is carried
 through every stage; all numbers below come from running the real code on it (not hand-made).
 
-Tags: [PAPER] paper text · [REPO] upstream behaviour **as recorded in our code comments** (the upstream
-`encode_to_PyG.py` is not in this checkout, so these were not re-verified here) · [OURS] what this project
-does · [INFERENCE] a guess.
+Tags: [PAPER] paper text · [REPO] upstream behaviour (`OCR-APT/src/encode_to_PyG.py`; rounding and
+zero-column drop spot-checked) · [OURS] what this project does · [INFERENCE] a guess.
 
 ```
 SilkETW JSON lines ─(1)─► edge CSV ─(2)─► windows ─(3)─► 15 features / node ─(4)─► x, edge_index, edge_type ─► OCRGCN
@@ -84,8 +83,8 @@ $s_i = s_0 + 120\,i$. Example: $s_0 = 14{:}56{:}33$ → w0000 = 14:56:33–15:01
 passing and no feature crosses windows. Only full windows are emitted; a gap > `--max-gap-s` starts a new segment.
 
 **Live** (`src/live/engine.py`): events are re-ordered by event time, released once older than the watermark
-(VM clock − 20 s lateness, `_advance` l.315), and cut into clock-aligned tumbling windows (stride = window,
-`_close_windows` l.329). A window closes when the watermark passes its end; a window that began before the first
+(VM clock − 20 s lateness, `_advance` l.264), and cut into clock-aligned tumbling windows (stride = window by
+default; `--stride-min` / `--origin-ms` change it, `_close_windows` l.278). A window closes when the watermark passes its end; a window that began before the first
 event is `partial` and is not scored. [OURS] Live window node IDs are **not** prefixed: one window is one graph,
 scored on its own.
 
@@ -165,12 +164,13 @@ Details that matter:
 - Multi-edges are kept: cmd wrote twice, so two `[4, 0]` edges with relation 4 appear.
 
 The model then computes, per node type $t$, `emb = model_t(x, edge_index, edge_type)` of shape [N, 32]
-(`score_window.py` l.105): the encoder sees **all** nodes, but only type-$t$ rows are scored by model $t$
-(l.107). Score $= \lVert emb - c\rVert^2 - r^2$; above the threshold $\tau_t$ the node is flagged.
+(`score_window.py` l.108): the encoder sees **all** nodes, but only type-$t$ rows are scored by model $t$
+(l.110). Score $= \lVert emb - c\rVert^2 - r^2$; above the threshold $\tau_t$ the node is flagged.
+Next (not covered here): flagged nodes → Alg. 1 subgraphs + score filter (`alg1.py`) → optional LLM step (`alg2.py`).
 
 ## 5. What is frozen at live time
 
-A live window is scored with things that exist only because of training (`score_window.py::score_edges`, l.80):
+A live window is scored with things that exist only because of training (`score_window.py::score_edges`, l.83):
 
 - **the scaler** (`feature_scaler.json`): refitting on one 5-min window would rescale idle times differently from
   training, and the model would see inputs it was never calibrated for;
@@ -178,18 +178,16 @@ A live window is scored with things that exist only because of training (`score_
   training. Edges whose (src type, edge, dst type) triple is not in the list are dropped with a warning;
 - **the feature order** and **per-type models + $\tau_t$**.
 
-## Known loose ends
+## Open checks
 
-- Converter loss: some Reads/Writes are unresolved because the file's `Create` happened before the capture
-  (as in the decoy above). Counts are in `converted/SimulatedW10_train_summary.json`.
-- Edge direction vs NODLINK is unchecked (stage 1).
-- `src/out/etw/SimulatedW10_train_edges.csv` is an **old un-windowed** capture; pairing it with windowed features
-  gave all-zero features and a collapsed model once (`docs/reports/teammate.md`). Always use the file inside the
-  experiment folder.
+Converter loss (unresolved Reads/Writes), edge direction vs NODLINK, and the old un-windowed edges file:
+see `docs/PROGRESS.md` "Open items" and the pitfalls in `src/README.md`.
 
-## Reproduce the toy numbers
+## Reproduce
 
-The toy capture is the converter's own selftest, extended; run the shipped checks to see the code paths work:
+The toy capture above is built on the converter's own selftest (embedded in `src/scripts/04-collector.ps1`,
+runs on the VM). The host selftests below exercise the same code paths on their own, smaller toys; they do
+not print the numbers in this note:
 
 ```
 uv run python src/pipeline/encode_to_features.py --selftest

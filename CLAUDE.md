@@ -113,7 +113,9 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
 - End goal (user, 2026-10-11): demonstrate the paper's core concept live: a real attack run during the
-  demo raises a true alert while benign windows stay green. No publishing-style evaluation, metrics
+  demo raises a true alert while benign windows stay green. The attack is general, not APT-specific (user,
+  2026-10-13): target demo = CVE exploit in a lab service → RCE → ATT&CK techniques; OCR-APT supplies the
+  method. The repo is a live demo of the paper's core concept, not a 100% reproduction. No publishing-style evaluation, metrics
   or NODLINK baseline are required; the section 6 metrics rules apply only if numbers are ever reported.
 
 When direction or progress changes, update `docs/PROGRESS.md` (replace status lines in place; no

@@ -1,13 +1,7 @@
 <#
-  09 — DEFENSE EVASION / ANTI-FORENSICS  (tactic: Defense Evasion)
-  Techniques: T1070.001 (clear Windows event logs), T1070.006 (timestomp)
-  Observable nodes: process (wevtutil.exe), plus file timestamp changes.
-  NOTE: clearing the Windows Event Log does NOT erase your SilkETW capture — SilkETW streams
-  events out to C:\lab-out as they happen, so this step is itself recorded. That is the point:
-  log-clearing is a high-value late-stage IOC your detector should still see.
-  Admin required: YES (wevtutil clear needs admin). Run elevated.
-
-  Confirm test numbers:  Invoke-AtomicTest T1070.001 -ShowDetailsBrief
+  09 - Defense evasion (T1070.001 clear event logs, T1070.006 timestomp). Admin: YES. Details: SCENARIOS.md.
+  Clearing event logs does not touch the SilkETW capture (already streamed out). Timestomp may be invisible
+  to the file keywords [INFERENCE]. Confirm test numbers: Invoke-AtomicTest T1070.001 -ShowDetailsBrief
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

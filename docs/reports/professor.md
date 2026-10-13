@@ -1,22 +1,22 @@
 # Phát hiện bất thường trên endpoint device log
 
-**Anomaly detection on endpoint device logs, based on OCR-APT (CCS 2025)** · NT2102 · status 2026-10-11
+**Anomaly detection on endpoint device logs, based on OCR-APT (CCS 2025)** · NT2102 · status 2026-10-13
 
-> **Built:** a live demo that turns Windows 10 kernel logs into a graph and scores every 5-minute window with one-class graph neural networks.
+> **Built:** a live demo that turns Windows 10 kernel logs into a graph, scores every 5-minute window with one-class graph neural networks, and groups anomalous nodes into alert subgraphs (optional LLM report).
 >
-> **Works:** end to end, live. The first window flagged 19 of 835 nodes, all from one benign updater the model had never seen.
+> **Works:** end to end, live, on benign activity. The subgraph-score filter turns the one benign alert (an unseen updater) green, but only with our cut-off; the benign data is still too narrow.
 >
-> **Next:** cut benign false alarms (the paper's subgraph-score filter, more benign training data), then show a real attack raising a true alert live.
+> **Next:** more benign training data, then a real attack raising a true alert live.
 
 ## 1. Introduction
 
-- **Problem:** spot attacker activity on a Windows endpoint from its audit logs, **without attack labels** for training.
+- **Problem:** spot an attack on a Windows endpoint from its audit logs, **without attack labels** for training. Target demo: exploit a CVE in a lab service → remote code execution → follow-on MITRE ATT&CK techniques. Not limited to APTs.
 - **Idea, from OCR-APT [P1]:**
   1. turn the logs into a provenance graph (who did what to what);
   2. learn what "normal" looks like for each node type;
   3. flag nodes that don't fit.
 - **Our data:** our own Windows 10 VM; kernel events from ETW via SilkETW; a scripted benign workload.
-- **Scope:** about 40 % of the paper: the detector plus simplified alert subgraphs. The LLM report stage is not built.
+- **Scope:** the paper's core method as a live demo, not a full reproduction: the detector, the alert subgraphs (Alg. 1) with their score filter, and an optional LLM report step. No paper-style evaluation.
 - **Goal:** demonstrate the paper's core concept live. A real attack run during the demo should raise a true alert while benign windows stay green. Publishing-style evaluation and metrics are out of scope.
 - **Where we are:** it runs end to end, live, on benign activity. No attack has been demoed yet.
 
@@ -35,15 +35,16 @@ flowchart TB
   end
   subgraph DET["③ Host · 10.21.2.1:8000 · detect + show"]
     direction LR
-    F["score nodes<br/>(trained models)"] --> G["group anomalous<br/>nodes → subgraphs"] --> UI["web UI<br/>http://10.21.2.1:8000"]
+    F["score nodes<br/>(trained models)"] --> G["anomalous subgraphs<br/>+ score filter"] --> UI["web UI<br/>http://10.21.2.1:8000"]
+    G -.-> LLM["LLM verdict + report<br/>(optional)"] -.-> UI
   end
   VM -- "HTTP POST /ingest<br/>host-only network 10.21.2.0/24" --> PREP
   PREP --> DET
 ```
 
 - The VM (10.21.2.10) only collects and ships logs to the host (10.21.2.1, port 8000) over a private host-only network. All processing runs on the host.
-- The host uses **the same conversion code and settings as training**, so live scores match offline scores.
-- Each closed 5-minute window is scored; anomalous nodes are linked into alert subgraphs.
+- The host uses **the same conversion code and settings as training**. A replay check that live scores equal offline scores is still open.
+- Each closed 5-minute window is scored; anomalous nodes are linked into subgraphs, and the window is red only if a subgraph scores high enough.
 - **UI:** a timeline of windows (green = normal, red = alert), the alert graph, and the top nodes per type.
 
 ## 3. Core of the paper we are coding
@@ -82,13 +83,13 @@ flowchart TB
 | what we have | value |
 |---|---|
 | benign training capture | 20 min, cut into 8 windows |
-| graph size | 68,319 edges · 6,810 nodes (995 process · 2,558 file · 3,257 network) |
+| graph size (summed over windows) | 68,319 edges · 6,810 node copies (995 process · 2,558 file · 3,257 network) |
 | alarm line τ (seed 360) | process 2.29 · file 0.23 · network −0.15 |
 | first live window | 835 nodes, 19 flagged (all files, one benign updater) |
 
-**Differences from the paper:** our own data instead of its datasets, our own trainer code, and 5-minute windows instead of the whole log at once. Each is listed in `docs/DEVIATIONS.md`.
+**Differences from the paper:** our own data instead of its datasets, our own trainer code, 5-minute windows instead of the whole log at once, our own alert cut-off, and an LLM triage step before the paper's report prompts. Each is listed in `docs/DEVIATIONS.md`.
 
-## 4. Progress
+## 4. Progress and next steps
 
 Each bar counts concrete milestones (✓ done, ○ open). No percentages are estimated.
 
@@ -97,23 +98,20 @@ Data lab (VM, ETW collector, converter) | VM build ✓; ETW collector ✓; conve
 Encoding + features | graph schema ✓; stable node IDs ✓; 15 behaviour features ✓; train-only scaler ✓
 Training (OCRGCN) | trainer code ✓; valid run ✓; stable across seeds ○; τ calibrated on benign data ○
 Live demo | shipper ✓; windowing + scoring engine ✓; web UI ✓; first scored window ✓; replay check ○
-Alert subgraphs (Alg. 1) | simplified subgraphs ✓; subgraph-score filter ○; full GraphDB version ○
-Attack demo (end goal) | benign windows stay green ○; run a real attack during the live demo ○; its window raises a true alert ○; the alert subgraph shows the attack's processes and files ○
-LLM report stage (Alg. 2) | out of scope
+Alert subgraphs (Alg. 1) | subgraphs ✓; subgraph-score filter ✓; cut-off confirmed on an attack ○
+LLM report (Alg. 2, optional) | triage + report prompts ✓; run with a real LLM ○
+Attack demo (end goal) | benign windows stay green ○; CVE → RCE scenario ○; real attack during the live demo ○; its window raises a true alert ○
 ```
 
-**End goal:** a real attack, run live, raises a true alert in the demo. So far only benign activity has been run. The first live window flagged 19 / 835 nodes (2.3 %, target ≈ 0.1 %), all from one benign updater, so benign false alarms have to come down first.
+The first live window flagged 19 / 835 nodes (2.3 %, target ≈ 0.1 %), all from one benign updater. The filter hides it (score 18 < our cut-off 30; the paper's cut-off of 10 would keep it red), but that cut-off was set on one benign window, so:
 
-## 5. Next steps
+1. **More benign training data**, and set τ and the cut-off on benign data the model didn't train on.
+2. **Replay check:** prove the live path gives exactly the same results as the offline pipeline.
+3. **Attack demo:** run an attack during the live demo (Atomic Red Team now, the CVE → RCE chain as the target) and show its window raising a true alert, with the attack's processes and files in the alert subgraph.
 
-1. **Subgraph-score filter** (paper Alg. 1): alert on a group of anomalous nodes only if their total score is high enough. This would have suppressed the updater alert.
-2. **More benign training data**, and set τ on benign data the model didn't train on.
-3. **Replay check:** prove the live path gives exactly the same results as the offline pipeline.
-4. **Attack demo:** run an Atomic Red Team scenario during the live demo and show its window raising a true alert, with the attack's processes and files in the alert subgraph.
+**Risks:** results change a lot between random seeds; the benign data is narrow and scripted; a small attack may score below the cut-off.
 
-**Risks:** results change a lot between random seeds; the benign data is narrow and scripted, so new benign activity can still raise alerts.
-
-## 6. References
+## 5. References
 
 **Related papers**
 

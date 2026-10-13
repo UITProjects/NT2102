@@ -7,15 +7,14 @@ live_server.py - HTTP layer around engine.Engine: ingest from the VM shipper, JS
     GET  /api/windows         every window of the current session (summary rows)
     GET  /api/windows/{wid}   one window: top nodes per type, Alg. 1 subgraphs (score, level, kept),
                               LLM verdict + attack report when --llm-provider is set (alg2.py)
-    GET  /api/stream          Server-Sent Events: "window" (a window changed), "status" (every 2 s)
+    GET  /api/stream          Server-Sent Events: "window" (a window changed), "status" (after 2 s idle)
     GET  /                    the UI (static/index.html)
 
-Usage (from the repo root)
+Usage (from the repo root): ./serve.sh [live|local] [flags] wraps
     uv run python src/live/live_server.py --run-dir src/artifacts/runs/exp01 \
         --scaler src/artifacts/features/self-dataset/feature_scaler.json \
         --experiment src/out/etw/experiments/20261009T145632Z/experiment.json --bind 10.21.2.1
-    add  --llm-provider anthropic|openai|ollama|mock  for the LLM verdict on red windows (uv sync --group llm;
-    'mock' is a keyword rule for UI tests, not an LLM)
+    add --llm-provider anthropic|openai|ollama|mock for the LLM verdict on red windows (src/live/README.md)
 """
 from __future__ import annotations
 

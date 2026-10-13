@@ -1,10 +1,5 @@
 <#
-  07 — COLLECTION & STAGING  (tactic: Collection)
-  Techniques: T1005 (data from local system), T1074.001 (local staging), T1560.001 (archive)
-  Implemented CUSTOM so the staged files and archive path are deterministic (easy to label).
-  Observable nodes: many file READ edges (collection) + a file WRITE (the archive) under one
-  process. Fan-in of reads to a staging dir is a recognisable collection pattern.
-  Admin required: no.
+  07 - Collection + staging (T1005, T1074.001, T1560.001), custom: file read fan-in + one archive write. Details: SCENARIOS.md.
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

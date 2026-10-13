@@ -1,34 +1,22 @@
 #!/usr/bin/env python3
 """
-alg2.py - LLM step after SG-Det: [OURS] attack / false-positive triage, then OCR-APT Algorithm 2 (attack
-report generation, lines 3-15) for the subgraphs judged to be an attack. Runs on ONE scored window, in memory.
+alg2.py - LLM step after SG-Det: [OURS] attack / false-positive triage, then OCR-APT Algorithm 2 l.3-15
+(attack reports) for subgraphs judged an attack. ONE scored window, in memory.
+[REPO] l.N = upstream ocrapt_llm_investigator.py; prompts from llm_prompt.py.
 
     kept subgraphs (alg1.construct, kept = True) + the window's edges
-      -> serialize    one log document per subgraph                    Alg.2 l.3   [REPO] l.245-280
+      -> serialize    one log document per subgraph                    Alg. 2 l.3     [REPO] l.245-280
       -> triage       [OURS] neutral prompt -> JSON verdict attack | benign | uncertain, ATT&CK tactics,
                       evidence lines (each must appear verbatim in the document, else dropped)
-      -> if attack:   extract IOCs -> drop IOCs not in the document -> summarize into an attack report
-                                                                       Alg.2 l.5-10 [REPO] l.456-517
-      -> if >= 2 attack subgraphs: IOCs per APT stage from the reports -> comprehensive report
-                                                                       Alg.2 l.12-15 [REPO] l.396-430
+      -> if attack:   extract IOCs -> drop IOCs not in the document -> attack report
+                                                                       Alg. 2 l.5-10  [REPO] l.456-517
+      -> if >= 2 attack subgraphs: IOCs per APT stage -> comprehensive report
+                                                                       Alg. 2 l.12-15 [REPO] l.396-430
       -> window verdict: attack if any subgraph is attack; else uncertain if any is uncertain / error;
                          else false_positive. uncertain and error keep the window red.
 
-Why a triage step: [PAPER] Alg. 2 never decides attack vs benign. It assumes the anomalous subgraphs are
-attack fragments, and its instructions ("APT attack investigator ... summarizing ... into attack reports")
-presuppose an attack, so it would write an attack report about a benign updater too. The verdict is ours.
-
-[OURS] differences from Alg. 2 (DEVIATIONS D9):
-  - no vector store / embeddings: a 5-min window document fits in the prompt, so the whole document goes
-    in the first user message (the repo retrieves chunks with LlamaIndex, 'text-embedding-3-large');
-  - lines 16-25 (LLM judge picks top IOCs, their context is pulled from GraphDB, report enriched) left out;
-  - real UTC times (the repo fakes a base date for SimulatedW10, l.222); full paths, not basenames (l.203);
-  - NET attrs decoded for display: SilkETW writes daddr / dport as signed integers
-    ("-1,707,025,385:-17663" = 23.220.64.154:443); node ids are untouched;
-  - documents longer than max_lines are cut, keeping the lines that touch anomalous nodes first.
-
-The GNN alert is never removed: the verdict is an overlay. An LLM 'false_positive' is not ground truth and is
-not used for training (log text is attacker-controlled; [PAPER] §3 assumes clean training logs).
+Why triage, what differs (no RAG, l.16-25 left out, real times, decoded NET attrs, cut documents), and why a
+verdict is an overlay that never feeds training: docs/DEVIATIONS.md D9.
 
 Usage (from the repo root)
     uv run python src/pipeline/alg2.py --selftest
@@ -230,7 +218,7 @@ class Recorder:
                                "ms": int((time.time() - t0) * 1000)})
 
 
-# --------------------------------------------------------------------------- serialization (Alg.2 l.3)
+# --------------------------------------------------------------------------- serialization (Alg. 2 l.3)
 def decode_net_attr(attr: str) -> str:
     """SilkETW 'daddr:dport' as signed ints with thousands separators -> 'a.b.c.d:port'.
     daddr is the in_addr read as a little-endian int32; dport is the network-order port read as a
@@ -379,7 +367,7 @@ def _conf(v):
 
 
 def attack_report(call, doc_id: str, doc: dict) -> dict:
-    """Alg.2 l.5-10 for one document: IOCs -> filter -> report. A fresh conversation per subgraph (l.10)."""
+    """Alg. 2 l.5-10 for one document: IOCs -> filter -> report. A fresh conversation per subgraph (l.10)."""
     sysmsg = PAPER_PROMPTS["instructions"]
     q1 = PAPER_PROMPTS["retrieve_ioc"].replace("{DOC_ID}", doc_id)
     msgs = [{"role": "user", "content": f"Document {doc_id}:\n{doc['text']}\n{q1}"}]
@@ -394,7 +382,7 @@ def attack_report(call, doc_id: str, doc: dict) -> dict:
 
 
 def comprehensive_report(call, reports: dict, docs_text: str) -> dict:
-    """Alg.2 l.12-15: IOCs per APT stage from all reports (filtered against the documents, [PAPER] l.14),
+    """Alg. 2 l.12-15: IOCs per APT stage from all reports (filtered against the documents, Alg. 2 l.14),
     then one comprehensive report."""
     sysmsg = PAPER_PROMPTS["instructions"]
     names = ", ".join(reports)
@@ -528,7 +516,7 @@ def selftest():
              {"id": "n1", "type": "net", "attr": "16,913,674:16415", "role": "anomalous", "score": 0.1, "tau": -0.1},
              {"id": "f2", "type": "file", "attr": "c:\\windows\\system32\\amsi.dll", "role": "connector",
               "score": 0.0, "tau": 0.2}]
-    sg = {"id": 0, "sg_score": 12.0, "level": "Moderate", "kept": True, "n_anomalous": 3, "n_connectors": 1,
+    sg = {"id": 0, "sg_score": 35.0, "level": "Moderate", "kept": True, "n_anomalous": 3, "n_connectors": 1,
           "nodes": nodes}
     ev = [("p1", "f1", "write", t), ("p1", "f1", "write", t + 300), ("p1", "f1", "write", t + 1500),
           ("p1", "n1", "send", t + 2000), ("p1", "f2", "load", t + 61_000), ("p1", "x9", "read", t)]

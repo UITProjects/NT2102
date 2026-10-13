@@ -17,10 +17,10 @@ engine.py - live windowed OCR-APT scoring, no web code (live_server.py is the th
       -> sessions/<id>/windows/<wid>/*.csv|json  + listeners (SSE in live_server.py)
 
 Time: only the shipper's clock is used (clock_ms), never this host's wall clock, so a replay at
-60x gives exactly the same windows as the live capture would.
+any speed gives the same windows as the live capture would. Deviations: docs/DEVIATIONS.md D8.
 
-Usage
-    python engine.py --selftest
+Usage (from the repo root)
+    uv run python src/live/engine.py --selftest
 """
 from __future__ import annotations
 

@@ -1,33 +1,23 @@
 #Requires -RunAsAdministrator
 <#
-  05-collect-for-20-minutes.ps1  -  benign TRAIN capture -> 5-min windows, 2-min stride (OCR-APT lab VM)
-  (file name kept for continuity; POC defaults since 2026-10-08: 20-min capture, 5-min window, 2-min stride)
+  05-collect-for-20-minutes.ps1 - benign TRAIN capture -> 5-min windows, 2-min stride (lab VM).
+  07-build-train-dataset.ps1 is the per-experiment wrapper; use 05 directly only for a quick capture.
 
-  Run it INSIDE the VM from an elevated PowerShell (RDP session), not as a 'vagrant provision' step:
-  a long blocking provisioner hits WinRM timeouts, and you should be using the VM normally while it records.
+  Run INSIDE the VM from an elevated PowerShell (RDP), not as 'vagrant provision' (WinRM times out).
 
     .\05-collect-for-20-minutes.ps1                    # 20-min capture, then convert + window
     .\05-collect-for-20-minutes.ps1 -Minutes 40 -StrideMinutes 1
     .\05-collect-for-20-minutes.ps1 -WindowOnly        # no capture: rebuild windows from existing train runs
-    .\05-collect-for-20-minutes.ps1 -PerWindowFiles    # also write one CSV pair per window (for the demo)
+    .\05-collect-for-20-minutes.ps1 -PerWindowFiles    # also write one CSV pair per window
 
-  Pipeline:
-    1. etwctl start -Split train -Run c05-<UTC>    (SilkService -> C:\lab-out\etw\raw\train\c05-<UTC>\*.json)
-    2. wait -Minutes, etwctl stop
-    3. etwctl convert -Split train                 (ALL train runs -> C:\lab-out\etw\SimulatedW10_train_*.csv)
-    4. etwwindow.py                                (-> C:\lab-out\etw\windowed\train_w5m_s2m\)
-         SimulatedW10_train_edges.csv        pooled windows, node IDs prefixed w0007_   <- feed this to w10_to_rdf.py
-         SimulatedW10_train_node_attrs.csv   same prefixes
-         windows.csv, manifest.json          per-window counts, parameters, totals
+  Pipeline: etwctl start -Split train -Run c05-<UTC> -> wait -Minutes -> etwctl stop
+    -> etwctl convert -Split train (ALL train runs -> C:\lab-out\etw\SimulatedW10_train_*.csv)
+    -> etwwindow.py -> C:\lab-out\etw\windowed\train_w5m_s2m\ (pooled edges + node_attrs with w0007_
+       prefixes, windows.csv, manifest.json); next on the host: encode_to_features.py
 
-  Safe to re-run:
-    - a capture this script started is resumed, never restarted (Ctrl+C only stops the waiting, not SilkService);
-      its end is recomputed as start + -Minutes, so lowering -Minutes shortens a running capture
-    - a finished capture whose convert/window step failed is post-processed again, no new capture
-    - convert runs only when the raw train files changed; windowing only when its inputs or parameters changed
-    - outputs are written to a temp folder and swapped in, so an interrupted run leaves no half files
-    - a named mutex stops two copies running at once
-  State: C:\ProgramData\etwlab\collect05-state.json
+  Safe to re-run: a running capture is resumed (Ctrl+C stops only the waiting), failed post-processing is
+  redone, convert/window run only when inputs changed, outputs are swapped in atomically, a mutex blocks
+  a second copy. State: C:\ProgramData\etwlab\collect05-state.json
 #>
 [CmdletBinding()]
 param(

@@ -1,15 +1,7 @@
 <#
-  02 — LOLBIN EXECUTION  (tactic: Defense Evasion / Execution)
-  Techniques: T1218.011 (rundll32), T1218.010 (regsvr32), T1218.005 (mshta)
-  Idea: signed Microsoft binaries used to execute code. Classic evasion. These produce an
-  anomalous PARENT->CHILD process edge (e.g. a document app spawning rundll32).
-  Observable nodes: process (rundll32/regsvr32/mshta + whatever they launch), sometimes file/net.
-  Admin required: no.
-
-  NOTE: confirm the test numbers first — the YAML ordering changes as the repo updates:
-      Invoke-AtomicTest T1218.011 -ShowDetailsBrief
-  Pick a test that launches a harmless local target (calc/notepad), not a remote scriptlet,
-  unless you intentionally want a network edge here.
+  02 - LOLBin execution (T1218.011/.010/.005). Details: SCENARIOS.md.
+  Confirm test numbers first (YAML order drifts): Invoke-AtomicTest T1218.011 -ShowDetailsBrief
+  Pick a test with a harmless local target (calc/notepad), not a remote scriptlet, unless you want a net edge.
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

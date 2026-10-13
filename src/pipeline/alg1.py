@@ -1,42 +1,29 @@
 #!/usr/bin/env python3
 """
-alg1.py - OCR-APT Algorithm 1 (anomalous subgraph construction + subgraph-score filter, "SG-Det") on ONE
-scored window graph, in memory (no GraphDB). Mirrors upstream detect_anomalous_subgraphs.py:
+alg1.py - OCR-APT Algorithm 1 (anomalous subgraphs + subgraph-score filter, "SG-Det") on ONE scored window,
+in memory (no GraphDB). [REPO] l.N = upstream detect_anomalous_subgraphs.py.
 
-    A       = anomalous nodes (score > tau of their type)                       [PAPER] Alg.1 input
-    initSG  = every edge with >= 1 endpoint in A  (+ isolated A nodes)          Alg.1 l.3-5  [REPO] l.238-293
-    seeds   = top n_seed A nodes per type by score, not isolated in initSG,     Alg.1 l.6-7  [REPO] l.705-722
-              sorted by prob desc, then type order net < process < file
-    per seed: seed + its anomalous neighbours; every neighbour (any node) that  Alg.1 l.8-11 [REPO] l.552-648
-              leads to an anomalous node not yet visited / correlated is kept
-              together with those nodes; >= min_nodes nodes or dropped; the
-              induced subgraph's nodes become "correlated" (not reused, except
-              as a later seed itself - upstream does not skip correlated seeds)
-    > max_e edges -> Louvain communities (>= min_nodes nodes, > 2 edges)        Alg.1 l.12-17 [REPO] l.520-542
-    drop identical subgraphs                                                    Alg.1 l.19   [REPO] l.650-672
-    sg_score = sum over the subgraph's ANOMALOUS nodes of                       Alg.1 l.21   [REPO] l.864-871
+    A       = anomalous nodes (score > tau of their type)                       [PAPER] Alg. 1 input
+    initSG  = every edge with >= 1 endpoint in A  (+ isolated A nodes)          Alg. 1 l.3-5   [REPO] l.238-293
+    seeds   = top n_seed A nodes per type, not isolated in initSG,              Alg. 1 l.6-7   [REPO] l.705-722
+              by prob desc, then type order net < process < file
+    per seed: seed + anomalous neighbours, plus any neighbour leading to an     Alg. 1 l.8-11  [REPO] l.552-648
+              unvisited anomalous node; >= min_nodes or dropped; nodes become
+              "correlated" (correlated seeds are not skipped, as upstream)
+    > max_e edges -> Louvain communities (>= min_nodes nodes, > 2 edges)        Alg. 1 l.12-17 [REPO] l.520-542
+    drop identical subgraphs                                                    Alg. 1 l.19    [REPO] l.650-672
+    sg_score = sum over ANOMALOUS nodes of                                      Alg. 1 l.21    [REPO] l.864-871
                prob = clamp((score - train_min_t) / (train_max_t - train_min_t), 0, 1)
-               ([REPO] PyGOD _predict_prob 'linear'; [PAPER] §5.2 only says "sum of the scores")
-    level: <=1 Negligible, <30 Minor, <=100 Moderate, <=1000 Significant, else Critical  [OURS], see below
-    kept   = level >= min_level (default Moderate, [REPO] l.61, [PAPER] §7.2.1)          Alg.1 l.22-24
+    level    = Negligible / Minor / Moderate / Significant / Critical ([OURS] Moderate from MODERATE_FROM)
+    kept     = level >= min_level (default Moderate, [REPO] l.61)               Alg. 1 l.22-24
 
-[OURS] differences: no fallback to lower levels / top-k when nothing is kept ([REPO] l.433-461 would make
-every live window red); a partition still above max_e is kept whole and marked `oversize` instead of
-sampled per edge type ([REPO] l.490); optional numeric cut-off `min_score` (kept = sg_score > min_score;
-min_level Moderate ~ min_score 29.99) for calibration on BENIGN sessions; ties broken by node id.
-[OURS] level scale tuned for live 5-min windows (DEVIATIONS D8): Moderate starts at sg_score >= 30
-(`moderate_from`, flag --sg-moderate-from) instead of the [REPO] > 10 (l.394: <=1, <=10, <=100, <=1000).
-[PAPER] §5.2: the subgraph set "can be adjusted based on the desired abnormality threshold". The paper
-cut-off on a saved session: --sg-min-score 10 (or --sg-moderate-from 10.0001).
-
-Because prob <= 1, sg_score is roughly "how many anomalous nodes, weighted by how far above the training
-range". With our scale a subgraph needs >= 30 such nodes to be kept (paper: > 10).
+Deviations ([OURS] level scale, no top-k fallback, `oversize`, --sg-min-score): docs/DEVIATIONS.md D8.
 
 Usage (from the repo root)
     uv run python src/pipeline/alg1.py --selftest
     uv run python src/pipeline/alg1.py --run-dir src/artifacts/runs/exp01 \
         --session-dir src/live/sessions/<id>          # or --window-dir .../windows/<wid>
-      -> <window>/subgraphs_alg1.json, <window>/subgraphs_alg1.csv, one summary row per window
+      -> <window>/subgraphs_alg1.{json,csv}, one summary row per window
 """
 from __future__ import annotations
 
@@ -101,7 +88,7 @@ def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range
     if not A:
         return [], stats
 
-    # ---- Alg.1 l.3-5: initSG = edges touching an anomalous node (edges of relation-dropped nodes excluded)
+    # ---- Alg. 1 l.3-5: initSG = edges touching an anomalous node (edges of relation-dropped nodes excluded)
     known = set(nodes["node_uuid"])
     e = edges[edges["source-id"].isin(known) & edges["destination-id"].isin(known)]
     e = e[e["source-id"].isin(A) | e["destination-id"].isin(A)].reset_index(drop=True)
@@ -118,7 +105,7 @@ def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range
     stats["isolated"] = len(isolated)
     init_corr = A - isolated
 
-    # ---- Alg.1 l.6-7: seeds
+    # ---- Alg. 1 l.6-7: seeds
     info = nodes.set_index("node_uuid")
     cand = nodes[nodes["node_uuid"].isin(init_corr)]
     seeds = pd.concat([g.sort_values(["score", "node_uuid"], ascending=[False, True]).head(n_seed)
@@ -127,7 +114,7 @@ def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range
     seeds = seeds.sort_values(["prob", "order", "node_uuid"], ascending=[False, True, True])
     stats["seeds"] = len(seeds)
 
-    # ---- Alg.1 l.8-18: one candidate subgraph per seed
+    # ---- Alg. 1 l.8-18: one candidate subgraph per seed
     correlated, unvisited, built = set(), set(init_corr), []
 
     def induced(members):
@@ -168,11 +155,11 @@ def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range
             break
     stats["subgraphs_built"] = len(built)
 
-    # ---- Alg.1 l.19: identical subgraphs
+    # ---- Alg. 1 l.19: identical subgraphs
     uniq = dedup_identical(built)
     stats["duplicates_removed"] = len(built) - len(uniq)
 
-    # ---- Alg.1 l.20-24: score, level, filter
+    # ---- Alg. 1 l.20-24: score, level, filter
     min_rank = LEVELS.index(min_level)
     out, in_any = [], set()
     for i, (seed, members, pe, oversize) in enumerate(uniq):
