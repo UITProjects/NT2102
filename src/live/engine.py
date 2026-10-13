@@ -12,6 +12,8 @@ engine.py - live windowed OCR-APT scoring, no web code (live_server.py is the th
       -> window [start, start + w) closes when watermark >= end
       -> scoring thread: score_window.score_edges (train scaler + train relations)
                          -> alg1.construct (Alg. 1 + SG-Det; window alert = >= 1 subgraph kept)
+      -> llm thread (only alerted windows, only with --llm-provider): alg2.investigate
+                         -> verdict attack / false_positive / uncertain + attack report (Alg. 2 l.3-15)
       -> sessions/<id>/windows/<wid>/*.csv|json  + listeners (SSE in live_server.py)
 
 Time: only the shipper's clock is used (clock_ms), never this host's wall clock, so a replay at
@@ -45,6 +47,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(SRC, "pipeline"))
 import alg1  # noqa: E402
+import alg2  # noqa: E402
 import score_window as sw  # noqa: E402
 
 EDGE_HEADER = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
@@ -121,7 +124,9 @@ def utc_iso(ms: int) -> str:
 class Engine:
     def __init__(self, run_dir, scaler_path, sessions_dir, window_min=5, stride_min=None, lateness_s=20,
                  origin_ms=0, ps1_path=DEFAULT_PS1, experiment_json=None, allow_collapsed=False, top_k=20,
-                 n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None):
+                 n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None,
+                 sg_moderate_from=alg1.MODERATE_FROM, llm_provider=None, llm_model=None, llm_base_url=None,
+                 llm_client=None, llm_max_subgraphs=5):
         self.conv, self.conv_sha = load_converter(ps1_path)
         self.conv_check = "not checked (no --experiment)"
         if experiment_json:
@@ -140,15 +145,24 @@ class Engine:
         self.lateness_ms = int(lateness_s * 1000)
         self.origin_ms = int(origin_ms)
         self.top_k = top_k
-        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate; [REPO] min_nodes 3
+        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate; [REPO] min_nodes 3;
+        # [OURS] Moderate from sg_score 30 (DEVIATIONS D8)
         self.sg = {"n_seed": n_seed, "min_nodes": min_nodes, "max_edges": max_edges,
-                   "min_level": sg_min_level, "min_score": sg_min_score}
+                   "min_level": sg_min_level, "min_score": sg_min_score, "moderate_from": sg_moderate_from}
+
+        # LLM triage + report after SG-Det (alg2.py); None = off. Own thread: one alert can take tens of
+        # seconds of LLM calls and must not delay scoring of the next window.
+        self.llm = llm_client or (alg2.make_client(llm_provider, llm_model, llm_base_url) if llm_provider else None)
+        self.llm_cfg = {"provider": llm_provider or ("custom" if llm_client else None),
+                        "model": getattr(self.llm, "model", None), "max_subgraphs": llm_max_subgraphs}
 
         self.lock = threading.RLock()
         self.listeners = []                       # callables(event_dict), called from any thread
         self.jobs = queue.Queue()
+        self.llm_jobs = queue.Queue()
         self.session = None
         threading.Thread(target=self._scoring_loop, daemon=True, name="scoring").start()
+        threading.Thread(target=self._llm_loop, daemon=True, name="llm").start()
 
     # ---------------------------------------------------------------- session
     def _new_session(self, sid, payload):
@@ -177,13 +191,13 @@ class Engine:
                 "scaler": self.scaler_path, "converter_sha256": self.conv_sha, "converter_check": self.conv_check,
                 "window_min": self.w_ms / 60000, "stride_min": self.s_ms / 60000,
                 "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms,
-                "tau": self.run.tau, "score_range": self.run.score_range, "alg1": self.sg,
+                "tau": self.run.tau, "score_range": self.run.score_range, "alg1": self.sg, "llm": self.llm_cfg,
                 "created_utc": utc_iso(int(time.time() * 1000))}
         json.dump(meta, open(os.path.join(sdir, "session.json"), "w"), indent=2)
         with open(os.path.join(sdir, "windows.csv"), "w", newline="") as fh:
             csv.writer(fh).writerow(["window", "start_ms", "end_ms", "start_utc", "status", "edges", "nodes",
                                      "flagged", "subgraphs", "subgraphs_kept", "max_sg_score", "max_level",
-                                     "alert", "edges_dropped_relation"])
+                                     "alert", "edges_dropped_relation", "llm"])
         print(f"[engine] new session {sid} ({self.session['mode']}) -> {sdir}  dos_map={dmap}  exclude={exclude}")
         self._emit({"type": "session", "session": sid})
 
@@ -326,9 +340,11 @@ class Engine:
         if truncated:
             keep = set(nodes[nodes["flagged"]].nlargest(MAX_FLAGGED_FOR_SUBGRAPHS, "margin")["node_uuid"])
             cand = nodes.assign(flagged=nodes["flagged"] & nodes["node_uuid"].isin(keep))
-        subgraphs, sg_stats = alg1.construct(cand, sw.tgm.normalise_edges(edges), attrs, self.run.score_range,
+        edges_norm = sw.tgm.normalise_edges(edges)
+        subgraphs, sg_stats = alg1.construct(cand, edges_norm, attrs, self.run.score_range,
                                              self.sg["n_seed"], self.sg["min_nodes"], self.sg["max_edges"],
-                                             self.sg["min_level"], self.sg["min_score"])
+                                             self.sg["min_level"], self.sg["min_score"],
+                                             self.sg["moderate_from"])
         sg_sum = alg1.summarise(subgraphs)
         nodes["attr"] = nodes["node_uuid"].map(attrs)
         ms = int((time.time() - t0) * 1000)
@@ -366,15 +382,54 @@ class Engine:
                        max_margin=_f(nodes["margin"].max()))
             S["details"][wid] = {"top": top, "subgraphs": subgraphs[:25], "truncated": truncated,
                                  "subgraphs_total": len(subgraphs), "alg1_stats": sg_stats}
+            if rec["alert"] and self.llm:
+                self._queue_llm(S, rec, wdir, subgraphs, edges_norm)
             self._write_index(S, rec, info)
             self._emit({"type": "window", "window": rec})
+
+    # ---------------------------------------------------------------- LLM triage + report (alg2.py)
+    def _queue_llm(self, S, rec, wdir, subgraphs, edges_norm):
+        rec["llm"] = {"status": "pending"}
+        win = {"window": rec["window"], "start_utc": rec["start_utc"], "end_utc": utc_iso(rec["end_ms"])}
+        self.llm_jobs.put((S["id"], rec["window"], wdir, [g for g in subgraphs if g["kept"]], edges_norm, win))
+
+    def _llm_loop(self):
+        while True:
+            sid, wid, wdir, kept, edges_norm, win = self.llm_jobs.get()
+            try:
+                try:
+                    res = alg2.investigate(kept, edges_norm, win, self.llm, os.path.join(wdir, "llm"),
+                                           max_subgraphs=self.llm_cfg["max_subgraphs"])
+                    summary = alg2.ui_summary(res)
+                    state = {"status": res["verdict"], "confidence": res["confidence"],
+                             "tactics": [t.get("id", "") for t in res["tactics"]], "ms": res["ms"]}
+                except Exception as e:      # investigate() catches provider errors; this is a bug guard
+                    import traceback
+                    traceback.print_exc()
+                    summary, state = None, {"status": "error", "error": f"{type(e).__name__}: {e}"}
+                with self.lock:
+                    S = self.session
+                    if S is None or S["id"] != sid:
+                        continue
+                    rec = S["by_id"][wid]
+                    rec["llm"] = state
+                    S["details"].setdefault(wid, {})["llm"] = summary
+                    with open(os.path.join(S["dir"], "llm_verdicts.csv"), "a", newline="") as fh:
+                        w = csv.writer(fh)
+                        if fh.tell() == 0:
+                            w.writerow(["window", "verdict", "confidence", "tactics", "ms", "model"])
+                        w.writerow([wid, state["status"], state.get("confidence"), " ".join(state.get("tactics", [])),
+                                    state.get("ms"), self.llm_cfg["model"]])
+                    self._emit({"type": "window", "window": rec})
+            finally:
+                self.llm_jobs.task_done()
 
     def _write_index(self, S, rec, info):
         with open(os.path.join(S["dir"], "windows.csv"), "a", newline="") as fh:
             csv.writer(fh).writerow([rec["window"], rec["start_ms"], rec["end_ms"], rec["start_utc"], rec["status"],
                                      rec["edges"], rec["nodes"], rec["flagged"], rec["subgraphs"],
                                      rec["subgraphs_kept"], rec["max_sg_score"], rec["max_level"], rec["alert"],
-                                     info.get("edges_dropped_relation", "")])
+                                     info.get("edges_dropped_relation", ""), rec.get("llm", {}).get("status", "")])
 
     # ---------------------------------------------------------------- read side
     def status(self) -> dict:
@@ -383,7 +438,7 @@ class Engine:
                               "converter_sha256": self.conv_sha, "converter_check": self.conv_check},
                     "params": {"window_min": self.w_ms / 60000, "stride_min": self.s_ms / 60000,
                                "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms,
-                               "alg1": self.sg},
+                               "alg1": self.sg, "llm": self.llm_cfg},
                     "server_ms": int(time.time() * 1000), "session": None}
             S = self.session
             if S is None:
@@ -424,8 +479,9 @@ class Engine:
             return {"window": dict(self.session["by_id"][wid]), **self.session["details"].get(wid, {})}
 
     def drain(self):
-        """Wait until every closed window is scored (selftest / replay)."""
+        """Wait until every closed window is scored and every LLM job is done (selftest / replay)."""
         self.jobs.join()
+        self.llm_jobs.join()
 
     def _emit(self, ev):
         for cb in list(self.listeners):
@@ -506,7 +562,15 @@ def selftest():
                                 "--scaler", f"{d}/scaler.json", "--out-dir", f"{d}/run",
                                 "--epochs", "8", "--runs", "1", "--purge-windows", "1"]))
 
-        eng = Engine(f"{d}/run", f"{d}/scaler.json", f"{d}/sessions", window_min=5, lateness_s=20)
+        # LLM: a gated rule mock, so the test can see 'pending' before the verdict lands
+        gate = {"on": False, "go": threading.Event()}
+
+        def gated(system, messages):
+            if gate["on"]:
+                gate["go"].wait(10)
+            return alg2.rule_mock_responder(system, messages)
+        eng = Engine(f"{d}/run", f"{d}/scaler.json", f"{d}/sessions", window_min=5, lateness_s=20,
+                     llm_client=alg2.MockLLM(gated))
         seen = []
         eng.listeners.append(seen.append)
         hello = {"session": "selftest", "mode": "replay", "pid": 999,
@@ -571,9 +635,36 @@ def selftest():
             if w["status"] == "scored":
                 assert "subgraphs_kept" in w and w["alert"] == (w["subgraphs_kept"] > 0), w
         idx_csv = pd.read_csv(os.path.join(sdir, "windows.csv"))
-        assert {"subgraphs_kept", "max_sg_score", "max_level", "alert"} <= set(idx_csv.columns)
+        assert {"subgraphs_kept", "max_sg_score", "max_level", "alert", "llm"} <= set(idx_csv.columns)
+
+        # LLM path on window 1 with a hand-made kept subgraph (the tiny model rarely alerts on its own)
+        en = sw.tgm.normalise_edges(we.astype({"source-id": str, "destination-id": str}))
+        p = en["source-id"].iloc[0]
+        dsts = list(dict.fromkeys(en.loc[en["source-id"] == p, "destination-id"]))[:2]
+        types = dict(zip(en["source-id"], en["source-type"])) | dict(zip(en["destination-id"], en["destination-type"]))
+        an = dict(zip(attrs["node"], attrs["node_attr"]))
+        fake = {"id": 0, "seed": p, "kept": True, "sg_score": 31.0, "level": "Moderate", "n_anomalous": 3,
+                "n_connectors": 0, "nodes": [{"id": n, "type": types[n], "attr": an.get(n, ""), "role": "anomalous",
+                                              "score": 1.0, "tau": 0.5} for n in [p] + dsts]}
+        gate["on"] = True
+        with eng.lock:
+            S = eng.session
+            rec = S["by_id"][w1]
+            eng._queue_llm(S, rec, os.path.join(sdir, "windows", w1), [fake], en)
+            assert rec["llm"]["status"] == "pending", rec
+        time.sleep(0.2)
+        assert eng.windows()[1]["llm"]["status"] == "pending", "verdict landed before the LLM answered"
+        gate["go"].set()
+        eng.drain()
+        got = eng.windows()[1]["llm"]
+        assert got["status"] == "false_positive", got           # rule mock: no attack-tool keyword
+        assert eng.window_detail(w1)["llm"]["subgraphs"][0]["evidence"], "evidence missing"
+        assert os.path.exists(os.path.join(sdir, "windows", w1, "llm", "triage.json"))
+        lv = pd.read_csv(os.path.join(sdir, "llm_verdicts.csv"))
+        assert lv["verdict"].tolist()[-1] == "false_positive", lv
     print("\n[SELFTEST OK] dedup, 409 on gap, late events counted, shipper PID excluded, "
-          "partial window skipped, 3 windows scored, Alg. 1 alert fields, artefacts written")
+          "partial window skipped, 3 windows scored, Alg. 1 alert fields, artefacts written, "
+          "LLM verdict pending -> final on its own thread")
 
 
 if __name__ == "__main__":

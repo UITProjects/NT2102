@@ -79,8 +79,10 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
     `Prediction_probability`, 'linear'). [PAPER] §5.2 only says "sum of the scores". Raw scores are on
     different scales per type (NET is negative), so the repo definition is used. train_min/max come from
     `train_scores.csv` (split = train). The saved model reproduces that file to 1.3e-5.
-  - Levels as in [REPO] (≤1 Negligible, ≤10 Minor, ≤100 Moderate, ≤1000 Significant, else Critical).
-    A window alerts only if ≥ 1 subgraph is ≥ Moderate.
+  - [OURS] level scale tuned for live windows (user decision, 2026-10-13): ≤1 Negligible, < 30 Minor,
+    30–100 Moderate, ≤1000 Significant, else Critical. [REPO] l.394 uses ≤10 Minor (Moderate > 10); the
+    other bounds are unchanged. Flag `--sg-moderate-from` (default 30; `10.0001` gives the [REPO] scale).
+    A window alerts only if ≥ 1 subgraph is ≥ Moderate, i.e. sg_score ≥ 30.
   - [OURS] no fallback when nothing reaches Moderate. The repo lowers the level and finally reports the
     top-k subgraphs (l.433–461); live, that would make every window red.
   - [OURS] a partition still above max_e is kept whole (`oversize`), not sampled per edge type.
@@ -88,14 +90,56 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
   - [OURS] the anomalous set is capped at the 300 highest margins (UI guard).
 - Why: live demo; same code path as offline, so a replay of the training capture can be checked
   against the offline artefacts (`compare_replay.py`).
+  - Level scale: [PAPER] §5.2 says the final subgraph set "can be adjusted based on the desired
+    abnormality threshold", so the bounds are a tunable. Live, a 5-min window is far smaller than the
+    paper's whole-log graphs, and the [REPO] cut-off (> 10) left the benign 11:25 `updater` window red.
+    30 was set from that benign window (score 18) plus margin.
 - Impact: events arriving later than the lateness are dropped (shown in the UI); processes started
   before a window have no Start edge inside it.
-  - Since prob ≤ 1, the paper's cut-off (> 10) means "more than ~10 anomalous nodes in one story".
-    [INFERENCE] The paper set these absolute levels for DARPA-scale graphs, not for our 5-min windows
-    (~100–850 nodes), and they are not calibrated here.
-  - Measured on benign session `live-20261011T112141Z` (replayed): windows with ≥ 1 node above τ drop
-    from 5 to 1 red. The one left is the 11:25 `updater` window: 18 unseen-context DLLs, score 18,
-    Moderate.
-  - An attack that flags ≤ 10 nodes in one window would be filtered out.
+  - Since prob ≤ 1, our cut-off (≥ 30) means "at least ~30 anomalous nodes in one connected story"
+    (the paper's > 10 means more than ~10). [INFERENCE] The paper set its absolute levels for
+    DARPA-scale graphs, not for our 5-min windows (~100–850 nodes).
+  - Measured on benign session `live-20261011T112141Z` (replayed): windows with ≥ 1 node above τ: 5.
+    With the [REPO] scale 1 stays red (11:25 `updater`: 18 unseen-context DLLs, score 18). With our
+    scale 0 are red: the updater subgraph is Minor.
+  - An attack whose best subgraph scores < 30 in one window is filtered out. The attack side is not
+    measured yet; 30 comes from ONE benign window. When the Atomic scenario runs, check its score
+    against 30; do not re-tune the scale on the attack window (that would fit the threshold to the test).
+  - The scale hides the updater false positive, it does not fix it: an updater loading ≥ 30 unseen DLLs
+    would be red again. Wider benign training (PROGRESS) is still the real fix.
 - Limits: demonstrates near-live node scoring + Alg. 1 on our own data. No detection-quality claim until
-  windows are labelled (D6); no claim about Alg. 1 precision; the level cut-off is the paper's, not ours.
+  windows are labelled (D6); no claim about Alg. 1 precision; the level cut-off (Moderate ≥ 30) is ours, set on one benign window,
+  not the paper's.
+
+## D9. LLM step after SG-Det: triage + partial Alg. 2 (`src/pipeline/alg2.py`)
+- What: [PAPER] Alg. 2 (§6, App. B) turns every anomalous subgraph into an attack report. It never
+  decides attack vs benign, and its instructions ("APT attack investigator … summarizing … into attack
+  reports") assume an attack. [OURS] for each red window, a neutral triage prompt first returns a JSON
+  verdict (attack / benign / uncertain, MITRE ATT&CK tactics, evidence lines). Only "attack" runs the
+  paper's prompts, copied verbatim from [REPO] `llm_prompt.py`: extract IOCs → drop IOCs not in the
+  document (repo hallucination filter) → per-subgraph report; with ≥ 2 attack subgraphs, IOCs per APT
+  stage → comprehensive report (Alg. 2 l.3–15).
+  - Window verdict: attack if any subgraph is attack; uncertain if any is uncertain or failed; else
+    false_positive. Triage evidence lines must appear verbatim in the document; if none do, the verdict
+    becomes uncertain.
+  - Serialization follows [REPO] `prepare_document` (subject ACTION the type : object, per minute,
+    "(N times)" = distinct seconds). [OURS] real UTC times (the repo fakes a base date for SimulatedW10);
+    full paths, not basenames; NET attrs decoded from SilkETW's signed integers
+    (`-1,707,025,385:-17663` = `23.220.64.154:443`; display only, node IDs unchanged).
+  - No vector store or embeddings: a window's document fits in the prompt. Documents above 400 lines are
+    cut, keeping lines that touch anomalous nodes first (count recorded).
+  - Left out: Alg. 2 l.16–25 (an LLM judge picks top IOCs, their context is pulled from the graph DB, the
+    report is enriched).
+  - Provider is pluggable (`--llm-provider anthropic|openai|ollama|mock`). [PAPER] used GPT-4o-mini
+    (temperature 0) and LLaMA3-8B. The Anthropic backend sends no temperature (current models reject it),
+    so its output is not deterministic. `mock` is a keyword rule for UI tests, not an LLM.
+- Why: the GNN alone cannot tell unseen-but-benign activity (the 11:25 `updater` window) from an attack;
+  the demo needs a readable report for a real attack.
+- Impact: the GNN alert is never removed. An LLM `false_positive` shows as a struck-through badge on a
+  still-red window. Each red window costs 1 call (benign) or 3 calls (attack) per subgraph, plus 9 when
+  ≥ 2 subgraphs are attacks. It runs on its own thread, so scoring is not delayed.
+- Limits: no claim that the LLM separates attacks from false positives until it is run on labelled
+  windows (D6); one benign window is one data point, not a rate. An LLM verdict is not ground truth and is
+  not fed back into training: log text (paths, process names) is attacker-controlled, so prompt injection
+  is possible, and [PAPER] §3 assumes training logs free of attack traces. No claim about report quality
+  vs the paper's Table 5.

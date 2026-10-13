@@ -56,7 +56,7 @@ either side.
 - Any symbolic notation (a formula, an interval like [t−w, t)) gets at least 2 concrete worked
   examples with real numbers.
 - Backend/distributed-systems analogies only when they genuinely clarify.
-- After a concept, ask 1–2 short check questions. If the answer is wrong, correct it directly.
+- Do not ask check questions unprompted (user, 2026-10-13). Quizzing happens only in QUIZ mode.
 - Tag statements:
   - [PAPER] what the paper states
   - [REPO] what upstream code does (only if verified in files)
@@ -170,7 +170,8 @@ history of earlier progress) and, if relevant, this section.
   `score_window.py` (score any edge CSV with the train scaler + relations).
 - Live (host): `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
   reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
-  sessions); `etwship.py --replay` + `compare_replay.py` check the live path against the offline
+  sessions) → `src/pipeline/alg2.py` (optional LLM thread: triage verdict + Alg. 2 l.3–15 report on red
+  windows); `etwship.py --replay` + `compare_replay.py` check the live path against the offline
   pipeline. Run guide: `src/live/README.md`.
 - Artefacts: `src/out/etw/experiments/<id>/` (raw, converted, windowed edges, `windows.csv`,
   `experiment.json`, `check.json`, benign ledger in `labels/`), `src/artifacts/features/self-dataset/` and
@@ -178,6 +179,7 @@ history of earlier progress) and, if relevant, this section.
   `src/live/sessions/<id>/` (raw copy + per-window CSV/JSON; gitignored). NODLINK data: `dataset/nodlink/`.
 - EDA notebooks: `src/notebooks/01-silketw-raw` … `05-features-paper` (numbered in reading order).
 - GraphDB: `src/graphdb/compose.yaml`. Explainer page (edges → features): `docs/explainers/`.
+- Root shortcuts: `selftest.sh`, `serve.sh`, `replay.sh`, `rejudge.sh` (wrap the documented commands).
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.
 
@@ -195,24 +197,13 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
 - Labels: indicator + time oracle from injected attacks, not analyst ground truth.
 - Live inference: clock-aligned tumbling windows, partial windows not scored, shipper PID excluded,
   no cross-window dedup. Alg. 1 runs in memory per window with the [REPO] subgraph score (Σ clamped
-  min-max prob, not the paper text's "sum of scores"), paper levels (alert ≥ Moderate), no top-k fallback.
+  min-max prob, not the paper text's "sum of scores"), [OURS] level scale (Moderate from score 30, [REPO] > 10), no top-k fallback.
+- LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
+  Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
 
 ## 11. Status, open items, next steps
 
 Live in `docs/PROGRESS.md` (single source; do not duplicate here).
-
-Unanswered check questions (ask the user, don't answer for them):
-1. A Kernel-Network send event has top-level ProcessID 4. Which process is the source node, and where
-   does its ID come from?
-2. Why would raw PIDs as node IDs corrupt the §5.1.2 idle-time features?
-3. Which keyword mask gives only process start/stop from Kernel-Process, and what is it with thread
-   events added?
-4. Why are process IDs PID+start-time while file IDs are path hashes, and why must file IDs match
-   across train and test?
-5. Why can the repo's feature/PyG encoding stage run without GraphDB while the anomalous-subgraph
-   stage cannot?
-6. How many relation types will our graph have, and how long is a process node's action-frequency
-   vector before idle-time features?
 
 ## 12. Roadmap
 
