@@ -1,4 +1,4 @@
-# PROGRESS (status as of 2026-10-12)
+# PROGRESS (status as of 2026-10-13)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 
@@ -35,15 +35,23 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   by a short-lived `updater` process (0 `updater` processes in training; the DLLs themselves are in
   training). Identical score 0.3220 vs τ_file 0.2297 (train max 0.2312), so prob = 1 each (clamped).
 - Alg. 1 + SG-Det (code + selftest, verified on real data 2026-10-12): `src/pipeline/alg1.py` (in memory,
-  [REPO] score = Σ clamped min-max prob, levels, keep ≥ Moderate), used by `engine.py`; flags in
+  [REPO] score = Σ clamped min-max prob, keep ≥ Moderate), used by `engine.py`; flags in
   `live_server.py`; UI shows level/score and greys subgraphs below the cut-off. The saved exp01 models
   reproduce `train_scores.csv` (max |diff| 1.3e-5), so the prob range is valid. Replay of
   `live-20261011T112141Z` through the live server: 11 scored windows, 5 with nodes above τ → 1 red
   (11:25 `updater`, 18 DLLs, score 18.0, Moderate). Other windows ≤ Minor (max 5.83). `alg1.py
   --session-dir` re-judges saved sessions without the VM.
+- [OURS] live level scale (2026-10-13, DEVIATIONS D8): Moderate from sg_score 30 (`--sg-moderate-from`,
+  [REPO] > 10). Re-judged replay: 11:25 `updater` = Minor → 0 red windows of 10.
 - VM crash 2026-10-11 18:02 diagnosed (verified in `journalctl -k`, `VBox.log.1`): not OOM, a VirtualBox
   VMSVGA segfault in `libnvidia-glcore.so.595.84` (3D acceleration). Fixed: `accelerate3d off` on
   `w10-etw` and in `src/Vagrantfile`.
+- LLM step after SG-Det (code + selftests, 2026-10-13): `src/pipeline/alg2.py`. [OURS] triage verdict
+  attack / false_positive / uncertain, then the paper's Alg. 2 l.3–15 prompts for attacks (DEVIATIONS D9).
+  Runs on its own thread in `engine.py`, `--llm-provider` in `live_server.py`, badge + report card in the UI.
+  Plumbing verified with the keyword mock on a replay of `live-20261011T112141Z` (before the scale
+  change; now needs `--sg-moderate-from 10.0001`): 1 red window (11:25 `updater`), verdict attached,
+  `llm/` files written. No real LLM run yet (provider not chosen).
 - Attack pack + labelling scheme drafted: `src/atomic-attack-pack/` (10 scenarios, `LABELING.md`,
   `tools/build_node_labels.py`). Not yet run.
 - Concepts: provenance graphs; GNN message passing.
@@ -58,9 +66,12 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
   score_window.py / engine.py / etwship.py; a benign live run with `06-benign-workload.ps1`.
-- Test split capture, node labels, test scoring, NODLINK W10 detector baseline, LLM investigator (Alg. 2).
-- SG-Det cut-off not checked against an attack: with the paper's level (> 10 ≈ more than 10 anomalous
-  nodes in one subgraph), a small Atomic scenario may be filtered out.
+- Test split capture, node labels, test scoring, NODLINK W10 detector baseline.
+- LLM: choose a provider (`uv sync --group llm`), re-judge the 11:25 window with
+  `./rejudge.sh <session> <p> --sg-moderate-from 10.0001`, then one Atomic scenario live. Alg. 2 l.16–25
+  not built.
+- SG-Det cut-off not checked against an attack: our scale (Moderate ≥ 30 ≈ at least 30 anomalous nodes
+  in one subgraph) was set from one benign window; a small Atomic scenario may be filtered out.
 
 ## Open items
 
@@ -87,6 +98,11 @@ Model:
 Environment:
 - `src/graphdb/compose.yaml`: GraphDB heap `-Xmx8g` exceeds the container `mem_limit` 4g (latent; use ≤ 3g).
 
+Data validation (LLM input):
+- NET attrs are SilkETW signed integers (`-1,707,025,385:-17663` = `23.220.64.154:443`); decoded only for
+  display in `alg2.py`. Process attrs are only the image name (`updater`), no path or command line, so the
+  LLM sees little context for processes.
+
 Live tooling:
 - `etwship.py --replay --speed 0` never advances the virtual clock (step = interval × speed = 0), so it
   hangs; at 600× each POST carries 10 min of events and the shipper times out. 120× works (52 min in 29 s).
@@ -100,13 +116,13 @@ Repo hygiene:
 
 ## Next 3 steps
 
-1. Widen benign training and calibrate (the 11:25 `updater` false positive survives SG-Det; it needs
-   coverage, not a filter): 2–3 benign captures at different times (trigger background tasks such as the
+1. Widen benign training and calibrate (the 11:25 `updater` false positive is hidden by the ≥ 30
+   scale, not fixed; it needs coverage): 2–3 benign captures at different times (trigger background tasks such as the
    Google updater and a Defender scan), retrain into `src/artifacts/runs/exp02`. Run benign live sessions
    with `06-benign-workload.ps1` and re-judge them with `alg1.py --session-dir`; record max benign
    `sg_score` per window, mean ± std over ~10 windows.
 2. Replay equivalence without the VM (`src/live/README.md` step 4, `--stride-min 2 --origin-ms
    1791557793343`); `compare_replay.py` must print `ALL MATCH`.
-3. End goal: run one Atomic scenario during a live session. Check that its window reaches ≥ Moderate.
-   If not, set `--sg-min-score` between the benign max (step 1) and the attack score, and record it as
-   calibration in DEVIATIONS D8 (decided on benign data, confirmed on the attack, not tuned to it).
+3. End goal: run one Atomic scenario during a live session. Check that its window reaches ≥ Moderate
+   (sg_score ≥ 30). If not, the cut-off must stay above the benign max from step 1; record the outcome in
+   DEVIATIONS D8 (decided on benign data, confirmed on the attack, not tuned to it).

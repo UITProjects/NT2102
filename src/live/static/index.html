@@ -56,6 +56,20 @@ header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12p
 .win.open .fill{position:absolute;left:0;top:0;bottom:0;background:var(--win-soft);z-index:0}
 .win > *{position:relative;z-index:1}
 .win.sel{box-shadow:0 0 0 2px var(--ink)}
+/* LLM verdict on a red window: the GNN alert stays visible, the verdict is an overlay */
+.badge{display:inline-block;font:600 .68rem var(--sans);border-radius:4px;padding:0 5px;margin-top:3px;
+       border:1px solid currentColor}
+.badge.attack{color:var(--anom)} .badge.false_positive{color:var(--warn)}
+.badge.pending,.badge.uncertain,.badge.error{color:var(--muted)}
+.win.alert.fp{border-color:var(--warn)}
+.win.alert.fp .s{text-decoration:line-through;color:var(--muted)}
+.llmcard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
+.llmcard.attack{border-color:var(--anom)} .llmcard.false_positive{border-color:var(--warn)}
+.llmcard h3{font-size:.95rem;margin:0 0 6px}
+.llmcard .ev{font:400 .8rem/1.5 var(--mono);white-space:pre-wrap;word-break:break-all;margin:4px 0 8px}
+.report{font:400 .82rem/1.55 var(--mono);white-space:pre-wrap;word-break:break-word;background:var(--paper);
+        border-radius:6px;padding:8px 10px;max-height:520px;overflow:auto}
+.report b{font-family:var(--sans)}
 /* detail */
 .grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px}
 @media (max-width:900px){.grid{grid-template-columns:1fr}}
@@ -100,6 +114,8 @@ tr.flag td{color:var(--anom);font-weight:600}
     <div class="timeline" id="timeline"></div>
     <div class="note legend">
       <span>green: scored, no subgraph kept by SG-Det</span><span style="color:var(--anom)">red: ≥ 1 subgraph at or above the cut-off (default Moderate, score &gt; 10)</span>
+      <span>badge on red windows = LLM verdict (<span style="color:var(--anom)">attack</span> /
+        <span style="color:var(--warn)">FP</span>, struck through, still red: the GNN alert is never hidden / ? uncertain / … pending)</span>
       <span>dashed: partial / empty (not scored)</span><span style="color:var(--win)">blue: open window filling up</span>
       · times are your browser's local time
     </div>
@@ -118,6 +134,7 @@ tr.flag td{color:var(--anom);font-weight:600}
       </div>
       <div class="alertcard" id="alertcard"></div>
     </div>
+    <div id="llm"></div>
     <h2 style="margin-top:14px">Top nodes per type <span class="muted">(margin = score − τ; positive = outside the hypersphere's normal region)</span></h2>
     <div class="tables" id="tables"></div>
   </section>
@@ -133,6 +150,8 @@ tr.flag td{color:var(--anom);font-weight:600}
   const base = p => String(p || "").split(/[\\/]/).pop() || p;
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
+  const LLM_LABEL = {pending: "LLM: …", attack: "LLM: attack", false_positive: "LLM: FP",
+                     uncertain: "LLM: ?", error: "LLM: error"};
   let windows = new Map();       // wid -> summary
   let status = null, selected = null, pinned = false, cy = null, detail = null, sgIdx = 0;
 
@@ -179,8 +198,10 @@ tr.flag td{color:var(--anom);font-weight:600}
                 ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs_kept}/${w.subgraphs} sg kept`
                    : w.flagged ? `${w.flagged} above τ · filtered` : `${w.nodes} nodes`)
                 : w.status === "scoring" ? "scoring…" : w.status;
-      return `<div class="win ${cls} ${w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
-        <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div></div>`;
+      const llm = w.llm?.status;
+      const badge = llm ? `<div class="badge ${esc(llm)}">${esc(LLM_LABEL[llm] || llm)}</div>` : "";
+      return `<div class="win ${cls} ${llm === "false_positive" ? "fp" : ""} ${w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
+        <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div>${badge}</div>`;
     }).join("");
     const ow = status?.session?.open_window, wm = status?.session?.watermark_ms;
     if (ow) {
@@ -230,7 +251,37 @@ tr.flag td{color:var(--anom);font-weight:600}
       : `<span class="muted">${w.flagged ? "anomalous nodes are isolated or in groups of < 3 nodes, so no subgraph" : "no node above τ in this window, so no subgraph"}</span>`;
     drawSubgraph(sgs[sgIdx]);
     renderAlert(w, sgs[sgIdx]);
+    renderLLM(w);
     renderTables();
+  }
+
+  // markdown from the LLM: escaped first, then only headings and **bold** are styled
+  const md = s => esc(s).replace(/^#{1,6} (.*)$/gm, "<b>$1</b>").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+
+  function renderLLM(w) {
+    const st = w.llm?.status, L = detail.llm;
+    if (!st) { $("llm").innerHTML = ""; return; }
+    if (!L) {
+      $("llm").innerHTML = `<div class="llmcard"><h3>LLM verdict: ${esc(st === "pending" ? "waiting for the model…" : st)}</h3>
+        ${w.llm.error ? `<div class="ev">${esc(w.llm.error)}</div>` : ""}</div>`;
+      return;
+    }
+    const head = {attack: "attack (report below)", false_positive: "false positive (GNN alert kept)",
+                  uncertain: "uncertain (stays an alert)"}[L.verdict] || L.verdict;
+    const tac = t => `${esc(t.id || "")} ${esc(t.name || "")}${t.technique_id ? " / " + esc(t.technique_id) : ""}`;
+    const per = L.subgraphs.map(g => `<div><b>subgraph #${g.id + 1}</b>: ${esc(g.verdict)}${g.confidence != null ? " (" + num(g.confidence, 2) + ")" : ""}
+        ${g.attack_tactics?.length ? " · " + g.attack_tactics.map(tac).join(", ") : ""}
+        ${g.note ? `<div class="muted">${esc(g.note)}</div>` : ""}
+        <div>${esc(g.rationale)}</div>
+        <div class="ev">${g.evidence.map(esc).join("\n")}</div>
+        ${g.iocs ? `<div class="muted">IOCs kept after the hallucination filter: ${g.iocs.map(esc).join(", ") || "none"}</div>` : ""}
+        ${g.report ? `<div class="report">${md(g.report)}</div>` : ""}
+        ${g.report_error ? `<div class="muted">report failed: ${esc(g.report_error)}</div>` : ""}</div>`).join("<hr>");
+    $("llm").innerHTML = `<div class="llmcard ${esc(L.verdict)}"><h3>LLM verdict: ${esc(head)}${L.confidence != null ? " · confidence " + num(L.confidence, 2) : ""}</h3>
+      <div class="muted">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · triage is ours (neutral prompt, ATT&CK);
+        the report uses the paper's Alg. 2 prompts. Not ground truth.</div>
+      ${per}
+      ${L.comprehensive ? `<h3 style="margin-top:10px">Comprehensive report</h3><div class="report">${md(L.comprehensive)}</div>` : ""}</div>`;
   }
   $("sgnav").addEventListener("click", e => {
     const b = e.target.closest("button[data-i]");

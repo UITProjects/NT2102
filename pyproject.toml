@@ -12,3 +12,9 @@ dependencies = [
     "torch-geometric>=2.8.0.post1",
     "uvicorn>=0.54.0",
 ]
+
+[dependency-groups]
+llm = [
+    "anthropic>=1.13.0",
+    "openai>=3.29.0",
+]

@@ -37,6 +37,18 @@ uv run python src/pipeline/score_window.py --selftest
 uv run python src/live/engine.py --selftest
 uv run python src/live/etwship.py --selftest
 ```
+(or all of them at once: `./selftest.sh`)
+
+### Shortcuts (repo root, `-h` on each for usage)
+
+| script | does |
+|---|---|
+| `./selftest.sh` | every `--selftest` + `sync_ps1.py --check`, PASS/FAIL per step |
+| `./serve.sh [live\|local] [flags]` | live server with exp01; `live` binds 10.21.2.1 (VM), `local` 127.0.0.1 (replay); extra flags pass through, e.g. `--llm-provider mock` |
+| `./replay.sh <session-id\|raw-dir> [speed]` | replays a recorded capture into `./serve.sh local` (speed 120) |
+| `./rejudge.sh <session-id> [llm-provider]` | Alg. 1 + SG-Det again on a saved session, then the LLM input (or verdict with a provider) |
+
+Defaults can be overridden with `RUN_DIR`, `SCALER`, `EXPERIMENT`, `PORT`.
 
 Then follow **[src/README.md → Start here](src/README.md#start-here-new-member)**.
 

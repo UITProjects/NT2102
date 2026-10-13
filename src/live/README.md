@@ -20,8 +20,11 @@ host live_server.py → engine.py: reorder by event time → etw2nodlink.Graph (
 | `compare_replay.py` | checks that the live path reproduces the offline pipeline on the training capture |
 | `../pipeline/score_window.py` | the scorer shared with offline test scoring (`--selftest`) |
 | `../pipeline/alg1.py` | Alg. 1 subgraphs + subgraph-score filter; re-judges saved sessions (`--selftest`) |
+| `../pipeline/alg2.py` | LLM verdict on red windows + Alg. 2 attack report; re-judges saved sessions (`--selftest`) |
 
 Run everything from the repo root. First, once: `uv add fastapi "uvicorn[standard]"`.
+Shortcuts in the repo root wrap the long commands below: `./selftest.sh`, `./serve.sh [live|local]`,
+`./replay.sh <session-id|raw-dir>`, `./rejudge.sh <session-id> [llm-provider]` (`-h` for usage).
 
 ## 1. It runs (selftests)
 
@@ -29,6 +32,7 @@ Run everything from the repo root. First, once: `uv add fastapi "uvicorn[standar
 uv run python src/pipeline/train_gnn_models.py --selftest
 uv run python src/pipeline/score_window.py --selftest
 uv run python src/pipeline/alg1.py --selftest
+uv run python src/pipeline/alg2.py --selftest
 uv run python src/live/engine.py --selftest
 uv run python src/live/etwship.py --selftest
 uv run python src/live/sync_ps1.py --check
@@ -91,14 +95,31 @@ scenario just after a boundary and watch that window.
 ### Alert rule (Alg. 1 + SG-Det, `src/pipeline/alg1.py`, DEVIATIONS D8)
 A window is red only if ≥ 1 subgraph reaches the cut-off. The subgraph score is Σ prob over its anomalous
 nodes, where prob = (score − train min) / (train max − train min), clamped to [0, 1]. Default: ≥ Moderate
-(score > 10). Subgraphs below the cut-off are still listed (dashed buttons in the UI).
-Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate [--sg-min-score X]`.
+(score ≥ 30, our live scale; the [REPO] scale is Moderate > 10, DEVIATIONS D8). Subgraphs below the cut-off are
+still listed (dashed buttons in the UI).
+Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate --sg-moderate-from 30 [--sg-min-score X]`.
 To try another cut-off on a saved session without the VM (writes `subgraphs_alg1.{json,csv}` per window):
 ```
 uv run python src/pipeline/alg1.py --run-dir src/artifacts/runs/exp01 \
-  --session-dir src/live/sessions/<id> [--sg-min-score X]
+  --session-dir src/live/sessions/<id> [--sg-moderate-from 10.0001] [--sg-min-score X]
 ```
 Replay speed: use `--speed 120` (0 hangs; 600 makes POSTs too large and the shipper times out).
+
+### LLM verdict on red windows (`src/pipeline/alg2.py`, DEVIATIONS D9)
+Off by default. With `--llm-provider anthropic|openai|ollama` (first `uv sync --group llm`; keys from
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`; Ollama at `http://localhost:11434/v1` unless `--llm-base-url`), each red
+window's kept subgraphs are serialized and sent on a separate thread. A neutral triage prompt answers attack /
+benign / uncertain. For attacks, the paper's Alg. 2 prompts then write the report. The window keeps its red
+alert; the badge shows `LLM: attack`, `LLM: FP` (struck through), `LLM: ?` or `LLM: …`. `--llm-provider mock`
+is a keyword rule for testing the UI, not an LLM. The benign replay `live-20261011T112141Z` has no red window at
+the default scale; add `--sg-moderate-from 10.0001` to make its 11:25 window red for a UI test. Output: `windows/<wid>/llm/` (`sg<id>_doc.txt` = exact LLM input,
+`triage.json`, `sg<id>_report.md`, `iocs.json`, `calls.jsonl` with every prompt and answer) and
+`llm_verdicts.csv` per session. Without the VM:
+```
+uv run python src/pipeline/alg2.py --session-dir src/live/sessions/<id> --serialize-only      # no LLM call
+uv run --group llm python src/pipeline/alg2.py --session-dir src/live/sessions/<id> --llm-provider anthropic
+```
+An LLM "FP" is not a label and is not used for training.
 
 A red window is an observation, not a detection result, until the window has labels (docs/DEVIATIONS.md D6, D8).
 
@@ -106,4 +127,4 @@ A red window is an observation, not a detection result, until the window has lab
 `session.json` (model, scaler, converter sha256, dos_map, parameters) · `raw/<stream>.json` (verbatim, can be
 replayed or converted into a labelled test split) · `windows.csv` · `windows/<wid>/{edges.csv, node_attrs.csv,
 features_model.csv, scores.csv, subgraphs.json}`; `windows.csv` has `subgraphs_kept, max_sg_score,
-max_level, alert`.
+max_level, alert, llm` (`llm` = pending when written; final verdicts in `llm_verdicts.csv`).

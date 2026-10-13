@@ -17,16 +17,20 @@ scored window graph, in memory (no GraphDB). Mirrors upstream detect_anomalous_s
     sg_score = sum over the subgraph's ANOMALOUS nodes of                       Alg.1 l.21   [REPO] l.864-871
                prob = clamp((score - train_min_t) / (train_max_t - train_min_t), 0, 1)
                ([REPO] PyGOD _predict_prob 'linear'; [PAPER] §5.2 only says "sum of the scores")
-    level: <=1 Negligible, <=10 Minor, <=100 Moderate, <=1000 Significant, else Critical  [REPO] l.394
+    level: <=1 Negligible, <30 Minor, <=100 Moderate, <=1000 Significant, else Critical  [OURS], see below
     kept   = level >= min_level (default Moderate, [REPO] l.61, [PAPER] §7.2.1)          Alg.1 l.22-24
 
 [OURS] differences: no fallback to lower levels / top-k when nothing is kept ([REPO] l.433-461 would make
 every live window red); a partition still above max_e is kept whole and marked `oversize` instead of
 sampled per edge type ([REPO] l.490); optional numeric cut-off `min_score` (kept = sg_score > min_score;
-min_level Moderate == min_score 10) for calibration on BENIGN sessions; ties broken by node id.
+min_level Moderate ~ min_score 29.99) for calibration on BENIGN sessions; ties broken by node id.
+[OURS] level scale tuned for live 5-min windows (DEVIATIONS D8): Moderate starts at sg_score >= 30
+(`moderate_from`, flag --sg-moderate-from) instead of the [REPO] > 10 (l.394: <=1, <=10, <=100, <=1000).
+[PAPER] §5.2: the subgraph set "can be adjusted based on the desired abnormality threshold". The paper
+cut-off on a saved session: --sg-min-score 10 (or --sg-moderate-from 10.0001).
 
 Because prob <= 1, sg_score is roughly "how many anomalous nodes, weighted by how far above the training
-range". With the paper's levels a subgraph needs > 10 such nodes to be kept.
+range". With our scale a subgraph needs >= 30 such nodes to be kept (paper: > 10).
 
 Usage (from the repo root)
     uv run python src/pipeline/alg1.py --selftest
@@ -47,6 +51,7 @@ import networkx as nx
 import pandas as pd
 
 LEVELS = ["Negligible", "Minor", "Moderate", "Significant", "Critical"]
+MODERATE_FROM = 30.0                                    # [OURS] live scale; [REPO] l.394 is > 10
 TYPE_ORDER = {"net": 1, "process": 2, "file": 3}        # [REPO] node_type_order l.674
 
 
@@ -70,8 +75,13 @@ def node_prob(nodes: pd.DataFrame, score_range: dict) -> pd.Series:
     return ((nodes["score"] - lo) / (hi - lo)).clip(0, 1).fillna(0.0)
 
 
-def classify_level(score: float) -> str:
-    for bound, name in ((1, "Negligible"), (10, "Minor"), (100, "Moderate"), (1000, "Significant")):
+def classify_level(score: float, moderate_from: float = MODERATE_FROM) -> str:
+    """[REPO] l.394 bounds (upper bound inclusive) except Minor/Moderate: Moderate from `moderate_from` (inclusive)."""
+    if score <= 1:
+        return "Negligible"
+    if score < moderate_from:
+        return "Minor"
+    for bound, name in ((100, "Moderate"), (1000, "Significant")):
         if score <= bound:
             return name
     return "Critical"
@@ -79,7 +89,7 @@ def classify_level(score: float) -> str:
 
 def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range: dict, n_seed: int = 15,
               min_nodes: int = 3, max_edges: int = 5000, min_level: str = "Moderate",
-              min_score: float | None = None) -> tuple[list, dict]:
+              min_score: float | None = None, moderate_from: float = MODERATE_FROM) -> tuple[list, dict]:
     """nodes: [node_uuid, node_type, score, tau, margin, flagged] (score_window.score_edges)
     edges: normalised edge rows (train_gnn_models.normalise_edges), one row per event.
     Returns (subgraphs, stats); subgraphs sorted kept first, then by sg_score."""
@@ -169,7 +179,7 @@ def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range
         anom = members & A
         in_any |= anom
         sg_score = float(sum(info.loc[n, "prob"] for n in anom))
-        level = classify_level(sg_score)
+        level = classify_level(sg_score, moderate_from)
         kept = (sg_score > min_score) if min_score is not None else LEVELS.index(level) >= min_rank
         nlist = []
         for n in members:
@@ -237,18 +247,21 @@ def selftest():
     nd, _ = mk({"a": ("file", 5.0), "b": ("file", -9.0), "c": ("file", -0.4)}, [])
     p = node_prob(nd, rng).round(6).tolist()
     assert p == [1.0, 0.0, 0.5], p
-    assert [classify_level(x) for x in (1, 10, 10.01, 100, 1000, 1000.5)] == \
-        ["Negligible", "Minor", "Moderate", "Moderate", "Significant", "Critical"]
+    assert [classify_level(x) for x in (1, 1.01, 10, 29.99, 30, 100, 100.5, 1000, 1000.5)] == \
+        ["Negligible", "Minor", "Minor", "Minor", "Moderate", "Moderate", "Significant", "Significant", "Critical"]
+    assert [classify_level(x, moderate_from=10.0001) for x in (10, 10.01)] == ["Minor", "Moderate"]  # [REPO] scale
 
     # (a) the 11:25 'updater' shape: 18 DLLs above the training max, loaded by ONE unflagged process
     spec = {"upd": ("process", 0.0), **{f"dll{i}": ("file", 0.32) for i in range(18)}}
     nd, ed = mk(spec, [("upd", f"dll{i}", "load") for i in range(18)])
     sgs, st = construct(nd, ed, {}, rng)
     assert len(sgs) == 1 and sgs[0]["n_anomalous"] == 18 and sgs[0]["n_connectors"] == 1, sgs
-    assert sgs[0]["sg_score"] == 18.0 and sgs[0]["level"] == "Moderate" and sgs[0]["kept"], sgs[0]
+    assert sgs[0]["sg_score"] == 18.0 and sgs[0]["level"] == "Minor" and not sgs[0]["kept"], sgs[0]
     assert st["seeds"] == 15 and st["left_out"] == 0, st
-    # same shape with a numeric cut-off above it -> not kept
-    assert not construct(nd, ed, {}, rng, min_score=20)[0][0]["kept"]
+    # [REPO] scale (Moderate > 10) -> kept; a numeric cut-off above it -> not kept again
+    g = construct(nd, ed, {}, rng, moderate_from=10.0001)[0][0]
+    assert g["level"] == "Moderate" and g["kept"], g
+    assert not construct(nd, ed, {}, rng, min_score=20, moderate_from=10.0001)[0][0]["kept"]
 
     # (b) isolated anomalous node + (c) 2 anomalous joined by 1 connector -> Minor/Negligible, dropped
     nd, ed = mk({"iso": ("file", 1.0), "p": ("process", 0.0), "f1": ("file", 1.0), "f2": ("file", 1.0),
@@ -287,7 +300,7 @@ def selftest():
     assert st["subgraphs_built"] >= 2 and all(g["n_edges"] <= 20 for g in sgs), (st, sgs)
     sgs_big, _ = construct(nd, ed, {}, rng, max_edges=0)       # 0 = no cap, as upstream
     assert len(sgs_big) == 1 and sgs_big[0]["n_edges"] == len(ed), sgs_big
-    print("[SELFTEST OK] prob clamp, levels, 18-DLL subgraph = 18 -> Moderate (kept), isolated node left out, "
+    print("[SELFTEST OK] prob clamp, levels, 18-DLL subgraph = 18 -> Minor (dropped; Moderate/kept on the repo scale), isolated node left out, "
           "2-node story Minor (dropped), chain/seed rules as upstream, dedup, Louvain split")
 
 
@@ -304,7 +317,7 @@ def judge_window(wdir: str, score_range: dict, a) -> dict | None:
                                             dtype={"source-id": str, "destination-id": str}))
     attrs = dict(zip(nodes["node_uuid"], nodes["attr"].fillna(""))) if "attr" in nodes else {}
     sgs, st = construct(nodes, edges, attrs, score_range, a.n_seed, a.min_nodes, a.max_edges,
-                        a.sg_min_level, a.sg_min_score)
+                        a.sg_min_level, a.sg_min_score, a.sg_moderate_from)
     json.dump({"window": os.path.basename(wdir), "stats": st, "subgraphs": sgs},
               open(os.path.join(wdir, "subgraphs_alg1.json"), "w"), indent=1)
     cols = ["id", "seed", "n_anomalous", "n_connectors", "n_edges", "sg_score", "level", "kept", "oversize"]
@@ -326,7 +339,11 @@ def main():
     ap.add_argument("--sg-min-level", default="Moderate", choices=LEVELS)
     ap.add_argument("--sg-min-score", type=float, default=None,
                     help="[OURS] numeric cut-off (kept = sg_score > X); overrides --sg-min-level")
+    ap.add_argument("--sg-moderate-from", type=float, default=MODERATE_FROM,
+                    help="[OURS] Moderate starts at sg_score >= X (default 30; [REPO] scale: 10.0001)")
     a = ap.parse_args()
+    if not 1 < a.sg_moderate_from <= 100:
+        ap.error("--sg-moderate-from must be in (1, 100]")
     if a.selftest:
         return selftest()
     if not a.run_dir or not (a.window_dir or a.session_dir):

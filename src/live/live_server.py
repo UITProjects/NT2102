@@ -5,7 +5,8 @@ live_server.py - HTTP layer around engine.Engine: ingest from the VM shipper, JS
     POST /ingest              shipper batches (JSON, optionally gzip). 409 = offset gap, body.expected
     GET  /api/status          shipper / session / model status
     GET  /api/windows         every window of the current session (summary rows)
-    GET  /api/windows/{wid}   one window: top nodes per type, Alg. 1 subgraphs (score, level, kept)
+    GET  /api/windows/{wid}   one window: top nodes per type, Alg. 1 subgraphs (score, level, kept),
+                              LLM verdict + attack report when --llm-provider is set (alg2.py)
     GET  /api/stream          Server-Sent Events: "window" (a window changed), "status" (every 2 s)
     GET  /                    the UI (static/index.html)
 
@@ -13,6 +14,8 @@ Usage (from the repo root)
     uv run python src/live/live_server.py --run-dir src/artifacts/runs/exp01 \
         --scaler src/artifacts/features/self-dataset/feature_scaler.json \
         --experiment src/out/etw/experiments/20261009T145632Z/experiment.json --bind 10.21.2.1
+    add  --llm-provider anthropic|openai|ollama|mock  for the LLM verdict on red windows (uv sync --group llm;
+    'mock' is a keyword rule for UI tests, not an LLM)
 """
 from __future__ import annotations
 
@@ -116,10 +119,20 @@ def main():
     g.add_argument("--min-nodes", type=int, default=3, help="[REPO] smallest subgraph kept by construction")
     g.add_argument("--max-edges", type=int, default=5000, help="[PAPER] max_e; larger subgraphs are split (0 = no cap)")
     g.add_argument("--sg-min-level", default="Moderate", choices=["Negligible", "Minor", "Moderate", "Significant", "Critical"],
-                   help="window alerts only if a subgraph reaches this level ([PAPER] Moderate = score > 10)")
+                   help="window alerts only if a subgraph reaches this level (Moderate = score >= --sg-moderate-from)")
+    g.add_argument("--sg-moderate-from", type=float, default=30.0,
+                   help="[OURS] Moderate starts at this subgraph score (default 30; [REPO] scale: 10.0001)")
     g.add_argument("--sg-min-score", type=float, default=None,
                    help="[OURS] numeric cut-off instead of the level (alert if sg_score > X); calibrate on BENIGN sessions")
+    g = ap.add_argument_group("LLM triage + attack report after SG-Det (src/pipeline/alg2.py)")
+    g.add_argument("--llm-provider", choices=["anthropic", "openai", "ollama", "mock"], default=None,
+                   help="off by default; only red windows are sent; the verdict never turns a red window green")
+    g.add_argument("--llm-model", default=None, help="default per provider, see alg2.DEFAULT_MODELS")
+    g.add_argument("--llm-base-url", default=None, help="e.g. a remote Ollama http://host:11434/v1")
+    g.add_argument("--llm-max-subgraphs", type=int, default=5, help="kept subgraphs investigated per window")
     a = ap.parse_args()
+    if not 1 < a.sg_moderate_from <= 100:
+        ap.error("--sg-moderate-from must be in (1, 100]")
 
     if a.window_min != 5:
         print(f"[live] WARNING window {a.window_min} min: the models were trained on 5-min windows "
@@ -127,9 +140,12 @@ def main():
     engine = Engine(a.run_dir, a.scaler, a.sessions_dir, a.window_min, a.stride_min, a.lateness_s,
                     a.origin_ms, experiment_json=a.experiment, allow_collapsed=a.allow_collapsed,
                     n_seed=a.n_seed, min_nodes=a.min_nodes, max_edges=a.max_edges,
-                    sg_min_level=a.sg_min_level, sg_min_score=a.sg_min_score)
+                    sg_min_level=a.sg_min_level, sg_min_score=a.sg_min_score,
+                    sg_moderate_from=a.sg_moderate_from, llm_provider=a.llm_provider,
+                    llm_model=a.llm_model, llm_base_url=a.llm_base_url, llm_max_subgraphs=a.llm_max_subgraphs)
     print(f"[live] model {engine.run_dir}  tau={engine.run.tau}")
     print(f"[live] Alg. 1 {engine.sg}  train score range {engine.run.score_range}")
+    print(f"[live] LLM {engine.llm_cfg}")
     print(f"[live] converter sha256 {engine.conv_sha} ({engine.conv_check})")
     print(f"[live] UI: http://{a.bind}:{a.port}/")
     uvicorn.run(create_app(engine, a.token), host=a.bind, port=a.port, log_level="warning")
