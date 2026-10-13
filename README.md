@@ -1,18 +1,30 @@
 # Phát hiện bất thường trên endpoint device log
 
-**Anomaly detection on endpoint device logs**: NT2102 course project, based on
-[OCR-APT](https://doi.org/10.1145/3719027.3765219) (Aly, Mansour, Youssef, ACM CCS 2025).
+**Anomaly detection on endpoint device logs**: NT2102 course project.
 
-We record kernel activity on a Windows 10 VM with ETW, turn it into a provenance graph (process, file
-and network nodes), compute behaviour features per node, and train one one-class graph neural network
-(OCRGCN) per node type on benign activity only. A live demo scores every 5-minute window and shows
-alerts in a web UI.
+**Goal:** catch an attack on a Windows host *live*, from kernel audit logs. Target demo: an attacker
+exploits a CVE in a lab service, gets remote code execution, then runs follow-on MITRE ATT&CK techniques
+(discovery, persistence, credential access, C2, exfiltration). The window where it happens turns red;
+benign windows stay green. The detector is not limited to APTs: it flags host behaviour that benign
+training never showed.
 
-**End goal:** a real attack run during the live demo raises a true alert while benign windows stay
-green. Scope is the paper's core detector with simplified alert subgraphs. The paper's LLM report
-stage and a formal evaluation are out of scope. Current status: `docs/PROGRESS.md`.
+**Method:** the core idea of [OCR-APT](https://doi.org/10.1145/3719027.3765219) (Aly, Mansour, Youssef,
+ACM CCS 2025), built as a live demo. **Not a full reproduction** of the paper. Status: `docs/PROGRESS.md`.
 
 ![Live demo UI](src/live/example_live_server.png)
+
+## What we keep, adapt and leave out (details: `docs/DEVIATIONS.md`)
+
+- **Keep:** provenance graph of process / file / network nodes; 15 behaviour features per node
+  (paper §5.1.2); one one-class GNN per node type (OCRGCN), trained on benign activity only; Alg. 1
+  anomalous subgraphs + subgraph-score filter; the paper's Alg. 2 prompts for attack reports.
+- **Adapt:** our own Windows 10 ETW captures instead of NODLINK / DARPA; 5-min windows scored live instead
+  of the whole log offline; own trainer; our alert cut-off (Moderate ≥ 30); an LLM triage verdict before the
+  paper's report prompts.
+- **Leave out:** the paper's evaluation (datasets, metrics, baselines; none of our numbers compare to its
+  tables), GraphDB, Alg. 2 l.16–25.
+- **Attacks today:** Atomic Red Team + custom ATT&CK scripts (`src/atomic-attack-pack/`). The CVE → RCE
+  scenario is planned, not built.
 
 ## How the demo works
 
@@ -22,7 +34,8 @@ flowchart LR
     A["SilkETW<br/>kernel events"] --> B["shipper"]
   end
   subgraph H["Linux host · 10.21.2.1:8000"]
-    C["build graph +<br/>5-min windows"] --> D["OCRGCN scores"] --> E["alerts in web UI"]
+    C["graph +<br/>5-min windows"] --> D["OCRGCN<br/>node scores"] --> E["Alg. 1 subgraphs<br/>+ score filter"] --> F["alert in web UI"]
+    E -.-> G["LLM verdict + report<br/>(optional)"] -.-> F
   end
   B -- "HTTP" --> C
 ```
@@ -32,53 +45,32 @@ flowchart LR
 ```bash
 git submodule update --init OCR-APT        # upstream paper repo (paper PDF inside)
 uv sync                                    # Python 3.12 + dependencies from uv.lock
-uv run python src/pipeline/train_gnn_models.py --selftest
-uv run python src/pipeline/score_window.py --selftest
-uv run python src/live/engine.py --selftest
-uv run python src/live/etwship.py --selftest
+./selftest.sh                              # selftests, PASS/FAIL per step ("it runs", not "it detects")
 ```
-(or all of them at once: `./selftest.sh`)
 
-### Shortcuts (repo root, `-h` on each for usage)
-
-| script | does |
+| shortcut (`-h` for usage) | does |
 |---|---|
-| `./selftest.sh` | every `--selftest` + `sync_ps1.py --check`, PASS/FAIL per step |
-| `./serve.sh [live\|local] [flags]` | live server with exp01; `live` binds 10.21.2.1 (VM), `local` 127.0.0.1 (replay); extra flags pass through, e.g. `--llm-provider mock` |
-| `./replay.sh <session-id\|raw-dir> [speed]` | replays a recorded capture into `./serve.sh local` (speed 120) |
-| `./rejudge.sh <session-id> [llm-provider]` | Alg. 1 + SG-Det again on a saved session, then the LLM input (or verdict with a provider) |
+| `./serve.sh [live\|local] [flags]` | live server with exp01; `live` binds 10.21.2.1 (VM), `local` 127.0.0.1 (replay) |
+| `./replay.sh <session-id\|raw-dir> [speed]` | replays a recorded capture into `./serve.sh local` |
+| `./rejudge.sh <session-id> [llm-provider]` | Alg. 1 + filter again on a saved session, then the LLM step |
 
-Defaults can be overridden with `RUN_DIR`, `SCALER`, `EXPERIMENT`, `PORT`.
-
-Then follow **[src/README.md → Start here](src/README.md#start-here-new-member)**.
+Defaults can be overridden with `RUN_DIR`, `SCALER`, `EXPERIMENT`, `PORT`. Next: **[src/README.md → Start here](src/README.md#start-here-new-member)**.
 
 ## Repository layout
 
 | path | what it is |
 |---|---|
 | `src/` | lab VM (Vagrant + PowerShell), host pipeline, live demo, trained artifacts, notebooks. Map in `src/README.md` |
-| `docs/` | `PROGRESS.md` (status), `DEVIATIONS.md` (differences from the paper), `reports/` (professor brief, teammate guide), `notes/data-flow.md` (Windows logs → model input, end to end), `explainers/` (edges → node features page) |
+| `docs/` | `PROGRESS.md` (status), `DEVIATIONS.md` (differences from the paper), `reports/`, `notes/`, `explainers/` |
 | `OCR-APT/` | git submodule: the authors' code ([CoDS-GCS/OCR-APT](https://github.com/CoDS-GCS/OCR-APT)) and the paper PDF |
-| `ocrapt-live-windows.html` | design mock of the live demo UI |
 | `pyproject.toml`, `uv.lock` | Python dependencies, managed with [uv](https://docs.astral.sh/uv/) |
 | `CLAUDE.md` | project context for Claude Code sessions |
 | `dataset/`, `original-dataset/`, `dataset.tar.xz` | NODLINK simulated data and the OCR-APT dataset archive (large, not in git) |
 
-## Documentation
-
-| read this | for |
-|---|---|
-| `docs/reports/professor.md` | the 5-minute project overview |
-| `src/README.md` | what each folder is, and where a new member starts |
-| `docs/reports/teammate.md` | how to run each part, pitfalls, open tasks |
-| `src/live/README.md` | live demo runbook (replay without a VM, or live with the VM) |
-| `docs/PROGRESS.md` / `docs/DEVIATIONS.md` | current status / what we changed from the paper and why |
-
 ## Requirements
 
 - Linux host with [uv](https://docs.astral.sh/uv/) (Python ≥ 3.12).
-- For the lab VM: VirtualBox + Vagrant, about 8 GB free RAM for the VM. Run `src/setup-virtualbox.sh`
-  once to allow the 10.21.2.0/24 host-only network, then `cd src && vagrant up`.
+- Lab VM: VirtualBox + Vagrant, about 8 GB free RAM. Build steps in `src/README.md`.
 - Docker only for GraphDB (`src/graphdb/compose.yaml`), which the live demo does not need.
 
 ## Safety

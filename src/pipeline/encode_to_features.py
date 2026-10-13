@@ -8,10 +8,13 @@ Input   <edges.csv>  NODLINK format: source-id,source-type,destination-id,destin
                      (our etwwindow output: epoch ms, window-prefixed node IDs like "w0007_...")
 Output  features_raw.csv     human-readable: raw counts + idle gaps in float seconds + n_events  (do EDA here)
         features_model.csv   what the GNN would see: L2-normalised actions + min-max idle stats  (15 features)
-        feature_scaler.json  column order + min/max fitted on THIS file (reuse for test/live windows)
+        feature_scaler.json  column order + min/max fitted on THIS file (--scaler reuses it for test/live)
+Deviations (all 15 columns kept, train-only scaler): docs/DEVIATIONS.md D3.
 
-Usage   python encode_to_features.py --edges SimulatedW10_train_edges.csv --out-dir src/artifacts/features/self-dataset/
-        python encode_to_features.py --selftest          # hand-computed toy graph, must print "SELFTEST OK"
+Usage (from the repo root)
+    uv run python src/pipeline/encode_to_features.py --selftest     # hand-computed toy, prints "SELFTEST OK"
+    uv run python src/pipeline/encode_to_features.py \
+        --edges src/out/etw/experiments/<id>/SimulatedW10_train_edges.csv --out-dir src/artifacts/features/self-dataset
 """
 import argparse
 import json
@@ -28,8 +31,8 @@ ACTIONS = ["write", "read", "send", "recv", "start", "load"]
 ACTION_COLS = [f"{d}_{a}" for a in ACTIONS for d in ("out", "in")]          # 12 columns
 # [REPO] encode_to_PyG.py l.178-180: idle columns are inserted in this order (avg, max, min).
 IDLE_COLS = ["avg_idle_time", "max_idle_time", "min_idle_time"]             # 3 columns
-TS_DIVISOR_TO_SECONDS = {"ns": 1e9, "us": 1e6, "ms": 1e3, "s": 1.0}
 # [REPO] l.167-168: SimulatedW10 gaps are divided by 1000 -> the repo assumes epoch MILLISECONDS.
+TS_DIVISOR_TO_SECONDS = {"ns": 1e9, "us": 1e6, "ms": 1e3, "s": 1.0}
 REQUIRED = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
 WINDOW_RE = re.compile(r"^(w\d+)_")                                          # etwwindow prefix "w0007_"
 

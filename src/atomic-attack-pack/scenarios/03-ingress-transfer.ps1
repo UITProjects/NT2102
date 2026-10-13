@@ -1,12 +1,6 @@
 <#
-  03 — INGRESS TOOL TRANSFER  (tactic: Command & Control)
-  Technique: T1105 — pull a payload onto the host.
-  Implemented as a CUSTOM step so the download target is YOUR sink (controlled, reproducible),
-  which guarantees a process->network and a file-write edge you can label precisely.
-  Observable nodes: process (powershell.exe) + network (sink) + file (downloaded payload).
-  Admin required: no.
-
-  Point it at a running Start-LocalSink.ps1 (see lib\). Env override: $env:C2_SINK_HOST / _PORT.
+  03 - Ingress tool transfer (T1105), custom: downloads from our sink so the edges are labelable.
+  Needs lib\Start-LocalSink.ps1 running. Env override: $env:C2_SINK_HOST / _PORT. Details: SCENARIOS.md.
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

@@ -1,10 +1,5 @@
 <#
-  01 — DISCOVERY  (tactic: Discovery)
-  Techniques: T1033 (whoami), T1082 (system info), T1087.001 (local accounts), T1057 (process)
-  Signal level: LOW. These spawn short-lived processes and look almost benign — a good test
-  of whether your detector over-flags ordinary admin activity (precision stressor).
-  Observable nodes: process (whoami.exe, systeminfo.exe, net.exe, tasklist.exe).
-  Admin required: no.
+  01 - Discovery (T1033, T1082, T1087.001, T1057). Low signal, few process nodes. Details: SCENARIOS.md.
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

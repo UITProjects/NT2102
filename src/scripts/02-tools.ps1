@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 <#
-  Tools provisioner for the ETW collection VM (OCR-APT reproduction lab).
+  02-tools.ps1 - tools provisioner for the ETW collection VM.
 
   Installs, in order:
     1. SilkETW (pinned release) + the VC++ runtime it needs (from the release's Dependencies folder)
@@ -8,16 +8,12 @@
     3. Manifest dumps of the three kernel ETW providers (input to the event-ID -> edge-type table)
   and writes C:\Tools\lab-versions.json recording exactly what is installed.
 
-  Safe to re-run: every step checks current state first and skips if already done.
-  Needs internet (NAT adapter on). Runs no attacks.
+  Safe to re-run (each step checks state first). Needs internet (NAT adapter on). Runs no attacks.
+  Pins: empty pins resolve "latest" and print a WARNING; copy the values from lab-versions.json into
+  the param defaults below to make rebuilds identical (not done yet, see docs/PROGRESS.md).
 
-  PINNING WORKFLOW
-    First run with empty pins: the script resolves "latest", installs it, and prints a WARNING per
-    unpinned item. Copy the values from lab-versions.json into the param defaults below, commit the
-    script, and from then on every rebuild (yours or a teammate's) installs identical bits.
-
-  Manual run (outside Vagrant):
-    powershell -ExecutionPolicy Bypass -File .\tools.ps1
+  Manual run (outside Vagrant; -ExecutionPolicy Bypass = allow this unsigned script for this run only):
+    powershell -ExecutionPolicy Bypass -File .\02-tools.ps1
 #>
 param(
     [string]$SilkTag          = "v0.8",  # SilkETW GitHub release tag
@@ -32,7 +28,7 @@ $ProgressPreference    = "SilentlyContinue"   # Invoke-WebRequest is very slow w
 
 $ToolsDir     = "C:\Tools"
 $SilkDir      = "$ToolsDir\SilkETW"
-$ArtDir       = "C:\AtomicRedTeam"          # must be a Defender exclusion (base.ps1) before atomics land here
+$ArtDir       = "C:\AtomicRedTeam"          # must be a Defender exclusion (01-base.ps1) before atomics land here
 $DumpDir      = "$ToolsDir\provider-dumps"
 $VersionsFile = "$ToolsDir\lab-versions.json"
 $GhHeaders    = @{ "User-Agent" = "w10-etw-lab" }

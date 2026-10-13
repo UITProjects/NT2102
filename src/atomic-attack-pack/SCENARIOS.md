@@ -1,7 +1,7 @@
 # Scenarios (easy -> hard)
 
 All chosen to be **observable** by SilkETW Kernel-Process/File/Network. Registry-only and
-in-memory-only techniques are deliberately excluded — they produce no nodes in your graph.
+in-memory-only techniques are excluded on purpose: they produce no graph nodes.
 
 | # | File | Tactic | ATT&CK | Node types | Admin | Source |
 |---|------|--------|--------|-----------|-------|--------|
@@ -20,24 +20,31 @@ in-memory-only techniques are deliberately excluded — they produce no nodes in
 action (the C2 sink target and staging paths need to be deterministic to label cleanly; the
 corresponding ART atomics hit external test infrastructure you don't control).
 
-## Verify a scenario before you trust it
+Visibility doubts [INFERENCE], check on a capture: **05** LSASS handle access is not in the collected
+events (only rundll32 and the `.dmp` write should show); **09** timestomp is a set-information call, not in
+the Kernel-File keywords 0x390 (name/create/read/write).
 
-For every ART technique, read the exact command first (never run blind):
+## Atomic Red Team in brief
+
+- ATT&CK *tactic* = the why (Discovery, C2…); *technique* = the how (`T1003.001`). ART ships one YAML per
+  technique with *atomic tests*: executor, exact command, inputs, prerequisites, cleanup.
+- `Invoke-AtomicTest` is the PowerShell runner. Always read before running; test numbers drift between ART
+  versions, so confirm with `-ShowDetailsBrief` and fix `-TestNumbers` in the scenario if needed:
 
 ```powershell
-Invoke-AtomicTest T1003.001 -ShowDetailsBrief   # which tests exist, and their numbers
-Invoke-AtomicTest T1003.001 -TestNumbers 1 -ShowDetails   # the literal command, inputs, cleanup
+Invoke-AtomicTest T1003.001 -ShowDetailsBrief             # list tests + their numbers (like `ls`)
+Invoke-AtomicTest T1003.001 -TestNumbers 1 -ShowDetails   # print the literal command (like `cat` before run)
+Invoke-AtomicTest T1003.001 -TestNumbers 1 -GetPrereqs    # fetch files the test needs
+Invoke-AtomicTest T1003.001 -TestNumbers 1                # run
+Invoke-AtomicTest T1003.001 -TestNumbers 1 -Cleanup       # undo
 ```
 
-If the test number in a scenario doesn't match what `-ShowDetailsBrief` shows (the repo
-reorders over time), fix the `-TestNumbers` value in that scenario. This is expected.
+## Difficulty, and the alert cut-off
 
-## Difficulty, and why
+A window alerts only if one subgraph holds roughly ≥ 30 anomalous nodes (DEVIATIONS D8). [INFERENCE] from
+the node counts below, single scenarios probably stay under it; 10 is the best candidate. Untested.
 
-- **01–03** are low/medium signal: single techniques, few nodes, benign-looking. They test
-  whether your detector stays quiet on ordinary activity (precision).
-- **04–06** are clear malicious signals with distinctive structure (persistence artifacts, an
-  LSASS-touching process writing a dump, a periodic single-endpoint beacon).
-- **07–09** add multi-node patterns (collection fan-in, exfil linkage, late-stage log-clearing).
-- **10** is the real target: a connected subgraph across all three node types with temporal
-  ordering — what OCR-APT's anomalous-subgraph construction (Alg. 1) is designed to recover.
+- **01–03**: single techniques, few nodes, benign-looking.
+- **04–06**: distinctive structure (persistence artefacts, a dump-writing process, a single-endpoint beacon).
+- **07–09**: multi-node patterns (collection fan-in, exfil linkage, log clearing).
+- **10**: one connected subgraph across all three node types, in kill-chain order: what Alg. 1 recovers.

@@ -1,14 +1,13 @@
 # src/: the OCR-APT demo lab
 
-Everything for the NT2102 course demo of OCR-APT ("Phát hiện bất thường trên endpoint device log"):
+Everything for the NT2102 demo ("Phát hiện bất thường trên endpoint device log"): detect a demo attack
+(e.g. CVE exploit → RCE → ATT&CK techniques) live on a Windows host, using OCR-APT's core method.
 
-- a **Windows 10 lab VM** that records kernel activity with ETW (SilkETW);
-- a **host pipeline** that turns those logs into a graph, computes behaviour features and trains
-  one-class graph neural networks (OCRGCN);
-- a **live demo** that scores every 5-minute window and shows alerts in a web UI.
+- **Windows 10 lab VM**: records kernel activity with ETW (SilkETW).
+- **Host pipeline**: logs → graph → behaviour features → one-class GNN per node type (OCRGCN).
+- **Live demo**: scores every 5-minute window, builds alert subgraphs (Alg. 1), optional LLM verdict, web UI.
 
-The end goal is a live demo in which a real attack raises a true alert while benign windows stay green.
-For project status read `../docs/PROGRESS.md`; for differences from the paper read `../docs/DEVIATIONS.md`.
+Status: `../docs/PROGRESS.md`. Differences from the paper: `../docs/DEVIATIONS.md`.
 
 ## The folders at a glance
 
@@ -34,7 +33,8 @@ Read in this order (about 30 minutes):
 
 1. `../docs/reports/professor.md`: the 5-minute overview, with architecture diagrams.
 2. `../docs/notes/data-flow.md`: how Windows logs become the model's input, end to end (raw events → edges → windows → features → tensors).
-   Then `../docs/explainers/edges-to-node-features.html` (open it in a browser): how graph edges become the 15 node features.
+   Then, in a browser: `../docs/explainers/edges-to-node-features.html` (edges → the 15 node features) and
+   `../docs/explainers/live-windows.html` (how one live window is scored; windows vs stride).
 3. `../docs/reports/teammate.md`: how to run things, known pitfalls, open tasks.
 4. `live/README.md`: the live demo step by step.
 
@@ -45,18 +45,11 @@ Then pick a path. All commands run from the **repo root**, with Python managed b
 |---|---|---|
 | see that the code runs | no | the selftests below |
 | look at the data | no | `uv run jupyter lab`, then open `src/notebooks/` (start with `04-features-self/`) |
-| understand the model | no | read `pipeline/train_gnn_models.py` top to bottom; its docstring explains every step |
+| understand the model | no | read `pipeline/train_gnn_models.py` top to bottom (shapes in comments) |
 | watch the demo without a VM | no, but needs a capture folder | replay a recorded capture: `live/README.md` step 4 |
 | run the real live demo | yes | build the VM (below), then `live/README.md` step 5 |
 
-Selftests (each proves "it runs", not "it detects attacks"):
-```
-uv run python src/pipeline/train_gnn_models.py --selftest
-uv run python src/pipeline/score_window.py --selftest
-uv run python src/live/engine.py --selftest
-uv run python src/live/etwship.py --selftest
-uv run python src/live/sync_ps1.py --check
-```
+Selftests: `./selftest.sh` (each proves "it runs", not "it detects attacks").
 
 `out/` and `live/sessions/` are not in git. To replay or retrain on our capture, ask a teammate for a
 copy of `out/etw/experiments/20261009T145632Z/`.
@@ -79,13 +72,15 @@ src/
 ├── atomic-attack-pack/       10 attack scenarios (Atomic Red Team + custom), run-all / cleanup
 │                             scripts, LABELING.md, tools/build_node_labels.py
 ├── pipeline/                 host pipeline (Python, code only)
-│   ├── w10_to_rdf.py           edges → RDF/TSV for GraphDB (only for later Alg. 1 work)
 │   ├── encode_to_features.py   edges → 15 behaviour features per node (paper §5.1.2)
 │   ├── train_gnn_models.py     trains one OCRGCN per node type → artifacts/runs/<exp>/
-│   └── score_window.py         scores any edge CSV with a trained run (shared with the live demo)
+│   ├── score_window.py         scores any edge CSV with a trained run (shared with the live demo)
+│   ├── alg1.py                 Alg. 1 subgraphs + subgraph-score filter (in memory); re-judges sessions
+│   ├── alg2.py                 LLM triage + Alg. 2 attack report on red windows (optional)
+│   └── w10_to_rdf.py           edges → RDF/TSV for GraphDB (unused by the demo)
 ├── live/                     live demo (see live/README.md)
 │   ├── etwship.py              shipper: tails ETW files on the VM and POSTs them; --replay on the host
-│   ├── engine.py               reorder by event time, convert, cut windows, score, build subgraphs
+│   ├── engine.py               reorder by event time, convert, cut windows, score, call alg1/alg2
 │   ├── live_server.py          FastAPI server: /ingest, /api/*, live updates, UI at /
 │   ├── static/index.html       the web UI
 │   ├── compare_replay.py       checks that live results equal the offline pipeline
@@ -114,7 +109,7 @@ do not edit them.
 | script | what it does |
 |---|---|
 | `01-base.ps1` | base Windows setup: network profile, UTC clock, no sleep, RDP, lab folders, Windows Update frozen, Defender exclusions |
-| `02-tools.ps1` | installs pinned tools: SilkETW, Invoke-AtomicRedTeam + atomics |
+| `02-tools.ps1` | installs SilkETW, Invoke-AtomicRedTeam + atomics (pin slots exist, still empty: PROGRESS) |
 | `03-workload.ps1` | **installs** benign servers (Apache, PostgreSQL, optional Chrome/Java). It is not a benign activity generator |
 | `04-collector.ps1` | SilkService config (Kernel-Process / File / Network), `etwctl`, the `etw2nodlink.py` converter |
 | `05-collect-for-20-minutes.ps1` | one 20-minute capture + `etwwindow.py` windowing |
@@ -135,8 +130,11 @@ as `C:\scripts`. With `LAB_ISOLATED=1` (network cut for attack runs), copy scrip
 
 ## Pitfalls
 
-- Train only on edges from `out/etw/experiments/<id>/`. The loose `out/etw/SimulatedW10_train_edges.csv`
-  has no windows and produced a collapsed model once.
-- For benign live tests run `06-benign-workload.ps1`, not `03` (installer activity gets flagged).
-- After editing `live/etwship.py`, run `uv run python src/live/sync_ps1.py`, or the VM keeps the old copy.
-- Keep 3D acceleration off in the VM: with it on, the NVIDIA driver crashed VirtualBox.
+| symptom | cause → fix |
+|---|---|
+| collapsed model, all-zero features | trained on the loose `out/etw/SimulatedW10_train_edges.csv` (no windows) → use edges in `out/etw/experiments/<id>/` |
+| installer activity flagged in a "benign" test | `03-workload.ps1` installs software → use `06-benign-workload.ps1` |
+| VM dies, looks like OOM | VMSVGA segfault in `libnvidia-glcore` (3D acceleration) → keep `accelerate3d off`; check `journalctl -k` and `VBox.log.1` first |
+| VM runs an old shipper | edited `live/etwship.py` without syncing → `uv run python src/live/sync_ps1.py` |
+| live server stops receiving after a VM crash | dead connection → restart the server |
+| GraphDB killed on big loads | heap 8g > container limit 4g → `GRAPHDB_HEAP` ≤ 3g |

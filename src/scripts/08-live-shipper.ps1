@@ -3,7 +3,7 @@
   08-live-shipper.ps1 - start a live SilkETW capture and stream it to the OCR-APT live server on the host.
 
   Run INSIDE the VM from an elevated PowerShell, after 04-collector.ps1 has been provisioned.
-  The host must already run:  uv run python src/live/live_server.py ... --bind 10.21.2.1
+  The host must already run:  ./serve.sh   (src/live/live_server.py --bind 10.21.2.1)
 
     .\08-live-shipper.ps1                         # new capture C:\lab-out\etw\raw\test\live-<UTC>, ship it
     .\08-live-shipper.ps1 -NoCapture              # ship the capture that is already running (etwctl status)
@@ -14,9 +14,8 @@
   What the VM does: only tail the raw SilkETW JSON files and POST them. Conversion, windowing,
   features and scoring all happen on the host (src/live/engine.py).
 
-  etwship.py below is a COPY of src/live/etwship.py (the source of truth). The VM cannot read the
-  repo while isolated, so the copy is embedded like etw2nodlink.py in 04-collector.ps1.
-  After editing src/live/etwship.py, regenerate this file (see src/live/README.md).
+  etwship.py below is a COPY of src/live/etwship.py (the source of truth; the isolated VM cannot read the
+  repo). Never edit it here: after editing src/live/etwship.py run  uv run python src/live/sync_ps1.py
 
   The capture uses -Split test because etwctl only knows train|test; a live capture is never training data.
 #>
@@ -49,7 +48,8 @@ Live mode (on the VM, while SilkService writes C:\\lab-out\\etw\\raw\\test\\live
   duplicates after a retry are dropped server-side (it keys on byte offsets).
 
 Replay mode (on the host, no VM): send a recorded run with a virtual clock, --speed times faster.
-    python etwship.py --replay src/out/etw/experiments/<id>/raw/train/<run> --server http://127.0.0.1:8000 --speed 60
+    python etwship.py --replay src/out/etw/experiments/<id>/raw/train/<run> --server http://127.0.0.1:8000 --speed 120
+  (./replay.sh wraps this.)
   The dos-map (\\device\\harddiskvolumeN -> c:) is inferred from the raw paths unless --dos-map is given.
 
     python etwship.py --print-dos-map      (on the VM: the mapping the live mode sends)
@@ -321,7 +321,7 @@ def main():
     ap.add_argument("--session", help="default: run folder name")
     ap.add_argument("--token", default=os.environ.get("LAB_TOKEN"))
     ap.add_argument("--interval", type=float, default=1.0, help="seconds between POSTs (virtual seconds in replay)")
-    ap.add_argument("--speed", type=float, default=60, help="replay: virtual seconds per wall second (0 = no sleep)")
+    ap.add_argument("--speed", type=float, default=60, help="replay: virtual seconds per wall second (use >= 1; 0 hangs, ~120 is safe)")
     ap.add_argument("--tail-s", type=float, default=360, help="replay: keep the clock running after the last event")
     ap.add_argument("--dos-map", nargs="*", help=r"replay: \device\harddiskvolume4=c: (default: inferred)")
     ap.add_argument("--exclude-pid", type=int, default=None,

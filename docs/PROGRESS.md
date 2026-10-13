@@ -5,8 +5,8 @@ Replace lines in place when status changes; no history. "Verified" = checked in 
 ## Current focus
 
 Live detection demo: full Alg. 1 with the subgraph-score filter (SG-Det) now decides the window alert.
-On the benign session, 1 window is still red (the `updater` DLLs). Next: widen benign training data and
-calibrate, then prove the live path matches the offline pipeline (replay check), then run an Atomic
+On the benign replay, 0 windows are red at our scale (≥ 30), but the 11:25 `updater` window is only hidden
+(score 18), not fixed. Next: widen benign training data and calibrate, then prove the live path matches the offline pipeline (replay check), then run an Atomic
 scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 one-class) and Alg. 1.
 
 ## Done
@@ -62,6 +62,9 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 
 ## Not done
 
+- CVE → RCE demo scenario (target attack for the end goal): exploit a lab service (e.g. Apache /
+  PostgreSQL installed by `03-workload.ps1`), then ATT&CK follow-on. The attack pack has only
+  Atomic/custom scripts today.
 - Concepts 2 (rest) to 9. Phase 0 toy exercises; Phase 1 one-page paper summary + hyperparameter list.
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
@@ -107,6 +110,23 @@ Live tooling:
 - `etwship.py --replay --speed 0` never advances the virtual clock (step = interval × speed = 0), so it
   hangs; at 600× each POST carries 10 min of events and the shipper times out. 120× works (52 min in 29 s).
 - Replayed window 11:35 has 13,045 edges vs 12,516 live: the live run dropped late events (lateness 20 s).
+
+Code bugs found in the 2026-10-13 docs pass (verified in code, not fixed yet):
+- `serve.sh` help prints `sed -n '2,12p'`, one line too many (includes `set -euo pipefail`).
+- `etwship.py --speed` help says "0 = no sleep", but 0 hangs (see Live tooling); default is 60, `replay.sh` uses 120.
+- `build_node_labels.py` expects `node_id,type,name,timestamp`; the converter writes `node,node_type,node_attr`
+  (no timestamp, types `PROCESS/FILE/NET`), and NET is checked as `network`. It cannot run as is.
+- `attack-lib.ps1` / `cleanup-all.ps1` import `C:\AtomicRedTeam\invoke-atomicredteam\*.psd1`, but `02-tools.ps1`
+  installs the module from PSGallery (`-Scope AllUsers`).
+- `selftest.sh` skips `encode_to_features.py --selftest`; `w10_to_rdf.py` has no `--selftest`.
+- Runtime messages name old files: `07-build-train-dataset.ps1` ("next w10_to_rdf.py", next is
+  `encode_to_features.py`; "05-collect-10-minutes-window.ps1") and `02-tools.ps1` ("Run base.ps1 first").
+- `02-tools.ps1` pins (`SilkZipSha256`, `InvokeArtVersion`, `AtomicsRef`) are still empty, so rebuilds
+  install "latest"; copy them from `lab-versions.json`.
+- `src/Vagrantfile:13` names `./host-setup.sh`; the file is `src/setup-virtualbox.sh`.
+- `live_server.py --sg-moderate-from` hard-codes 30.0 instead of `alg1.MODERATE_FROM`.
+- Scenarios 05 (lsass handle access) and 09 (timestomp) may be invisible to the collector's file keywords
+  (0x390 = name/create/read/write) [INFERENCE]; check on a capture.
 
 Repo hygiene:
 - `.gitmodules` still declares submodule `dataset/Simulated-Data` (PKU-ASAL), but `/dataset/` is

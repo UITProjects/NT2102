@@ -1,13 +1,6 @@
 <#
-  04 — PERSISTENCE  (tactic: Persistence)
-  Techniques: T1053.005 (scheduled task), T1547.001 (startup folder / Run key)
-  Chosen because both are OBSERVABLE by your collector:
-    - scheduled task -> schtasks.exe process edge
-    - startup folder  -> a FILE written under the Startup directory
-  (A pure registry Run-key write is NOT seen by Kernel-Process/File/Network — prefer the
-   startup-FOLDER variant of T1547.001 so you get a file node.)
-  Observable nodes: process (schtasks.exe) + file (task payload, startup shortcut/script).
-  Admin required: scheduled-task creation for SYSTEM context needs admin; user-context tasks do not.
+  04 - Persistence (T1053.005 scheduled task, T1547.001 startup FOLDER: a registry-only Run key is
+  invisible to the collector). Admin only for SYSTEM-context tasks. Details: SCENARIOS.md.
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

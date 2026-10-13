@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
 """
-build_node_labels.py  —  turn attack-labels.jsonl (the oracle) into node-level labels.
+build_node_labels.py - turn attack-labels.jsonl (the oracle) into node-level labels.
 
-This is a SKETCH. Adapt the column names (marked TODO) to your actual converter output
-(SimulatedW10_test_node_attrs.csv). The labeling rule here is:
-
-    a node is malicious  IFF
-        it matches an attack indicator (process image / file path / network endpoint)
-        AND it is active within that attack's [start_utc, end_utc] window.
-
-Honesty notes (read LABELING.md):
-  * Indicator match alone over-labels (benign powershell.exe during an attack window looks
-    identical to the attack's powershell.exe). The time constraint narrows it; PID/GUID would
-    narrow it further if your node attrs carry it.
-  * This is a weak oracle, not analyst-verified ground truth. Report it as such.
+Rule: a node is malicious IFF it matches an attack indicator (process image / file path / network endpoint)
+AND is active within that attack's [start_utc, end_utc]. Weak oracle, see LABELING.md and DEVIATIONS D6.
+SKETCH, not runnable yet: the TODO column names do not match the converter output (docs/PROGRESS.md).
 """
 import json, sys, fnmatch
 from datetime import datetime, timezone

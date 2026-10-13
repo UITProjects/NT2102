@@ -1,19 +1,7 @@
 <#
-  10 — APT STORY  (full kill chain)
-  Composes the single techniques into ONE intrusion, in kill-chain order, with dwell time
-  between phases. This is the "hardest" case and the one that matters most for OCR-APT:
-  it produces a CONNECTED malicious subgraph spanning process, file, and network nodes —
-  exactly the structure Alg. 1 reconstructs.
-
-  Story:
-    Initial foothold (discovery) -> establish persistence -> steal credentials ->
-    call home (C2) -> collect & stage -> exfiltrate -> cover tracks.
-
-  Run this DURING a benign test-split capture (ideally alongside the benign workload) so the
-  attack subgraph is embedded in realistic noise. A pure-attack capture makes detection
-  trivial and inflates metrics (see LABELING.md).
-
-  Admin required: YES for the credential-access and log-clear phases. Run elevated.
+  10 - Full chain in kill-chain order with dwell time: discovery -> persistence -> credentials -> C2 ->
+  collect/stage -> exfiltrate -> cover tracks. One connected process/file/network subgraph (what Alg. 1
+  recovers). Admin: YES. Run alongside 06-benign-workload.ps1 so it sits in benign noise (LABELING.md).
 #>
 . "$PSScriptRoot\..\lib\attack-lib.ps1"
 Initialize-AttackLab

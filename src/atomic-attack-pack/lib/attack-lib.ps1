@@ -1,15 +1,10 @@
 <#
-    attack-lib.ps1  —  shared helpers for the OCR-APT attack pack.
+    attack-lib.ps1 - shared helpers for the attack pack (labels to C:\lab-labels\attack-labels.jsonl).
 
-    PowerShell orientation (you come from Linux):
-      - "function Name { param(...) ... }" defines a function; params are named flags.
-      - "$script:X" is a script-scoped variable (visible to every function in this file
-        once dot-sourced).
-      - "[DateTime]::UtcNow" is a static method call, like Java's DateTime.utcNow().
-      - "ConvertTo-Json -Compress" serialises a hashtable to one JSON line.
-      - "Add-Content" appends a line to a file (>> in bash).
-      - Dot-source this file from a scenario with:  . "$PSScriptRoot\..\lib\attack-lib.ps1"
-        The leading dot means "run in the current scope" so the functions stay defined.
+    PowerShell notes: "function Name { param(...) }" = function with named flags; "$script:X" = variable
+    shared by every function in this file; "[DateTime]::UtcNow" = static call (Java DateTime.utcNow());
+    "ConvertTo-Json -Compress" = one JSON line; "Add-Content" = append (>> in bash).
+    Scenarios load it with  . "$PSScriptRoot\..\lib\attack-lib.ps1"  (leading dot = keep the functions defined).
 #>
 
 function Initialize-AttackLab {

@@ -8,43 +8,33 @@ Each scenario appends a JSON line to `C:\lab-labels\attack-labels.jsonl`:
  "malicious":true,"process_indicators":["rundll32.exe"],"file_indicators":["*\\lsass*.dmp"],"network_indicators":[]}
 ```
 
-That file is your **label oracle**. You join it against your converted graph to produce labels.
+That file is the **label oracle**; it is joined against the converted graph to produce labels.
 
 ## Two granularities
 
-**Window-level (easy).** A capture window is `attacked` if its `[window_start, window_end]`
-overlaps any attack's `[start_utc, end_utc]`. One boolean per window. Good for a first
-end-to-end run; weak as a metric because a window is a coarse unit.
+- **Window-level (easy):** a window is `attacked` if `[window_start, window_end]` overlaps any attack's
+  `[start_utc, end_utc]`. One boolean per window; coarse.
+- **Node-level (paper-aligned, OCR-APT's node P/R/F1):** a node is malicious iff it **matches an indicator**
+  AND is **active inside the attack time range**. Output `node_labels.csv` (`node_id,label,matched_technique`).
 
-**Node-level (paper-aligned).** A node is malicious iff it **matches an indicator** AND is
-**active inside the attack window**. This matches OCR-APT's node-level P/R/F1. Use
-`tools/build_node_labels.py` (adapt the TODO column names) to produce `node_labels.csv`
-(`node_id,label,matched_technique`).
+Converter node attributes are `node,node_type,node_attr` with types `PROCESS/FILE/NET` and **no per-node
+timestamp**, so the activity interval is the node's window: `node → window → windows.csv` times.
+Indicator-only matching (no time constraint) over-labels; avoid it. `tools/build_node_labels.py` is a sketch
+that does not match these columns yet (`docs/PROGRESS.md` Open items).
 
-If your node attributes carry no per-node timestamp, join `node -> window -> windows.csv`
-times and use the window's time range as the node's activity interval. Indicator-only
-matching (no time constraint) will over-label and should be avoided.
+**Live session** (end-goal path): per window, `src/live/sessions/<id>/windows/<wid>/node_attrs.csv` plus the
+window times in `sessions/<id>/windows.csv`; same join.
 
-## Why this matters for your claims (do not skip)
+## Limits (keep in mind for any claim)
 
-- **This is a weak oracle.** Indicator + time is not analyst-verified truth. A benign
-  `powershell.exe` running inside an attack window matches the same indicator as the
-  attacker's `powershell.exe`. The time window narrows this; a PID/process-GUID column
-  (if your converter keeps one) narrows it further and is worth adding.
-- **Precision vs recall of the ORACLE, not the detector.** Over-labeling (false malicious)
-  inflates the malicious class and makes the detector look worse on precision; under-labeling
-  makes it look better than it is. Either way the metric is only as trustworthy as the oracle.
-- **Embed attacks in benign noise.** If your test capture is attacks-only, every node in an
-  attack window is malicious and the task collapses to "did anything happen" — F1 looks great
-  and means nothing. Run the attack pack *alongside* `06-benign-workload.ps1` so benign and
-  malicious nodes coexist in the same windows. This is the single biggest honesty lever.
-- **Class imbalance.** Even embedded, malicious nodes are a tiny fraction. Report the malicious
-  rate printed by `build_node_labels.py`, and prefer P/R/F1 over accuracy (OCR-APT does).
+- **Weak oracle:** a benign `powershell.exe` inside an attack window matches the attacker's indicator. The time
+  range narrows this; a process key (PID + start time) would narrow it further.
+- **Oracle errors move the metric:** over-labelling hurts the detector's apparent precision, under-labelling
+  flatters it.
+- **Embed attacks in benign noise:** run with `06-benign-workload.ps1`, or every node in an attack window is
+  malicious and the task collapses to "did anything happen".
+- **Class imbalance:** malicious nodes are a tiny fraction; prefer P/R/F1 over accuracy.
 
-## Relation to the paper
-
-[PAPER] OCR-APT labels come from DARPA ground-truth / analyst reports; §7 flags label-provenance
-problems even there. [OURS] Known-attack injection gives you exact knowledge of *what* you ran,
-traded against a coarse *which-nodes* mapping. Net: you can claim detection of injected ATT&CK
-techniques on your own capture; you cannot claim parity with the paper's DARPA numbers. Log this
-in the DEVIATIONS record.
+[PAPER] OCR-APT labels come from DARPA ground truth / analyst reports (§7 flags label-provenance issues even
+there). [OURS] injection gives exact knowledge of *what* ran, with a coarse *which-nodes* mapping. Claim:
+detection of injected ATT&CK techniques on our capture, not parity with the paper. Logged as DEVIATIONS D6.

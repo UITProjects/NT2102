@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# selftest.sh - run every pipeline/live selftest. Proves "it runs", never "it detects attacks".
+# selftest.sh - run the pipeline/live selftests listed in this file. Proves "it runs", never "it detects attacks".
 #
 # Usage: ./selftest.sh
 # Runs all steps even if one fails, prints PASS/FAIL per step, exits 1 if any failed.
