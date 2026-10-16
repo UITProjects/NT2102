@@ -1,0 +1,90 @@
+---
+# react2shell vulnlab: a deliberately-unpatched Next.js app, installed MANUALLY with Node (no Docker),
+# served on {{ vulnlab_port }}. It is the demo's attack target — a teammate drives the CVE->RCE against
+# it while the collector captures the provenance graph. This role installs and serves it; it contains
+# no exploit steps. Keep it OFF the public internet (subnet/host-only only).
+
+- name: Install Node.js LTS and git
+  chocolatey.chocolatey.win_chocolatey:
+    name:
+      - nodejs-lts
+      - git
+    state: present
+
+- name: Defender exclusion for the vulnlab dir
+  ansible.windows.win_powershell:
+    script: "Add-MpPreference -ExclusionPath '{{ vulnlab_dir }}'"
+  changed_when: false
+  failed_when: false
+
+- name: Clone react2shell-vulnlab
+  ansible.windows.win_powershell:
+    script: |
+      if (-not (Test-Path '{{ vulnlab_dir }}\.git')) {
+        git clone '{{ vulnlab_repo }}' '{{ vulnlab_dir }}'
+        $Ansible.Changed = $true
+      } else {
+        $Ansible.Changed = $false
+      }
+
+- name: Check the app's required Node version (engines) — informational
+  ansible.windows.win_powershell:
+    script: |
+      $pkg = Get-Content '{{ vulnlab_dir }}\package.json' -Raw | ConvertFrom-Json
+      $Ansible.Result = @{ engines = $pkg.engines; node = (node --version) }
+  register: vulnlab_engines
+  changed_when: false
+  failed_when: false
+
+- name: Report Node vs required engines
+  ansible.builtin.debug:
+    msg: "Installed Node {{ vulnlab_engines.result.node | default('?') }}; app engines: {{ vulnlab_engines.result.engines | default('(none declared)') }}"
+
+- name: npm install (--legacy-peer-deps, required by the app's intentional version pinning)
+  ansible.windows.win_command: npm.cmd install --legacy-peer-deps
+  args:
+    chdir: "{{ vulnlab_dir }}"
+    creates: "{{ vulnlab_dir }}\\node_modules"
+  environment:
+    PATH: 'C:\Program Files\nodejs;{{ ansible_env.PATH | default("") }}'
+
+- name: npm run build
+  ansible.windows.win_command: npm.cmd run build
+  args:
+    chdir: "{{ vulnlab_dir }}"
+    creates: "{{ vulnlab_dir }}\\.next"
+  environment:
+    PATH: 'C:\Program Files\nodejs;{{ ansible_env.PATH | default("") }}'
+
+- name: Deploy the vulnlab start script
+  ansible.windows.win_copy:
+    content: |
+      @echo off
+      cd /d "{{ vulnlab_dir }}"
+      set PORT={{ vulnlab_port }}
+      "C:\Program Files\nodejs\npm.cmd" start
+    dest: 'C:\scripts\start-vulnlab.cmd'
+
+- name: Allow the vulnlab port through the firewall (subnet/host-only only)
+  community.windows.win_firewall_rule:
+    name: "react2shell-vulnlab {{ vulnlab_port }}"
+    localport: "{{ vulnlab_port }}"
+    action: allow
+    direction: in
+    protocol: tcp
+    profiles: [private]
+    state: present
+    enabled: true
+
+- name: Serve the vulnlab on boot (scheduled task) so the teammate just opens the URL
+  community.windows.win_scheduled_task:
+    name: react2shell-vulnlab
+    description: "Serve the react2shell lab on port {{ vulnlab_port }}"
+    actions:
+      - path: 'C:\scripts\start-vulnlab.cmd'
+    triggers:
+      - type: boot
+    username: SYSTEM
+    run_level: highest
+    state: present
+    enabled: true

@@ -1,0 +1,63 @@
+---
+# Clone the repo, uv sync, and run the live server as a systemd service. The repo files run as the
+# login user (not root); only the systemd unit install needs become.
+
+- name: Clone the project repo
+  become: false
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: "{{ repo_branch }}"
+    update: true
+
+- name: uv sync (resolve torch, torch-geometric, fastapi, ...)
+  become: false
+  ansible.builtin.command: uv sync
+  args:
+    chdir: "{{ repo_dest }}"
+  register: uv_sync
+  changed_when: "'Resolved' in uv_sync.stderr or 'Installed' in uv_sync.stderr"
+
+# --- best-effort: copy the training experiment.json so the live converter-sha check can run ---
+# src/out/ is gitignored, so a fresh clone lacks it. If the control node has it, copy it over; the
+# server runs fine without it (engine.py just prints "not checked").
+- name: Does the control node have experiment.json?
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ src_dir }}/out/etw/experiments/{{ experiment_id }}/experiment.json"
+  register: exp_src
+
+- name: Ensure the experiment dir exists on the trainer
+  become: false
+  ansible.builtin.file:
+    path: "{{ repo_dest }}/src/out/etw/experiments/{{ experiment_id }}"
+    state: directory
+    mode: "0755"
+  when: exp_src.stat.exists
+
+- name: Copy experiment.json to the trainer
+  become: false
+  ansible.builtin.copy:
+    src: "{{ src_dir }}/out/etw/experiments/{{ experiment_id }}/experiment.json"
+    dest: "{{ repo_dest }}/src/out/etw/experiments/{{ experiment_id }}/experiment.json"
+    mode: "0644"
+  when: exp_src.stat.exists
+
+- name: Record whether the experiment file is present (for the service's --experiment flag)
+  ansible.builtin.set_fact:
+    have_experiment: "{{ exp_src.stat.exists }}"
+
+- name: Install the live-server systemd unit
+  ansible.builtin.template:
+    src: ocr-live.service.j2
+    dest: /etc/systemd/system/ocr-live.service
+    mode: "0644"
+  notify: restart ocr-live
+
+- name: Enable and start the live server
+  ansible.builtin.systemd:
+    name: ocr-live
+    enabled: true
+    state: started
+    daemon_reload: true

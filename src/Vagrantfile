@@ -1,82 +1,105 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 #
-# Windows 10 ETW collection lab — OCR-APT reproduction (NT2102)
+# Two-machine ETW lab — OCR-APT reproduction (NT2102). Provisioned by Ansible, not Vagrant.
 #
-# Network layout
-#   Host-only 10.21.2.0/24, host side (vboxnetN) = 10.21.2.1 (the "gateway")
-#   VM static IP = 10.21.2.10  (below .128, so it never collides with the DHCP pool .128-.254)
-#   Adapter 1 = NAT (Vagrant management + internet for tool downloads)
-#   Adapter 2 = host-only (lab network)
+#   ws-etw          Windows Server 2022   10.21.2.10   collector + shipper + benign workload + react2shell
+#                                                      vulnlab. Pushes raw ETW only; runs no training.
+#   ubuntu-trainer  Ubuntu 24.04          10.21.2.20   clones the repo, uv sync, runs live_server.py.
+#                                                      Receives the pushed data; holds training + demo.
+#
+# Both VMs sit on one host-only network (10.21.2.0/24, host side = 10.21.2.1). The Windows shipper posts
+# to the Ubuntu VM over this network; the browser UI is opened from the host at 10.21.2.20:8000.
+# These 10.21.2.x values are the LOCAL lab only. On cloud the same Ansible runs against a different
+# inventory (src/ansible/inventory.cloud.ini) — see src/ansible/README.md.
+#
+# Network layout (per VM)
+#   Adapter 1 = NAT (Vagrant management + internet for tool/apt/npm downloads)
+#   Adapter 2 = host-only (lab network, static IP below .128 so it never hits the DHCP pool .128-.254)
 #
 # Workflow
-#   ./host-setup.sh                         # one-time host prep (networks.conf, KVM check)
-#   vagrant up                              # build + provision (NAT on)
-#   # >>> turn OFF Tamper Protection in Windows Security GUI, then: vagrant provision --provision-with base
+#   ./host-setup.sh                            # one-time host prep (networks.conf, KVM check)
+#   vagrant up                                 # build both bare VMs (NAT on)
+#   # Windows only: turn OFF Tamper Protection in Windows Security GUI (see src/ansible/README.md)
+#   (cd ansible && ansible-playbook site.yml)  # install + configure both VMs
 #   vagrant snapshot save clean-baseline
-#   LAB_ISOLATED=1 vagrant reload           # NAT unplugged: host-only only (benign capture + attack runs)
-#   vagrant snapshot restore clean-baseline # before each attack run
+#   LAB_ISOLATED=1 vagrant reload ws-etw       # Windows NAT unplugged: host-only only (attack runs)
+#   vagrant snapshot restore ws-etw clean-baseline  # before each attack run
 
-LAB_SUBNET = "10.21.2"
-VM_IP      = "#{LAB_SUBNET}.10"
-VM_NAME    = "w10-etw"          # Windows hostnames: max 15 chars
-ISOLATED   = ENV.fetch("LAB_ISOLATED", "0") == "1"
+LAB_SUBNET  = "10.21.2"
+WIN_IP      = "#{LAB_SUBNET}.10"
+UBUNTU_IP   = "#{LAB_SUBNET}.20"
+WIN_NAME    = "ws-etw"           # Windows hostnames: max 15 chars
+UBUNTU_NAME = "ubuntu-trainer"
+# Only the Windows VM's NAT is cut in isolated mode (it runs the attack tooling). Ubuntu is the trainer
+# and keeps its NAT so it can still pull packages; it never runs attacks.
+ISOLATED    = ENV.fetch("LAB_ISOLATED", "0") == "1"
 
 Vagrant.configure("2") do |config|
-  config.vm.box            = "gusztavvargadr/windows-10"   # Win10 evaluation box; verify version on the box page
-  config.vm.hostname       = VM_NAME
-  config.vm.guest          = :windows
-  config.vm.communicator   = "winrm"
-  config.vm.boot_timeout   = 1800
-  config.winrm.timeout     = 1800
-  config.winrm.retry_limit = 30
-
-  # Host-only NIC. Vagrant creates/reuses a vboxnetN whose host IP is 10.21.2.1.
-  config.vm.network "private_network", ip: VM_IP, netmask: "255.255.255.0"
-
-  # Never expose the project dir to a VM that will run attack tooling.
+  # Never expose the project dir to a VM that will run attack tooling; Ubuntu gets the repo via git clone.
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
-  if ISOLATED
-    # NAT is unplugged, so the NAT port-forward is dead: reach WinRM over the host-only IP.
-    config.winrm.host = VM_IP
-    config.winrm.port = 5985
-  else
-    # Export channel for traces/provider dumps while NOT isolated.
-    config.vm.synced_folder "./out", "C:/lab-out", create: true
-    config.vm.synced_folder "./scripts", "C:/scripts", create: false
+  # ------------------------------------------------------------------ Windows Server 2022 collector VM
+  config.vm.define WIN_NAME do |win|
+    win.vm.box            = "gusztavvargadr/windows-server-2022-standard"   # evaluation (180-day) box
+    win.vm.box_version    = "2607.0.0"
+    win.vm.hostname       = WIN_NAME
+    win.vm.guest          = :windows
+    win.vm.communicator   = "winrm"
+    win.vm.boot_timeout   = 1800
+    win.winrm.timeout     = 1800
+    win.winrm.retry_limit = 30
+
+    # Host-only NIC. Vagrant creates/reuses a vboxnetN whose host IP is 10.21.2.1.
+    win.vm.network "private_network", ip: WIN_IP, netmask: "255.255.255.0"
+
+    if ISOLATED
+      # NAT is unplugged, so the NAT port-forward is dead: reach WinRM over the host-only IP.
+      win.winrm.host = WIN_IP
+      win.winrm.port = 5985
+    end
+
+    win.vm.provider "virtualbox" do |vb|
+      vb.name   = WIN_NAME
+      vb.gui    = true
+      vb.memory = 8096
+      vb.cpus   = 4
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+      vb.customize ["modifyvm", :id, "--accelerate3d", "off"]
+      vb.customize ["modifyvm", :id, "--vram", "256"]
+      vb.customize ["modifyvm", :id, "--clipboard-mode", "bidirectional"]
+      vb.customize ["modifyvm", :id, "--draganddrop", "disabled"]
+      vb.customize ["modifyvm", :id, "--cableconnected1", ISOLATED ? "off" : "on"]
+      # Audio
+      audio_driver =
+        if Vagrant::Util::Platform.windows?
+          "was" # Windows Audio Session API; use "dsound" on older VirtualBox
+        elsif Vagrant::Util::Platform.darwin?
+          "coreaudio"
+        else
+          "pulse" # Ubuntu: PulseAudio/PipeWire; use "alsa" if no sound server
+        end
+      vb.customize ["modifyvm", :id, "--audio-enabled", "on"]
+      vb.customize ["modifyvm", :id, "--audio-driver", audio_driver]
+      vb.customize ["modifyvm", :id, "--audio-controller", "hda"]
+      vb.customize ["modifyvm", :id, "--audio-out", "on"]
+      vb.customize ["modifyvm", :id, "--audio-in", "off"]
+    end
   end
 
-  config.vm.provider "virtualbox" do |vb|
-    vb.name   = VM_NAME
-    vb.gui    = true
-    vb.memory = 8096
-    vb.cpus   = 4
-    vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
-    vb.customize ["modifyvm", :id, "--accelerate3d", "off"]
-    vb.customize ["modifyvm", :id, "--vram", "256"]
-    vb.customize ["modifyvm", :id, "--clipboard-mode", "bidirectional"]
-    vb.customize ["modifyvm", :id, "--draganddrop", "disabled"]
-    vb.customize ["modifyvm", :id, "--cableconnected1", ISOLATED ? "off" : "on"]
-    # Audio
-  AUDIO_DRIVER =
-  if Vagrant::Util::Platform.windows?
-    "was" # Windows Audio Session API; use "dsound" on older VirtualBox
-  elsif Vagrant::Util::Platform.darwin?
-    "coreaudio"
-  else
-    "pulse" # Ubuntu: PulseAudio/PipeWire; use "alsa" if no sound server
-  end
-    vb.customize ["modifyvm", :id, "--audio-enabled", "on"]
-    vb.customize ["modifyvm", :id, "--audio-driver", AUDIO_DRIVER]
-    vb.customize ["modifyvm", :id, "--audio-controller", "hda"]
-    vb.customize ["modifyvm", :id, "--audio-out", "on"]
-    vb.customize ["modifyvm", :id, "--audio-in", "off"]
-  end
+  # ------------------------------------------------------------------ Ubuntu trainer / live-server VM
+  config.vm.define UBUNTU_NAME do |ub|
+    ub.vm.box          = "bento/ubuntu-24.04"
+    ub.vm.hostname     = UBUNTU_NAME
+    ub.vm.boot_timeout = 600
 
-  config.vm.provision "base",  type: "shell", path: "scripts/01-base.ps1",  privileged: true, args: [VM_IP]
-  config.vm.provision "tools", type: "shell", path: "scripts/02-tools.ps1", privileged: true
-  config.vm.provision "workload", type: "shell", path: "scripts/03-workload.ps1",privileged: true,
-  args: ["-PgPassword", ENV.fetch("LAB_PG_PASSWORD", "labpg-ChangeMe!"), "-Extras"]
-  config.vm.provision "collector", type: "shell", path: "scripts/04-collector.ps1", privileged: true
+    ub.vm.network "private_network", ip: UBUNTU_IP, netmask: "255.255.255.0"
+
+    ub.vm.provider "virtualbox" do |vb|
+      vb.name   = UBUNTU_NAME
+      vb.gui    = false
+      vb.memory = 4096     # torch / torch-geometric training + live scoring
+      vb.cpus   = 2
+    end
+  end
 end

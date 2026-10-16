@@ -1,0 +1,11 @@
+---
+# Deploy the scripted benign workload generator (scripts/06-benign-workload.ps1).
+# It launches user apps THROUGH explorer.exe so the provenance graph does not learn PowerShell as the
+# benign parent (CLAUDE §9). It must run INTERACTIVELY in the RDP desktop session, not over WinRM:
+#   C:\scripts\06-benign-workload.ps1 -SelfTest                 # once per VM
+#   C:\scripts\06-benign-workload.ps1 -DurationMinutes 20       # during the demo, next to ship-live.ps1
+
+- name: Deploy the benign workload generator
+  ansible.windows.win_copy:
+    src: "{{ src_dir }}/scripts/06-benign-workload.ps1"
+    dest: 'C:\scripts\06-benign-workload.ps1'

@@ -1,0 +1,20 @@
+# Cloud lab. Copy to inventory.cloud.ini and fill in the real addresses, then run:
+#   ansible-playbook -i inventory.cloud.ini site.yml
+#
+# Both VMs live in ONE subnet/VPC. Each host has TWO addresses:
+#   ansible_host = PUBLIC IP or DNS (how your workstation reaches the VM: WinRM 5985 / SSH 22)
+#   private_ip   = the VM's SUBNET/VPC IP (how the Windows shipper reaches the Ubuntu server)
+# The shipper and inter-VM traffic (ports 8000, 3000) use private_ip and must stay inside the subnet.
+# Open WinRM/SSH to your admin IP only; never expose 8000/3000 to the public internet.
+
+[windows]
+ws-etw ansible_host=CHANGE_ME_WINDOWS_PUBLIC_IP private_ip=CHANGE_ME_WINDOWS_SUBNET_IP
+
+[ubuntu]
+# For a cloud Ubuntu use your own SSH key/user, e.g.:
+#   ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/lab_key
+ubuntu-trainer ansible_host=CHANGE_ME_UBUNTU_PUBLIC_IP private_ip=CHANGE_ME_UBUNTU_SUBNET_IP ansible_user=ubuntu
+
+[lab:children]
+windows
+ubuntu

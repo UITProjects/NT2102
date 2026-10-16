@@ -1,0 +1,48 @@
+---
+# Shared, address-agnostic configuration. No IP literals live here — the data-plane target is derived
+# from the inventory's private_ip so moving to the cloud is just editing the inventory.
+
+# Repo layout: playbook_dir is src/ansible, so src_dir is src/ (holds pipeline/, live/, scripts/).
+src_dir: "{{ playbook_dir }}/.."
+
+# ---- data-plane (Windows shipper -> Ubuntu live server) -------------------------------------------
+# The trainer address the shipper POSTs to. Defaults to the Ubuntu host's subnet IP from the inventory;
+# override in host_vars/group_vars on a cloud where the VMs reach each other on a different address.
+trainer_host: "{{ hostvars['ubuntu-trainer'].private_ip }}"
+server_port: 8000
+# The Ubuntu server binds all interfaces so it listens on the subnet IP whatever it is.
+server_bind: "0.0.0.0"
+
+# ---- react2shell vulnlab (manual Node install, defensive detection target) ------------------------
+vulnlab_port: 3000
+vulnlab_repo: "https://github.com/hidden-investigations/react2shell-vulnlab.git"
+vulnlab_dir: 'C:\lab\react2shell'
+
+# ---- pinned tool versions -------------------------------------------------------------------------
+silketw_tag: "v0.8"
+# v0.8 release asset. Pin the sha256 after the first download (printed by the role) to make it immutable.
+silketw_url: "https://github.com/mandiant/SilkETW/releases/download/v0.8/SilkETW_SilkService_v8.zip"
+silketw_sha256: ""          # e.g. "sha256:ABCD..." once pinned
+
+python_embed_version: "3.12.7"
+python_embed_url: "https://www.python.org/ftp/python/{{ python_embed_version }}/python-{{ python_embed_version }}-embed-amd64.zip"
+python_embed_sha256: ""     # pin after first download
+
+node_version: "lts"          # chocolatey nodejs-lts; react2shell wants Node >= 18.18 (check package.json engines)
+
+# ---- Windows lab paths ----------------------------------------------------------------------------
+graph_name: "SimulatedW10"   # the repo asserts the host name against a fixed list; keep this name
+tools_dir: 'C:\Tools'
+lab_home: 'C:\ProgramData\etwlab'
+silketw_dir: 'C:\Tools\SilkETW'
+out_dir: 'C:\lab-out\etw'
+raw_root: 'C:\lab-out\etw\raw'
+service_name: "SilkService"
+
+# ---- Ubuntu trainer -------------------------------------------------------------------------------
+repo_url: "https://github.com/UITProjects/NT2102.git"
+repo_branch: "main"
+repo_dest: "/home/{{ ansible_user | default('vagrant') }}/NT2102"
+# The valid trained run + its artefacts the live server loads (docs/PROGRESS.md).
+run_id: "exp01"
+experiment_id: "20261009T145632Z"

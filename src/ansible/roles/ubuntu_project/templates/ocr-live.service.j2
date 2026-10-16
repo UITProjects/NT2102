@@ -1,0 +1,17 @@
+[Unit]
+Description=OCR-APT live detection server (receives pushed ETW, scores windows)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ ansible_user }}
+WorkingDirectory={{ repo_dest }}
+# Mirrors serve.sh, but binds {{ server_bind }} (all interfaces) so it listens on the subnet IP.
+# One line: a conditional trailing flag with backslash-continuations would leave a dangling backslash.
+ExecStart=/usr/local/bin/uv run python src/live/live_server.py --bind {{ server_bind }} --port {{ server_port }} --run-dir src/artifacts/runs/{{ run_id }} --scaler src/artifacts/features/self-dataset/feature_scaler.json{% if have_experiment | default(false) %} --experiment src/out/etw/experiments/{{ experiment_id }}/experiment.json{% endif %}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

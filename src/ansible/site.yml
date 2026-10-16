@@ -1,0 +1,5 @@
+---
+# Full lab: Windows collector/shipper/vulnlab + Ubuntu trainer. Run both, or one at a time with
+# --limit windows / --limit ubuntu.
+- import_playbook: windows.yml
+- import_playbook: ubuntu.yml

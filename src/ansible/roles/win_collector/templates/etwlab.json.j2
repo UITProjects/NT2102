@@ -1,0 +1,20 @@
+{#- Rendered to C:\ProgramData\etwlab\etwlab.json. to_nice_json escapes the Windows backslashes. -#}
+{{
+  {
+    "ServiceName": service_name,
+    "SilkServiceDir": silkservice_dir,
+    "RawRoot": raw_root,
+    "OutDir": out_dir,
+    "Graph": graph_name,
+    "Python": python_exe,
+    "Converter": lab_home ~ "\\etw2nodlink.py",
+    "Collectors": [
+      {"Stem": "kproc", "Required": true,  "Guid": "6f1a2c10-0b7e-4c1d-9a51-3e1f00000001",
+       "Provider": "Microsoft-Windows-Kernel-Process", "Keywords": "0x50"},
+      {"Stem": "kfile", "Required": true,  "Guid": "6f1a2c10-0b7e-4c1d-9a51-3e1f00000002",
+       "Provider": "Microsoft-Windows-Kernel-File",    "Keywords": "0x390"},
+      {"Stem": "knet",  "Required": false, "Guid": "6f1a2c10-0b7e-4c1d-9a51-3e1f00000003",
+       "Provider": "Microsoft-Windows-Kernel-Network", "Keywords": "0x30"}
+    ]
+  } | to_nice_json
+}}

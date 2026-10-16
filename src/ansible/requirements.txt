@@ -1,0 +1,6 @@
+# Control-node Python dependencies. Install into a dedicated venv BEFORE running the playbooks:
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+# Then the Galaxy collections:  ansible-galaxy collection install -r requirements.yml
+ansible-core>=2.16          # the engine; the specific collections come from requirements.yml
+pywinrm>=0.4.3              # REQUIRED: Ansible's WinRM connection to the Windows VM imports this

@@ -15,7 +15,9 @@ Each top-level folder holds one kind of thing:
 
 | folder | kind | runs where | in git |
 |---|---|---|---|
-| `Vagrantfile`, `setup-virtualbox.sh`, `scripts/` | VM lab: definition + PowerShell provisioners | VM | yes |
+| `Vagrantfile`, `setup-virtualbox.sh` | VM lab definition (now two VMs: Windows collector + Ubuntu trainer) | host | yes |
+| `ansible/` | provisions both VMs (Windows collector/shipper/vulnlab + Ubuntu trainer); cloud-portable via inventory | host | yes |
+| `scripts/` | legacy PowerShell provisioners (pre-Ansible). `06-benign-workload.ps1` + `etwctl.ps1` are still deployed by Ansible; the rest are reference | VM | yes |
 | `out/` | data the VM writes (raw ETW, converted and windowed edges); shared with the VM as `C:\lab-out` | VM → host | no |
 | `atomic-attack-pack/` | attack scenarios + labelling scheme | VM (isolated) | yes |
 | `pipeline/` | host code: edges → features → OCRGCN training → scoring | host | yes |
@@ -24,8 +26,12 @@ Each top-level folder holds one kind of thing:
 | `notebooks/` | EDA notebooks, numbered in reading order | host (Jupyter) | yes |
 | `graphdb/` | GraphDB via Docker Compose; not needed for the live demo | host | yes |
 
-Do not move or rename `Vagrantfile`, `scripts/` or `out/`: the Vagrantfile synced folders, the VM
-provisioners (`C:\lab-out`, `C:\scripts`) and `live/engine.py` / `live/sync_ps1.py` all rely on these paths.
+Provisioning moved from the Vagrant PowerShell provisioners to `ansible/` (see `ansible/README.md`): two
+VMs — a Windows Server collector that pushes raw ETW only, and an Ubuntu trainer that runs the live
+server. The ETW converter is now a standalone file `pipeline/etw2nodlink.py` (the source of truth
+`live/engine.py` imports and hashes; Ansible deploys the same file to the VM). The old
+`scripts/04-collector.ps1` here-string and `sync_ps1.py` are legacy. Addresses are inventory-driven, so
+the lab moves to cloud VMs without code changes.
 
 ## Start here (new member)
 

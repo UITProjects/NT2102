@@ -1,0 +1,11 @@
+---
+# WinRM connection for the Windows group. Credentials come from the encrypted vault.yml
+# (win_user / win_password), which you fill with the RDP = WinRM account.
+ansible_connection: winrm
+ansible_port: 5985
+ansible_user: "{{ win_user }}"
+ansible_password: "{{ win_password }}"
+ansible_winrm_transport: ntlm        # basic for the Vagrant box's local account; ntlm works for both
+ansible_winrm_server_cert_validation: ignore   # lab only; 5985 is plain HTTP on the host-only net
+ansible_winrm_operation_timeout_sec: 120
+ansible_winrm_read_timeout_sec: 150

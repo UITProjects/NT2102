@@ -7,7 +7,7 @@ engine.py - live windowed OCR-APT scoring, no web code (live_server.py is the th
       -> reorder heap keyed (ts, stream, offset)        same tie order as etw2nodlink's heapq.merge
       -> released when ts < watermark = clock_ms - lateness
       -> LiveGraph = etw2nodlink.Graph (the SAME converter code that built the training edges,
-                     loaded from scripts/04-collector.ps1) + the shipper's own PID excluded
+                     loaded from src/pipeline/etw2nodlink.py) + the shipper's own PID excluded
       -> edge buffer (sorted by ts)
       -> window [start, start + w) closes when watermark >= end
       -> scoring thread: score_window.score_edges (train scaler + train relations)
@@ -51,24 +51,22 @@ import alg2  # noqa: E402
 import score_window as sw  # noqa: E402
 
 EDGE_HEADER = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
-DEFAULT_PS1 = os.path.join(SRC, "scripts", "04-collector.ps1")
+DEFAULT_CONVERTER = os.path.join(SRC, "pipeline", "etw2nodlink.py")
 MAX_FLAGGED_FOR_SUBGRAPHS = 300   # a broken model flags everything; keep the UI usable
 
 
 # --------------------------------------------------------------------------- converter reuse
-def load_converter(ps1_path: str = DEFAULT_PS1):
-    """Extract etw2nodlink.py from the $converter here-string in 04-collector.ps1 and import it.
+def load_converter(converter_path: str = DEFAULT_CONVERTER):
+    """Import etw2nodlink.py (src/pipeline) and return (module, sha256) for the converter-check.
 
-    The provisioner writes the here-string with LF endings and no trailing newline, UTF-8 without
-    BOM, so the sha256 of exactly that text equals `converter_sha256` / experiment.json tools.converter
-    when the VM ran the same version."""
-    text = open(ps1_path, encoding="utf-8").read().replace("\r\n", "\n")
-    m = re.search(r"^\$converter = @'\n(.*?)\n'@$", text, re.S | re.M)
-    if not m:
-        raise SystemExit(f"[engine] no $converter here-string in {ps1_path}")
-    code = m.group(1)
+    The sha is computed on the file text normalised to LF endings with the trailing newline stripped,
+    the same normalisation sync_ps1.py applies when it embeds a copy. That keeps the sha equal to
+    `converter_sha256` / experiment.json tools.converter recorded when the VM built the training edges
+    (Ansible deploys this exact file to the VM). The old `$converter` here-string in
+    scripts/04-collector.ps1 is legacy and no longer the source of truth."""
+    code = open(converter_path, encoding="utf-8").read().replace("\r\n", "\n").rstrip("\n")
     mod = types.ModuleType("etw2nodlink")
-    mod.__file__ = ps1_path + "::$converter"
+    mod.__file__ = converter_path
     exec(compile(code, mod.__file__, "exec"), mod.__dict__)
     return mod, hashlib.sha256(code.encode("utf-8")).hexdigest()
 
@@ -123,11 +121,11 @@ def utc_iso(ms: int) -> str:
 # --------------------------------------------------------------------------- engine
 class Engine:
     def __init__(self, run_dir, scaler_path, sessions_dir, window_min=5, stride_min=None, lateness_s=20,
-                 origin_ms=0, ps1_path=DEFAULT_PS1, experiment_json=None, allow_collapsed=False, top_k=20,
+                 origin_ms=0, converter_path=DEFAULT_CONVERTER, experiment_json=None, allow_collapsed=False, top_k=20,
                  n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None,
                  sg_moderate_from=alg1.MODERATE_FROM, llm_provider=None, llm_model=None, llm_base_url=None,
                  llm_client=None, llm_max_subgraphs=5):
-        self.conv, self.conv_sha = load_converter(ps1_path)
+        self.conv, self.conv_sha = load_converter(converter_path)
         self.conv_check = "not checked (no --experiment)"
         if experiment_json:
             want = json.load(open(experiment_json)).get("tools", {}).get("converter", "")

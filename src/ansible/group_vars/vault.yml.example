@@ -1,0 +1,11 @@
+---
+# Copy this file to group_vars/vault.yml and encrypt it:
+#   cp group_vars/vault.yml.example group_vars/vault.yml
+#   # edit the values below, then:
+#   ansible-vault encrypt group_vars/vault.yml
+# Edit later with:  ansible-vault edit group_vars/vault.yml
+# vault.yml is gitignored; this .example is not. NEVER commit real credentials.
+
+# The Windows RDP = WinRM account (the gusztavvargadr box default is vagrant / vagrant).
+win_user: "vagrant"
+win_password: "vagrant"
