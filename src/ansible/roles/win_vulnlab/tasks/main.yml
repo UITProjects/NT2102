@@ -46,15 +46,18 @@
     chdir: "{{ vulnlab_dir }}"
     creates: "{{ vulnlab_dir }}\\node_modules"
   environment:
-    PATH: 'C:\Program Files\nodejs;{{ ansible_env.PATH | default("") }}'
+    PATH: 'C:\Program Files\nodejs;{{ ansible_facts.env.PATH | default("") }}'
 
 - name: npm run build
+  # Known issue (2026-10-17, ws-etw): `next build` (Next 15.0.3 on Node v24 from nodejs-lts) dies with
+  # "JavaScript heap out of memory" in a build worker, over WinRM and as SYSTEM alike. Unresolved; the
+  # role is opt-in (vulnlab_enabled) because the demo target may already run elsewhere.
   ansible.windows.win_command: npm.cmd run build
   args:
     chdir: "{{ vulnlab_dir }}"
-    creates: "{{ vulnlab_dir }}\\.next"
+    creates: "{{ vulnlab_dir }}\\.next\\prerender-manifest.json"   # written last; a crashed build leaves .next and BUILD_ID behind
   environment:
-    PATH: 'C:\Program Files\nodejs;{{ ansible_env.PATH | default("") }}'
+    PATH: 'C:\Program Files\nodejs;{{ ansible_facts.env.PATH | default("") }}'
 
 - name: Deploy the vulnlab start script
   ansible.windows.win_copy:

@@ -4,7 +4,7 @@ Provisions the lab the Vagrantfile builds (or any two cloud VMs in one subnet):
 
 | host (group) | address | role |
 |---|---|---|
-| `ws-etw` (`windows`) | 10.21.2.10 | SilkETW collector, **Grafana Alloy** (ships raw ETW to Loki), benign workload, react2shell vulnlab. No training. |
+| `ws-etw` (`windows`) | 10.21.2.10 | SilkETW collector, **Grafana Alloy** (ships raw ETW to Loki), benign workload, react2shell vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
 | `ubuntu-trainer` (`ubuntu`) | 10.21.2.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
 
 ```
@@ -108,7 +108,7 @@ vagrant up                                   # from src/, builds both bare VMs
 ansible ubuntu -m ping
 ansible windows -m ansible.windows.win_ping  # use win_ping on Windows, NOT ping
 ansible-playbook site.yml --limit ubuntu     # Loki + Grafana + repo + ocr-live
-ansible-playbook site.yml --limit windows    # SilkETW + Alloy + scripts + vulnlab
+ansible-playbook site.yml --limit windows    # SilkETW + Alloy + scripts (+ vulnlab with -e vulnlab_enabled=true)
 
 # cloud (the vault supplies the Windows + Grafana creds):
 ansible-playbook -i inventory.cloud.ini site.yml -e @group_vars/vault.yml --ask-vault-pass
@@ -210,7 +210,8 @@ roles/
   win_alloy       Grafana Alloy (native installer, service) + config.alloy -> Loki
   win_shipper     start-live.ps1 (start/stop a live test capture)
   win_benign      06-benign-workload.ps1 + 07-build-train-dataset.ps1
-  win_vulnlab     Node LTS + react2shell + build + serve on vulnlab_port
+  win_vulnlab     Node LTS + react2shell + build + serve on vulnlab_port (opt-in: vulnlab_enabled;
+                  `next build` currently runs out of heap on Node 24, unresolved)
   ubuntu_base     UTC+7 + timesyncd, apt deps + uv + ufw rule for the live server
   ubuntu_loki     Docker + Loki + Grafana (compose, host network) + ufw (Loki from Windows, Grafana from admin_cidr)
   ubuntu_project  git clone + uv sync + ocr-live systemd unit (--loki-url)

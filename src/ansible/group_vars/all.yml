@@ -32,6 +32,7 @@ tz_windows: "SE Asia Standard Time"   # Windows ID: (UTC+07:00) Bangkok, Hanoi, 
 tz_linux: "Asia/Ho_Chi_Minh"          # IANA name, UTC+7, no DST
 
 # ---- react2shell vulnlab (manual Node install, defensive detection target) ------------------------
+vulnlab_enabled: false       # optional demo target; it may already run elsewhere (e.g. a teammate's cloud VM)
 vulnlab_port: 3000
 vulnlab_repo: "https://github.com/hidden-investigations/react2shell-vulnlab.git"
 vulnlab_dir: 'C:\lab\react2shell'

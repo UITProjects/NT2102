@@ -3,17 +3,20 @@
 
 - name: Set the lab (private_ip) network adapter to the Private profile
   # Public profile restricts the WinRM/RDP firewall rules; the host-only/subnet NIC must be Private.
+  # Only call Set-NetConnectionProfile when needed: it can block past the WinRM read timeout (the play
+  # then fails as UNREACHABLE) when run on the NIC WinRM itself uses, e.g. shortly after boot.
   ansible.windows.win_powershell:
     script: |
+      $Ansible.Changed = $false
       $ip = Get-NetIPAddress -IPAddress '{{ private_ip }}' -ErrorAction SilentlyContinue
+      # Not fatal on cloud where the subnet NIC may already be Private / differently named.
       if ($ip) {
-        Set-NetConnectionProfile -InterfaceIndex $ip.InterfaceIndex -NetworkCategory Private
-        $Ansible.Changed = $true
-      } else {
-        # Not fatal on cloud where the subnet NIC may already be Private / differently named.
-        $Ansible.Changed = $false
+        $p = Get-NetConnectionProfile -InterfaceIndex $ip.InterfaceIndex -ErrorAction SilentlyContinue
+        if ($p -and $p.NetworkCategory -ne 'Private') {
+          Set-NetConnectionProfile -InterfaceIndex $ip.InterfaceIndex -NetworkCategory Private
+          $Ansible.Changed = $true
+        }
       }
-  changed_when: false
 
 - name: Time zone = UTC+7 ({{ tz_windows }})
   # ETW TimeStamps carry their offset and labels use UTC, so the zone does not shift epoch ms.
