@@ -71,7 +71,7 @@ Defaults can be overridden with `RUN_DIR`, `SCALER`, `EXPERIMENT`, `PORT`. Next:
 
 - Linux host with [uv](https://docs.astral.sh/uv/) (Python ≥ 3.12).
 - Lab VM: VirtualBox + Vagrant, about 8 GB free RAM. Build steps in `src/README.md`.
-- Docker only for GraphDB (`src/graphdb/compose.yaml`), which the live demo does not need.
+- Docker on the Ubuntu trainer only (Loki + Grafana, installed by Ansible).
 
 ## Safety
 

@@ -257,7 +257,7 @@ function Complete-Experiment([string]$Exp, [System.Collections.IDictionary]$Reco
     Write-Json (Join-Path $Exp 'experiment.json') $Record
     if ($rc -ne 0) { throw "contract check FAILED - see $Exp\check.json (files kept for inspection)" }
     Log ("done     {0} windows, {1} edges, {2} node copies -> {3}" -f $t.windows, $t.edges_out, $t.node_window_copies, $Exp)
-    Log "next     w10_to_rdf.py on $Exp\${Graph}_${Split}_edges.csv"
+    Log "next     on the trainer: lab loop (Alloy has shipped this capture to Loki)"
 }
 
 if ($PostProcess) {

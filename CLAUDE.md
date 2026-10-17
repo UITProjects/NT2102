@@ -80,7 +80,7 @@ LaTeX does not render in the terminal. In terminal replies, use readable Unicode
   parsing issues; paper §7).
 - Keep three things apart: "it runs", "it works correctly" (validated on known-good data),
   "I understand why it works". The user needs all three.
-- Errors (OOM, CUDA, GraphDB, dependencies): ask for the full traceback, versions and data sizes
+- Errors (OOM, CUDA, dependencies): ask for the full traceback, versions and data sizes
   before suggesting fixes.
 - Build the pipeline one stage at a time. Each stage writes standalone CSV/JSON outputs that can be
   checked with EDA, rather than relying on the upstream repo's end-to-end automation (the user finds
@@ -123,10 +123,9 @@ history of earlier progress) and, if relevant, this section.
 
 ## 9. Decisions already made (with rationale)
 
-- Environment: Docker Compose on a single host, not Kubernetes, as the reference environment
-  (`src/graphdb/compose.yaml`). GraphDB 10.8.0 runs there with persistent volumes and security enabled, on
-  `nt2102-net` 10.21.3.0/24 (moved so it no longer overlaps the lab VM's host-only network).
-  Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers yet.
+- Environment: Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers. Docker is
+  used only on the Ubuntu trainer for Loki + Grafana (installed by Ansible). No RDF / GraphDB (user,
+  2026-10-17): edges stay CSV and Alg. 1 runs in memory.
 - Log transport (user, 2026-10-17): Grafana Alloy (native on the Windows VM) ships raw SilkETW lines,
   unchanged, to Loki (Docker, host network) on the Ubuntu trainer. Labels: job, host, split, run, provider;
   event/pid/process as structured metadata. Training pulls from Loki by run or time range
@@ -175,8 +174,7 @@ history of earlier progress) and, if relevant, this section.
 - Attack side: `src/atomic-attack-pack/` (scenarios 01–10, `LABELING.md`, `tools/build_node_labels.py`).
 - Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py`
   (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
-- Host side: `src/pipeline/w10_to_rdf.py` (minimal RDF/TSV transform) →
-  `encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
+- Host side: `src/pipeline/encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
   `score_window.py` (score any edge CSV with the train scaler + relations).
 - Live (host): `src/live/loki_source.py` (follows Loki) → `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
   reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
@@ -189,7 +187,7 @@ history of earlier progress) and, if relevant, this section.
   uses `src/artifacts/features/self-dataset/`), `src/artifacts/features/paper/` (NODLINK W10), live sessions
   `src/live/sessions/<id>/` (raw copy + per-window CSV/JSON; gitignored). NODLINK data: `dataset/nodlink/`.
 - EDA notebooks: `src/notebooks/01-silketw-raw` … `05-features-paper` (numbered in reading order).
-- GraphDB: `src/graphdb/compose.yaml`. Explainer page (edges → features): `docs/explainers/`.
+- Explainer page (edges → features): `docs/explainers/`.
 - Root shortcuts: `selftest.sh`, `serve.sh`, `replay.sh`, `rejudge.sh` (wrap the documented commands).
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.
@@ -202,7 +200,7 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
 - Own scripted Windows ETW data instead of NODLINK/DARPA datasets; benign activity is scripted.
 - Feature extraction: all 15 columns kept; idle scaler fit on train only; RDF skipped; per-window
   nodes give correlated rows.
-- Graph conversion: minimal Windows-only RDF transform, train split only for now.
+- Graph storage: no RDF/GraphDB; edges stay CSV and Alg. 1 runs in memory per window.
 - Trainer: own OCRGCN re-implementation (loss/threshold details are [INFERENCE] from upstream PyGOD),
   window-based validation split, patience-based early stop, deterministic seeds.
 - Labels: indicator + time oracle from injected attacks, not analyst ground truth.

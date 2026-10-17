@@ -11,7 +11,6 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 
 ## Done
 
-- GraphDB environment: `src/graphdb/compose.yaml` (GraphDB 10.8.0, security on, `nt2102-net` 10.21.3.0/24).
 - Windows 10 ETW lab VM + collector + converter, end to end: `src/legacy/vagrant-provisioners/01..05*.ps1` + `src/scripts/06, 07` (now Ansible, `src/ansible/`).
 - Benign train dataset, experiment `20261009T145632Z` (verified, `src/out/etw/experiments/20261009T145632Z/`):
   20-min capture, workload seed 42, launch mode explorer-com; 8 windows (5 min / 2 min stride);
@@ -111,9 +110,6 @@ Model:
 - `03-workload.ps1` is a provisioner (choco installs, config edits), not a benign generator: use
   `06-benign-workload.ps1` for benign live tests.
 
-Environment:
-- `src/graphdb/compose.yaml`: GraphDB heap `-Xmx8g` exceeds the container `mem_limit` 4g (latent; use ≤ 3g).
-
 Data validation (LLM input):
 - NET attrs are SilkETW signed integers (`-1,707,025,385:-17663` = `23.220.64.154:443`); decoded only for
   display in `alg2.py`. Process attrs are only the image name (`updater`), no path or command line, so the
@@ -131,9 +127,8 @@ Code bugs found in the 2026-10-13 docs pass (verified in code, not fixed yet):
   (no timestamp, types `PROCESS/FILE/NET`), and NET is checked as `network`. It cannot run as is.
 - `attack-lib.ps1` / `cleanup-all.ps1` import `C:\AtomicRedTeam\invoke-atomicredteam\*.psd1`, but `02-tools.ps1`
   installs the module from PSGallery (`-Scope AllUsers`).
-- `selftest.sh` skips `encode_to_features.py --selftest`; `w10_to_rdf.py` has no `--selftest`.
-- Runtime messages name old files: `07-build-train-dataset.ps1` ("next w10_to_rdf.py", next is
-  `encode_to_features.py`; "05-collect-10-minutes-window.ps1") and `02-tools.ps1` ("Run base.ps1 first").
+- `selftest.sh` skips `encode_to_features.py --selftest`.
+- Runtime messages name old files: `07-build-train-dataset.ps1` ("05-collect-10-minutes-window.ps1") and `02-tools.ps1` ("Run base.ps1 first").
 - `02-tools.ps1` pins (`SilkZipSha256`, `InvokeArtVersion`, `AtomicsRef`) are still empty, so rebuilds
   install "latest"; copy them from `lab-versions.json`.
 - `src/Vagrantfile:13` names `./host-setup.sh`; the file is `src/setup-virtualbox.sh`.

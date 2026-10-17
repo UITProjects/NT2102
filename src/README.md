@@ -66,7 +66,6 @@ trained model is never overwritten.
 | `out/` | local data: experiments pulled from Loki, raw captures | trainer / host | no |
 | `atomic-attack-pack/` | attack scenarios + labelling scheme | VM (isolated) | yes |
 | `notebooks/` | EDA notebooks, numbered in reading order | Jupyter | yes |
-| `graphdb/` | GraphDB via Docker Compose; not needed for the live demo | host | yes |
 | `legacy/` | replaced files kept for reference (Vagrant provisioners 01–05, the HTTP shipper 08); see `legacy/README.md` | — | yes |
 
 ## Start here (new member)
@@ -115,8 +114,7 @@ src/
 │   ├── train_gnn_models.py     trains one OCRGCN per node type
 │   ├── score_window.py         scores any edge CSV with a trained run (shared with the live demo)
 │   ├── alg1.py                 Alg. 1 subgraphs + subgraph-score filter (in memory); re-judges sessions
-│   ├── alg2.py                 LLM triage + Alg. 2 attack report on red windows (optional)
-│   └── w10_to_rdf.py           edges -> RDF/TSV for GraphDB (unused by the demo)
+│   └── alg2.py                 LLM triage + Alg. 2 attack report on red windows (optional)
 ├── live/                     live demo (live/README.md)
 │   ├── live_server.py          FastAPI server: --loki-url, /ingest, /api/*, SSE, UI at /
 │   ├── loki_source.py          live input: follows the newest test run in Loki
@@ -139,7 +137,6 @@ src/
 │   └── _old/                   early test captures and an un-windowed capture; do not train on them
 ├── atomic-attack-pack/       10 attack scenarios (Atomic Red Team + custom), LABELING.md, tools/
 ├── notebooks/                EDA: 01-silketw-raw … 05-features-paper
-├── graphdb/compose.yaml      GraphDB 10.8.0 (Docker, 10.21.3.0/24); not needed for the live demo
 └── legacy/                   vagrant-provisioners/01–05, 08 + sync_ps1.py (legacy/README.md)
 ```
 
@@ -166,4 +163,3 @@ records its sha256 and the live server compares it (`converter_check`). Edit it 
 | VM dies, looks like OOM | VMSVGA segfault in `libnvidia-glcore` (3D acceleration) → keep `accelerate3d off`; check `journalctl -k` and `VBox.log.1` first |
 | `converter_check: MISMATCH` | the model was trained with another converter version → rebuild + retrain (`lab loop`) |
 | live server loads the wrong model | `lab current` shows which pointer is used (`current.local.json` wins) |
-| GraphDB killed on big loads | heap 8g > container limit 4g → `GRAPHDB_HEAP` ≤ 3g |

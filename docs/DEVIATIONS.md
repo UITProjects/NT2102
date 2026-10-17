@@ -28,11 +28,11 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
 - Impact: test/live idle values may fall outside [0, 1]; overlapping windows produce correlated rows.
 - Limits: feature values are not bit-identical to the repo's.
 
-## D4. Minimal W10 RDF transform (`src/pipeline/w10_to_rdf.py`)
-- What: [REPO] `transform_to_RDF.py` for all datasets. [OURS] SimulatedW10 CSV only, train split only
-  for now, ground-truth file optional (missing = all benign), stricter Turtle escaping.
-- Why: only the W10 path is needed; train-only lets the pipeline run before a test capture exists.
-- Impact: none on the live demo. Alg. 1 runs in memory without GraphDB (D8), so this RDF path is unused.
+## D4. No RDF / GraphDB
+- What: [REPO] `transform_to_RDF.py` writes the graph as Turtle into GraphDB; Alg. 1 and Alg. 2 l.16–25
+  query it with SPARQL. [OURS] no RDF and no GraphDB: edges stay CSV, Alg. 1 runs in memory per window (D8).
+- Why: a 5-min window fits in RAM; one less service to run.
+- Impact: none on the detector.
 - Limits: no claim about the repo's GraphDB-based Alg. 1 / Alg. 2 l.16–25 path.
 
 ## D5. Trainer re-implemented (`src/pipeline/train_gnn_models.py`)
@@ -57,9 +57,9 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
 - Limits: claims only "detection of injected ATT&CK techniques on our capture".
 
 ## D7. Environment
-- What: [PAPER] §7.2.2 does not state a GraphDB version. [OURS] GraphDB 10.8.0 (Docker Compose);
-  Python deps via uv (`uv.lock`), torch / torch-geometric, no PyGOD.
-- Impact: none expected for the detector; GraphDB-dependent stages untested.
+- What: [OURS] Python deps via uv (`uv.lock`), torch / torch-geometric, no PyGOD; Loki + Grafana in
+  Docker on the trainer.
+- Impact: none expected for the detector.
 
 ## D8. Live inference path (`src/live/`, `src/pipeline/score_window.py`, `src/pipeline/alg1.py`)
 - What: [PAPER] offline prediction on the whole test graph (§5.1.3), then Alg. 1 subgraphs with a
