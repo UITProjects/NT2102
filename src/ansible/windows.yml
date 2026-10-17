@@ -1,5 +1,5 @@
 ---
-# Windows Server 2022 collector VM: push ETW only (no training) + the react2shell vulnlab.
+# Windows Server 2022 collector VM: capture ETW, Alloy ships it to Loki (no training) + the react2shell vulnlab.
 - name: Configure the Windows collector VM
   hosts: windows
   gather_facts: true
@@ -8,6 +8,7 @@
   roles:
     - win_base        # OS config: network profile, UTC+7 clock, no-sleep, RDP, folders, Defender
     - win_collector   # SilkETW/SilkService + embeddable Python + converter + etwctl + etwship
-    - win_shipper     # ship-live.ps1: start a capture and stream it to the Ubuntu server
+    - win_alloy       # Grafana Alloy (native): raw SilkETW lines -> Loki on the trainer
+    - win_shipper     # start-live.ps1: start/stop a live (test) capture; Alloy ships it
     - win_benign      # scripted benign workload generator (green windows for the demo)
     - win_vulnlab     # Node + react2shell, served on {{ vulnlab_port }} for the demo

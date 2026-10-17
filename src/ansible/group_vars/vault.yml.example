@@ -9,3 +9,6 @@
 # The Windows RDP = WinRM account (the gusztavvargadr box default is vagrant / vagrant).
 win_user: "vagrant"
 win_password: "vagrant"
+
+# Grafana admin on the Ubuntu trainer (cloud). Local mode uses inventory.local.ini instead.
+grafana_admin_password: "CHANGE_ME"

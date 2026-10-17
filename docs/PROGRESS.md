@@ -1,4 +1,4 @@
-# PROGRESS (status as of 2026-10-13)
+# PROGRESS (status as of 2026-10-17)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 
@@ -54,6 +54,10 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   `llm/` files written. No real LLM run yet (provider not chosen).
 - Attack pack + labelling scheme drafted: `src/atomic-attack-pack/` (10 scenarios, `LABELING.md`,
   `tools/build_node_labels.py`). Not yet run.
+- Log pipeline Alloy → Loki (code + selftests, 2026-10-17; Ubuntu side verified on `ubuntu-trainer`: lossless
+  pull, host build = VM build, live via Loki = offline 8/8 windows; Windows side not yet run): `win_alloy` / `ubuntu_loki` roles, `src/pipeline/loki_pull.py` (interactive / flags) →
+  `build_experiment.py`, `src/live/loki_source.py` (`live_server.py --loki-url`), `src/live/loki_push.py`
+  (test feed). Lab moved to Windows Server 2022 + Ubuntu trainer (Ansible, `src/ansible/`).
 - Concepts: provenance graphs; GNN message passing.
 
 ## Invalid / needs redo
@@ -61,6 +65,12 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 - (none)
 
 ## Not done
+
+- Data check (verified 2026-10-17): in capture `20261009T145632Z`, `kfile.json` only covers 14:56:33–14:57:40
+  (67 s of a 20-min capture). FILE Read/Write edges come from that first minute. Check the next capture's
+  per-provider time span before training on it.
+- Windows side of Alloy → Loki on `ws-etw` (user, by hand: checklist in `src/ansible/README.md`), then a
+  new benign train capture (07) pulled from Loki, retrain, and a new run replacing `exp01`.
 
 - CVE → RCE demo scenario (target attack for the end goal): exploit a lab service (e.g. Apache /
   PostgreSQL installed by `03-workload.ps1`), then ATT&CK follow-on. The attack pack has only

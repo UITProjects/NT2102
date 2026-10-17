@@ -1,17 +1,20 @@
-# Live demo: VM shipper → host scoring → browser
+# Live demo: VM → Loki → trainer scoring → browser
 
 ```
-VM  SilkService → raw\test\live-<UTC>\{kfile,knet,kproc}.json
-    08-live-shipper.ps1 → etwship.py (tail + POST every 1 s) ──HTTP──► 10.21.2.1:8000
-host live_server.py → engine.py: reorder by event time → etw2nodlink.Graph (same code as training,
-     taken from scripts/04-collector.ps1) → 5-min windows → train scaler + train relations →
+VM  SilkService → raw\test\live-<UTC>\{kfile,knet,kproc}.json      (start-live.ps1)
+    Grafana Alloy (service) tails them ──push──► Loki :3100 on the trainer
+trainer  live_server.py --loki-url → loki_source.py (poll the newest test run, 1 s)
+     → engine.py: reorder by event time → etw2nodlink.Graph (same code as training,
+     src/pipeline/etw2nodlink.py) → 5-min windows → train scaler + train relations →
      OCRGCN per type → score > τ → Alg. 1 subgraphs + SG-Det (alert = ≥ 1 subgraph ≥ Moderate)
      → optional LLM verdict (alg2.py) → sessions/<id>/windows/<wid>/ + UI (SSE)
 ```
 
 | file | role |
 |---|---|
-| `etwship.py` | stdlib shipper. Live tail on the VM, `--replay` on the host |
+| `loki_source.py` | follows Loki: newest test run → engine payloads (synthetic offsets, dos map from `etw-meta`) |
+| `loki_push.py` | test feed: pushes a recorded run into Loki in Alloy's shape (`--shift-to-now --speed N` for live) |
+| `etwship.py` | stdlib HTTP shipper (legacy live path), `--replay` on the host, `--print-dos-map` on the VM |
 | `../scripts/08-live-shipper.ps1` | VM entry point: starts a capture, runs the embedded copy of etwship.py |
 | `sync_ps1.py` | copies `etwship.py` into the 08 script (run after editing etwship.py) |
 | `engine.py` | ingest, reorder buffer, windows, scoring thread, calls Alg. 1 and the LLM thread |
@@ -57,7 +60,26 @@ uv run python src/live/compare_replay.py --session src/live/sessions/replay-x-20
 Expect `ALL MATCH`. Watch at http://127.0.0.1:8000. The dos-map is inferred from the raw paths
 (`\device\harddiskvolume4` → `c:` on this VM). Replay speed: 120 works; 0 hangs, 600 times out.
 
-## 5. Live
+## 5. Live (Alloy → Loki, the default)
+
+The trainer runs `ocr-live` (systemd, `src/ansible/roles/ubuntu_project`), which is
+`live_server.py ... --loki-url http://127.0.0.1:3100`. On the VM (elevated PowerShell, RDP session):
+```
+C:\scripts\start-live.ps1                 # shell 1: capture test/live-<UTC>; Alloy ships it
+C:\scripts\06-benign-workload.ps1         # shell 2: benign activity, as in training
+```
+The server follows the newest `split="test"` run, and a new run starts a new session.
+- Clock: newest event time minus `--lateness-s`. After `--loki-idle-s` (default 2 × lateness) with no new
+  lines, it follows host time, so the last window of a stopped capture still closes (DEVIATIONS D8).
+- UI tile "pipeline lag": host time minus the newest event.
+
+No VM? Feed Loki from a recording (on the trainer):
+```
+uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train/<run> \
+    --split test --run live-replay1 --shift-to-now --speed 10
+```
+
+## 5b. Live via the HTTP shipper (legacy, pre-Loki)
 
 Host: `./serve.sh` (binds 10.21.2.1). Only if ufw is active (find the interface with
 `ip -br addr | grep 10.21.2.1`): `sudo ufw allow in on vboxnet0 to 10.21.2.1 port 8000 proto tcp`.

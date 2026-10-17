@@ -64,9 +64,21 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
 ## D8. Live inference path (`src/live/`, `src/pipeline/score_window.py`, `src/pipeline/alg1.py`)
 - What: [PAPER] offline prediction on the whole test graph (§5.1.3), then Alg. 1 subgraphs with a
   subgraph anomaly-score filter (§5.2). [OURS]:
-  - The VM streams raw SilkETW lines; the host reorders by event time (20 s lateness), runs the training
-    converter (same sha256, from `04-collector.ps1`), cuts clock-aligned tumbling 5-min windows, and
-    scores each with the frozen train scaler, train relation list and per-type models.
+  - The VM's raw SilkETW lines reach the host, which reorders them by event time (20 s lateness), runs
+    the training converter (`src/pipeline/etw2nodlink.py`, same sha256), cuts clock-aligned tumbling
+    5-min windows, and scores each window with the frozen train scaler, train relation list and per-type
+    models.
+  - Transport (user decision, 2026-10-17): Grafana Alloy on the VM ships every line, unchanged, to Loki
+    on the trainer. `live_server.py --loki-url` follows the newest test run there
+    (`src/live/loki_source.py`). Training pulls the same store (`loki_pull.py` → `build_experiment.py`).
+    The HTTP shipper (`etwship.py`) remains only for `--replay` / `compare_replay.py`.
+  - Clock with Loki: no VM heartbeat travels through Loki. The engine clock is the newest event time
+    seen. After `--loki-idle-s` without new lines (default 2 × lateness), it follows the host's wall
+    clock minus the last measured lag. The shipper path used the VM wall clock instead. Windows close
+    about 1–5 s later: Alloy batches up to 1 s, then the poll interval adds 1 s. The UI's "clock skew"
+    tile becomes "pipeline lag (host − newest event)".
+  - Alloy's own file reads appear in Kernel-File. Their edges are dropped by image name (`alloy`, like
+    `silkservice`), in training and live alike. Raw lines stay complete.
   - Windows starting before the capture are `partial` and not scored. The shipper's own PID is dropped.
     Relations unseen in training are dropped (counted). No cross-window dedup. State is in memory.
 - Alg. 1 per window (`alg1.py`, in memory, no GraphDB) follows [REPO] `detect_anomalous_subgraphs.py`:
@@ -93,6 +105,10 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
   paper's whole-log graphs, and the [REPO] cut-off (> 10) left the benign 11:25 `updater` window red.
   30 = that window's score (18) plus margin.
 - Impact:
+  - Loki clock [INFERENCE]: while a capture runs, SilkETW emits kernel events continuously, so the event
+    clock rarely stalls. When the capture stops, the last full window closes through the idle fallback.
+    If the events stall but the capture keeps running, windows close up to `--loki-idle-s` late. They
+    are not lost. Not yet measured on the VM.
   - Events later than the lateness are dropped (shown in the UI); processes started before a window
     have no Start edge inside it.
   - Since prob ≤ 1, ≥ 30 means "at least ~30 anomalous nodes in one connected story" (paper: > ~10).

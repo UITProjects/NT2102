@@ -15,6 +15,13 @@ steps=(
   "src/live/engine.py --selftest"
   "src/live/etwship.py --selftest"
   "src/live/sync_ps1.py --check"
+  "src/pipeline/etw2nodlink.py --selftest"
+  "src/pipeline/etwwindow.py --selftest"
+  "src/pipeline/lokiclient.py --selftest"
+  "src/pipeline/loki_pull.py --selftest"
+  "src/pipeline/build_experiment.py --selftest"
+  "src/live/loki_push.py --selftest"
+  "src/live/loki_source.py --selftest"
 )
 log_dir=$(mktemp -d)
 failed=0

@@ -127,13 +127,17 @@ history of earlier progress) and, if relevant, this section.
   (`src/graphdb/compose.yaml`). GraphDB 10.8.0 runs there with persistent volumes and security enabled, on
   `nt2102-net` 10.21.3.0/24 (moved so it no longer overlaps the lab VM's host-only network).
   Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers yet.
-- Live demo transport: the VM ships raw SilkETW lines over HTTP to the host at 10.21.2.1:8000 (host
-  side of the host-only network; 10.21.3.x is not routable from an isolated VM). All conversion,
-  windowing and scoring run on the host with the training converter code, scaler and relation list;
-  event time comes from the VM clock only (watermark = VM clock − lateness).
-- Collection lab: Windows 10 VM built with pinned, idempotent Vagrant provisioners (base, tools,
-  collector) so a teammate can rebuild it. Collector is SilkETW/SilkService on the Kernel-Process,
-  Kernel-File and Kernel-Network providers.
+- Log transport (user, 2026-10-17): Grafana Alloy (native on the Windows VM) ships raw SilkETW lines,
+  unchanged, to Loki (Docker, host network) on the Ubuntu trainer. Labels: job, host, split, run, provider;
+  event/pid/process as structured metadata. Training pulls from Loki by run or time range
+  (`loki_pull.py`); the live server follows Loki (`--loki-url`). All conversion, windowing and scoring run on
+  the trainer with the training converter code, scaler and relation list; the live clock is event time
+  (newest event − lateness), with a host-clock fallback when idle (DEVIATIONS D8). The HTTP shipper
+  (`etwship.py`) remains for replay only.
+- Collection lab: two VMs provisioned by Ansible (`src/ansible/`, cloud-portable via inventory): Windows
+  Server 2022 `ws-etw` (SilkETW/SilkService on Kernel-Process, Kernel-File, Kernel-Network + Alloy, no
+  training) and Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server). The Vagrantfile only
+  builds the bare VMs.
 - Target schema (NODLINK W10, as the repo expects): 3 node types `PROCESS`, `FILE`, `NET`
   (repo `database_config.py`), 6 edge types (Write, Read, Send, Recv, Start, Load), epoch-millisecond
   timestamps.
@@ -167,10 +171,12 @@ history of earlier progress) and, if relevant, this section.
   → `08-live-shipper` (live capture + embedded copy of `src/live/etwship.py`; resync with
   `src/live/sync_ps1.py`).
 - Attack side: `src/atomic-attack-pack/` (scenarios 01–10, `LABELING.md`, `tools/build_node_labels.py`).
+- Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py`
+  (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
 - Host side: `src/pipeline/w10_to_rdf.py` (minimal RDF/TSV transform) →
   `encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
   `score_window.py` (score any edge CSV with the train scaler + relations).
-- Live (host): `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
+- Live (host): `src/live/loki_source.py` (follows Loki) → `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
   reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
   sessions) → `src/pipeline/alg2.py` (optional LLM thread: triage verdict + Alg. 2 l.3–15 report on red
   windows); `etwship.py --replay` + `compare_replay.py` check the live path against the offline

@@ -1,0 +1,117 @@
+---
+# Loki (log store) + Grafana (browse it) on the trainer, Docker Compose with network_mode: host.
+# Alloy on the Windows VM pushes raw SilkETW lines to {{ loki_url }}; loki_pull.py (training) and the live
+# server (--loki-url) read Loki on this host at 127.0.0.1:{{ loki_port }}.
+# Host networking means no Docker port publishing, so ufw rules apply to these ports like to any host
+# service (published ports would bypass ufw through Docker's own iptables chains).
+
+- name: Fail early if the inventory lacks the Grafana settings
+  ansible.builtin.assert:
+    that:
+      - admin_cidr is defined
+      - grafana_admin_password is defined and grafana_admin_password | length > 0
+    fail_msg: "set admin_cidr and grafana_admin_password (inventory.local.ini [ubuntu:vars], or the vault for cloud)"
+
+- name: Install Docker + the compose plugin (Ubuntu archive packages)
+  ansible.builtin.apt:
+    name: [docker.io, docker-compose-v2]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Docker daemon enabled and running
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Stack folder
+  ansible.builtin.file:
+    path: "{{ loki_stack_dir }}/grafana/provisioning/datasources"
+    state: directory
+    mode: "0755"
+
+- name: Loki config
+  ansible.builtin.template:
+    src: loki.yaml.j2
+    dest: "{{ loki_stack_dir }}/loki.yaml"
+    mode: "0644"
+    # Loki checks the candidate file itself before it replaces the live one (a bad key would crash-loop it)
+    validate: docker run --rm -v %s:/etc/loki/check.yaml:ro {{ loki_image }} -config.file=/etc/loki/check.yaml -verify-config
+  notify: Restart lokistack
+
+- name: Grafana data source (Loki on this host)
+  ansible.builtin.template:
+    src: grafana-datasource.yaml.j2
+    dest: "{{ loki_stack_dir }}/grafana/provisioning/datasources/loki.yaml"
+    mode: "0644"
+  notify: Restart lokistack
+
+- name: Compose file
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ loki_stack_dir }}/compose.yaml"
+    mode: "0600"            # holds the Grafana admin password
+  notify: Restart lokistack
+
+- name: Start Loki + Grafana
+  community.docker.docker_compose_v2:
+    project_src: "{{ loki_stack_dir }}"
+    state: present
+    wait: true
+    wait_timeout: 180
+
+- name: Flush the restart handler now (config changes must be live before the checks below)
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Loki /ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ loki_port }}/ready"
+    return_content: true
+  register: loki_ready
+  until: loki_ready.status == 200 and 'ready' in loki_ready.content
+  retries: 30
+  delay: 3
+
+- name: Wait for Grafana /api/health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+  register: graf_ready
+  until: graf_ready.status == 200
+  retries: 30
+  delay: 3
+
+- name: LOKI_URL for interactive shells (loki_pull.py defaults to it)
+  ansible.builtin.copy:
+    dest: /etc/profile.d/lokistack.sh
+    content: "export LOKI_URL=http://127.0.0.1:{{ loki_port }}\n"
+    mode: "0644"
+
+# ---------- firewall: Loki from the Windows collector only, Grafana from admin_cidr only ----------
+- name: ufw allows SSH first (enabling ufw must never lock Ansible out)
+  community.general.ufw:
+    rule: allow
+    name: OpenSSH
+
+- name: ufw allows Loki from the Windows collector (Alloy push)
+  community.general.ufw:
+    rule: allow
+    port: "{{ loki_port }}"
+    proto: tcp
+    from_ip: "{{ hostvars[item].private_ip }}"
+    comment: "Alloy on {{ item }} -> Loki"
+  loop: "{{ groups['windows'] }}"
+
+- name: ufw allows Grafana from the admin network
+  community.general.ufw:
+    rule: allow
+    port: "{{ grafana_port }}"
+    proto: tcp
+    from_ip: "{{ admin_cidr }}"
+    comment: "Grafana UI"
+
+- name: ufw enabled (default deny incoming)
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming

@@ -59,16 +59,15 @@ MAX_FLAGGED_FOR_SUBGRAPHS = 300   # a broken model flags everything; keep the UI
 def load_converter(converter_path: str = DEFAULT_CONVERTER):
     """Import etw2nodlink.py (src/pipeline) and return (module, sha256) for the converter-check.
 
-    The sha is computed on the file text normalised to LF endings with the trailing newline stripped,
-    the same normalisation sync_ps1.py applies when it embeds a copy. That keeps the sha equal to
-    `converter_sha256` / experiment.json tools.converter recorded when the VM built the training edges
-    (Ansible deploys this exact file to the VM). The old `$converter` here-string in
-    scripts/04-collector.ps1 is legacy and no longer the source of truth."""
-    code = open(converter_path, encoding="utf-8").read().replace("\r\n", "\n").rstrip("\n")
+    The sha is sha256 of the raw file bytes, no normalisation. Ansible copies this file to the VM
+    unchanged, so it equals Get-FileHash there, which is how 07-build-train-dataset.ps1 records
+    experiment.json tools.converter. .gitattributes pins the file to LF so every clone has the same
+    bytes. Edit the converter before a training capture, never after: any byte change gives a new sha."""
+    raw = open(converter_path, "rb").read()
     mod = types.ModuleType("etw2nodlink")
     mod.__file__ = converter_path
-    exec(compile(code, mod.__file__, "exec"), mod.__dict__)
-    return mod, hashlib.sha256(code.encode("utf-8")).hexdigest()
+    exec(compile(raw.decode("utf-8"), mod.__file__, "exec"), mod.__dict__)
+    return mod, hashlib.sha256(raw).hexdigest()
 
 
 class EdgeSink:

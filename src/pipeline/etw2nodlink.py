@@ -20,8 +20,9 @@ NODE_HEADER = ["node", "node_type", "node_attr"]
 #   awk -F, 'NR>1 {print $5, $2"->"$4}' SimulatedW10_train_edges.csv | sort | uniq -c
 DIRECTION = {"Load": "fwd", "Read": "fwd", "Write": "fwd", "Send": "fwd", "Recv": "fwd"}
 
-# The collector writes its own output file, so Kernel-File sees its writes: drop them (feedback loop).
-EXCLUDE_IMAGES = {"silkservice"}
+# The collector writes its own output file, and the log shipper (Grafana Alloy) reads it, so Kernel-File
+# sees both: drop their edges (feedback loop). Raw lines stay complete; only edges are dropped.
+EXCLUDE_IMAGES = {"silkservice", "alloy"}
 
 _FRAC = re.compile(r"(\.\d{6})\d+")
 
@@ -51,7 +52,7 @@ def lower_keys(d):
 
 
 def ts_ms(s):
-    """SilkETW TimeStamp (ISO 8601, 7 fractional digits) -> epoch ms. Naive = UTC (VM clock is UTC)."""
+    """SilkETW TimeStamp (ISO 8601, 7 fractional digits) -> epoch ms. SilkETW writes an offset (e.g. +07:00); a naive stamp is read as UTC."""
     s = _FRAC.sub(r"\1", str(s).strip().replace("Z", "+00:00"))
     dt = datetime.fromisoformat(s)
     if dt.tzinfo is None:
@@ -252,7 +253,14 @@ class Graph:
         self._net(t, d, hpid, hname, "Recv")
 
 
-def convert(raw_root, split, graph, out_dir):
+def load_dos_map(path):
+    """dosmap.meta written on the VM (etwship.py --print-dos-map): {"\\device\\harddiskvolume4": "c:"}."""
+    with open(path, encoding="utf-8-sig") as fh:
+        m = {str(k).lower(): str(v).lower() for k, v in json.load(fh).items()}
+    return dict(sorted(m.items(), key=lambda kv: -len(kv[0])))
+
+
+def convert(raw_root, split, graph, out_dir, dmap=None):
     split_dir = os.path.join(raw_root, split)
     runs = sorted(d for d in glob.glob(os.path.join(split_dir, "*")) if os.path.isdir(d))
     if not runs:
@@ -265,7 +273,7 @@ def convert(raw_root, split, graph, out_dir):
     with open(base + "_edges.csv.tmp", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(EDGE_HEADER)
-        g = Graph(w, dos_device_map(), st)
+        g = Graph(w, dos_device_map() if dmap is None else dmap, st)   # off Windows: pass the VM's map
         for run in runs:
             g.new_run(os.path.basename(run))
             streams = [read_events(f, st) for f in sorted(glob.glob(os.path.join(run, "*.json")))]
@@ -283,7 +291,7 @@ def convert(raw_root, split, graph, out_dir):
     os.replace(base + "_edges.csv.tmp", base + "_edges.csv")
     os.replace(base + "_node_attrs.csv.tmp", base + "_node_attrs.csv")
     node_types = Counter(g.nodes[n][0] for n in g.used)
-    summary = {"graph": graph, "split": split, "runs": [os.path.basename(r) for r in runs],
+    summary = {"graph": graph, "split": split, "runs": [os.path.basename(r) for r in runs], "dos_map": g.dmap,
                "nodes": dict(node_types), "edges": dict(st["edges"]),
                "events": dict(st["events"]), "excluded": dict(st["excluded"]),
                "unresolved": dict(st["unresolved"]), "bad_lines": dict(st["bad_lines"]),
@@ -310,7 +318,9 @@ def selftest():
             ev(kf, "Create", 4321, "cmd", "2026-10-07T10:00:01.0000000Z", FileObject="0xAA", FileName=r"C:\tmp\x.txt"),
             ev(kf, "Write", 4321, "cmd", "2026-10-07T10:00:01.5000000Z", FileObject="0xAA", FileKey="0xBB"),
             ev(kf, "Create", 999, "SilkService", "2026-10-07T10:00:02.0000000Z", FileObject="0xCC", FileName=r"C:\out\k.json"),
-            ev(kf, "Write", 999, "SilkService", "2026-10-07T10:00:02.1000000Z", FileObject="0xCC")],
+            ev(kf, "Write", 999, "SilkService", "2026-10-07T10:00:02.1000000Z", FileObject="0xCC"),
+            ev(kf, "Create", 888, "alloy", "2026-10-07T10:00:02.2000000Z", FileObject="0xDD", FileName=r"C:\out\k.json"),
+            ev(kf, "Read", 888, "alloy", "2026-10-07T10:00:02.3000000Z", FileObject="0xDD")],
         "knet.json": [
             ev(kn, "KERNEL_NETWORK_TASK_TCPIP/Datasent.", 4, "System", "2026-10-07T10:00:03.0000000Z",
                PID="4321", daddr="93.184.216.34", dport="443", size="100")],
@@ -321,10 +331,15 @@ def selftest():
         for fn, lines in files.items():
             with open(os.path.join(run, fn), "w", encoding="utf-8") as fh:
                 fh.write("\n".join(lines) + "\n{truncated-line")
-        s = convert(os.path.join(tmp, "raw"), "train", "SelfTest", os.path.join(tmp, "out"))
+        s = convert(os.path.join(tmp, "raw"), "train", "SelfTest", os.path.join(tmp, "out"),
+                    {"\\device\\harddiskvolume2": "c:"})
         with open(os.path.join(tmp, "out", "SelfTest_train_edges.csv"), encoding="utf-8") as fh:
             rows = list(csv.reader(fh))
-    ok = (s["edges"] == {"Start": 1, "Load": 1, "Write": 1, "Send": 1} and s["excluded"] == {"Write": 1}
+        with open(os.path.join(tmp, "out", "SelfTest_train_node_attrs.csv"), encoding="utf-8") as fh:
+            attrs = fh.read()
+    # excluded: SilkService's Write + Alloy's Read; the dos map turns \device\harddiskvolume2 into c:
+    ok = (s["edges"] == {"Start": 1, "Load": 1, "Write": 1, "Send": 1} and s["excluded"] == {"Write": 1, "Read": 1}
+          and "c:\\windows\\system32\\ntdll.dll" in attrs
           and sum(s["unmapped_top"].values()) == 1 and rows[0] == EDGE_HEADER and len(rows) == 5)
     print("selftest", "OK" if ok else "FAILED", json.dumps(s["edges"]))
     return 0 if ok else 1
@@ -336,13 +351,14 @@ def main(argv=None):
     ap.add_argument("--split", choices=["train", "test"])
     ap.add_argument("--graph", default="SimulatedW10")
     ap.add_argument("--out")
+    ap.add_argument("--dos-map", help="JSON file {device: drive}; default: this machine's map (empty off Windows)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
     if not (a.raw_root and a.split and a.out):
         ap.error("--raw-root, --split and --out are required")
-    s = convert(a.raw_root, a.split, a.graph, a.out)
+    s = convert(a.raw_root, a.split, a.graph, a.out, load_dos_map(a.dos_map) if a.dos_map else None)
     print(json.dumps({k: s[k] for k in ("runs", "nodes", "edges", "unresolved", "excluded")}, indent=1))
     return 0 if s["edges"] else 2
 

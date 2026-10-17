@@ -10,7 +10,7 @@
   2. capture     etwctl start -Split train -Run x-<UTC>  ->  settle  ->  06-benign-workload.ps1
                  -> etwctl stop (called from the workload's -BeforeLedger hook, so the ledger write
                  happens AFTER the capture and is not in the data)
-  3. collect     move the run's raw JSON into  <exp>\raw\train\x-<UTC>\
+  3. collect     copy the run's raw JSON into  <exp>\raw\train\x-<UTC>\  (Alloy has shipped it to Loki)
   4. convert     etw2nodlink.py on <exp>\raw only   ->  <exp>\converted\  (un-windowed, + _summary.json)
   5. window      etwwindow.py                        ->  <exp>\
                    SimulatedW10_train_edges.csv        pooled windows, node IDs prefixed w0007_  <- host: encode_to_features.py
@@ -40,6 +40,7 @@ param(
     [ValidateRange(1, 120)]   [int] $StrideMinutes = 2,
     [ValidateRange(10, 3600)] [int] $MaxGapSeconds = 120,
     [ValidateRange(0, 600)]   [int] $SettleSeconds = 30,     # idle capture before the workload starts
+    [ValidateRange(0, 600)]   [int] $ShipWaitSeconds = 15,   # after the stop: let Alloy push the tail to Loki
     [switch] $IncludeUserPowerShell,
     [switch] $AllowFallbackLauncher,                         # accept powershell.exe as app parent (not advised)
     [switch] $KeepWorkDir,                                   # default: empty Documents\work so every run starts equal
@@ -355,8 +356,12 @@ $src = Join-Path $Cfg.RawRoot "$Split\$run"
 $dst = Join-Path $exp "raw\$Split\$run"
 if (-not (Test-Path $src)) { throw "raw run folder not found: $src" }
 Log "collect  $src -> $dst"
-# robocopy /E /MOVE = rsync -a --remove-source-files + remove dirs; exit codes 0-7 mean success
-Invoke-Native 'robocopy.exe' @($src, $dst, '/E', '/MOVE', '/NFL', '/NDL', '/NJH', '/NJS', '/NP') -Ok (0..7) | Out-Null
+# COPY, not move: Grafana Alloy tails $src and ships it to Loki (the training source on the trainer); it
+# needs a few seconds after the stop for the last lines, and moving files it holds open would fail.
+Log "wait     ${ShipWaitSeconds}s for Alloy to ship the last lines to Loki"
+Start-Sleep -Seconds $ShipWaitSeconds
+# robocopy /E = cp -r (keep the source for Alloy); exit codes 0-7 mean success
+Invoke-Native 'robocopy.exe' @($src, $dst, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP') -Ok (0..7) | Out-Null
 $rec.capture.raw = $dst
 Write-Json (Join-Path $exp 'experiment.json') $rec
 

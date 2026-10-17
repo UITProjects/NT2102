@@ -41,6 +41,12 @@ switch ($Command) {
         if (Test-Path $dir) { throw "run folder already exists: $dir (choose another -Run)" }
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
+        # dosmap.meta: \Device\HarddiskVolumeN -> C: for THIS machine, one JSON line. Alloy ships it to Loki
+        # (job="etw-meta") so the converter on the Ubuntu trainer maps paths like it would here. Not *.json,
+        # so the converter never reads it as events. (etwship.py prints the map; -Compress = one line.)
+        $dmap = (& $Cfg.Python "$Home_\etwship.py" --print-dos-map | Out-String) | ConvertFrom-Json | ConvertTo-Json -Compress
+        [IO.File]::WriteAllText((Join-Path $dir "dosmap.meta"), "$dmap`n", $Utf8)
+
         # SilkService reads SilkServiceConfig.xml from its own folder, once, at service start.
         $sb = New-Object System.Text.StringBuilder
         [void]$sb.AppendLine("<SilkServiceConfig>")

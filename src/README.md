@@ -16,7 +16,7 @@ Each top-level folder holds one kind of thing:
 | folder | kind | runs where | in git |
 |---|---|---|---|
 | `Vagrantfile`, `setup-virtualbox.sh` | VM lab definition (now two VMs: Windows collector + Ubuntu trainer) | host | yes |
-| `ansible/` | provisions both VMs (Windows collector/shipper/vulnlab + Ubuntu trainer); cloud-portable via inventory | host | yes |
+| `ansible/` | provisions both VMs (Windows collector + Alloy + vulnlab; Ubuntu Loki/Grafana + trainer); cloud-portable via inventory | host | yes |
 | `scripts/` | legacy PowerShell provisioners (pre-Ansible). `06-benign-workload.ps1` + `etwctl.ps1` are still deployed by Ansible; the rest are reference | VM | yes |
 | `out/` | data the VM writes (raw ETW, converted and windowed edges); shared with the VM as `C:\lab-out` | VM → host | no |
 | `atomic-attack-pack/` | attack scenarios + labelling scheme | VM (isolated) | yes |
@@ -26,12 +26,16 @@ Each top-level folder holds one kind of thing:
 | `notebooks/` | EDA notebooks, numbered in reading order | host (Jupyter) | yes |
 | `graphdb/` | GraphDB via Docker Compose; not needed for the live demo | host | yes |
 
-Provisioning moved from the Vagrant PowerShell provisioners to `ansible/` (see `ansible/README.md`): two
-VMs — a Windows Server collector that pushes raw ETW only, and an Ubuntu trainer that runs the live
-server. The ETW converter is now a standalone file `pipeline/etw2nodlink.py` (the source of truth
-`live/engine.py` imports and hashes; Ansible deploys the same file to the VM). The old
-`scripts/04-collector.ps1` here-string and `sync_ps1.py` are legacy. Addresses are inventory-driven, so
-the lab moves to cloud VMs without code changes.
+Provisioning moved from the Vagrant PowerShell provisioners to `ansible/` (see `ansible/README.md`). There
+are two VMs:
+- a Windows Server collector, where Grafana Alloy ships the raw ETW lines to Loki;
+- an Ubuntu trainer, which runs Loki + Grafana, pulls training data from Loki (`pipeline/loki_pull.py` →
+  `pipeline/build_experiment.py`) and runs the live server (`live/loki_source.py` follows Loki). The ETW converter and windowing tool are standalone files, `pipeline/etw2nodlink.py` and
+`pipeline/etwwindow.py`. `live/engine.py` imports the converter and hashes its raw bytes; Ansible copies
+both files to the VM unchanged, and `.gitattributes` pins them to LF. The `$converter` / `$WindowTool`
+here-strings in `scripts/04` and `05` are legacy (`sync_ps1.py` only keeps the legacy `08` script's copy
+of `etwship.py` current). Addresses are inventory-driven, so the lab moves to cloud VMs without code
+changes.
 
 ## Start here (new member)
 
@@ -83,9 +87,16 @@ src/
 │   ├── score_window.py         scores any edge CSV with a trained run (shared with the live demo)
 │   ├── alg1.py                 Alg. 1 subgraphs + subgraph-score filter (in memory); re-judges sessions
 │   ├── alg2.py                 LLM triage + Alg. 2 attack report on red windows (optional)
+│   ├── etw2nodlink.py          SilkETW JSON -> edges (the converter; also deployed to the VM)
+│   ├── etwwindow.py            edges -> 5-min windows;  check_rdf_input.py  input-contract check
+│   ├── lokiclient.py           Loki HTTP calls (+ fake Loki for selftests)
+│   ├── loki_pull.py            Loki -> experiment raw/ (interactive picker or flags)
+│   ├── build_experiment.py     raw/ -> converted, windowed edges, check.json, experiment.json
 │   └── w10_to_rdf.py           edges → RDF/TSV for GraphDB (unused by the demo)
 ├── live/                     live demo (see live/README.md)
-│   ├── etwship.py              shipper: tails ETW files on the VM and POSTs them; --replay on the host
+│   ├── loki_source.py          live input: follows the newest test run in Loki (--loki-url)
+│   ├── loki_push.py            test feed: pushes a recorded run into Loki in Alloy's shape
+│   ├── etwship.py              HTTP shipper (legacy live path); --replay on the host, --print-dos-map
 │   ├── engine.py               reorder by event time, convert, cut windows, score, call alg1/alg2
 │   ├── live_server.py          FastAPI server: /ingest, /api/*, live updates, UI at /
 │   ├── static/index.html       the web UI
@@ -129,10 +140,11 @@ as `C:\scripts`. With `LAB_ISOLATED=1` (network cut for attack runs), copy scrip
 
 ## Data flow
 
-1. VM: `scripts/07` captures 20 min of benign activity → `out/etw/experiments/<id>/`.
-2. Host: `pipeline/encode_to_features.py` → `artifacts/features/self-dataset/`.
+1. VM: `scripts/07` captures 20 min of benign activity; Alloy ships it to Loki on the trainer.
+2. Trainer: `pipeline/loki_pull.py --build` → `out/etw/experiments/<run>/`; then
+   `pipeline/encode_to_features.py` → `artifacts/features/self-dataset/`.
 3. Host: `pipeline/train_gnn_models.py` → `artifacts/runs/<exp>/`.
-4. Live: `scripts/08` on the VM → `live/live_server.py` on the host → `live/sessions/<id>/` + web UI.
+4. Live: `start-live.ps1` on the VM → Alloy → Loki → `live/live_server.py --loki-url` → `live/sessions/<id>/` + web UI.
 
 ## Pitfalls
 

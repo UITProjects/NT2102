@@ -1,9 +1,10 @@
 ---
-# Ubuntu trainer VM: clone the repo, uv sync, run the live server (receives the pushed data).
+# Ubuntu trainer VM: Loki + Grafana (stores the pushed logs), repo + uv sync, live server reading Loki.
 - name: Configure the Ubuntu trainer VM
   hosts: ubuntu
   become: true
   gather_facts: true
   roles:
     - ubuntu_base      # apt deps, uv, firewall
+    - ubuntu_loki      # Loki + Grafana (Docker, host network): receives Alloy's push
     - ubuntu_project   # git clone, uv sync, live_server systemd unit

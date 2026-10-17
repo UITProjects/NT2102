@@ -13,6 +13,18 @@ server_port: 8000
 # The Ubuntu server binds all interfaces so it listens on the subnet IP whatever it is.
 server_bind: "0.0.0.0"
 
+# ---- log pipeline: Alloy (Windows, native) -> Loki + Grafana (Docker, host network, on the trainer) --
+# Alloy pushes to loki_url; the live server and loki_pull.py read Loki on the trainer itself (127.0.0.1).
+loki_port: 3100
+grafana_port: 3000            # on the Ubuntu host (vulnlab's 3000 is on the Windows host: no clash)
+loki_url: "http://{{ trainer_host }}:{{ loki_port }}"
+loki_retention: "720h"        # 30 d: how long raw ETW stays queryable (also the max age Loki accepts)
+loki_image: "grafana/loki:3.7.8"
+grafana_image: "grafana/grafana:13.2.2"
+loki_stack_dir: "/opt/lokistack"
+# Inventory supplies: admin_cidr (who may open Grafana, e.g. your workstation), grafana_admin_password
+# (local inventory for the lab; vault for cloud). Loki itself only accepts the Windows host's private_ip.
+
 # ---- lab clock ------------------------------------------------------------------------------------
 # Both VMs run on UTC+7. Safe for the pipeline: SilkETW writes the offset into every TimeStamp
 # (e.g. "...+07:00"), labels/ledger/window IDs use UTC explicitly, so epoch ms do not depend on the zone.
@@ -33,6 +45,10 @@ silketw_sha256: ""          # e.g. "sha256:ABCD..." once pinned
 python_embed_version: "3.12.7"
 python_embed_url: "https://www.python.org/ftp/python/{{ python_embed_version }}/python-{{ python_embed_version }}-embed-amd64.zip"
 python_embed_sha256: ""     # pin after first download
+
+alloy_version: "1.20.1"
+alloy_url: "https://github.com/grafana/alloy/releases/download/v{{ alloy_version }}/alloy-installer-windows-amd64.exe"
+alloy_sha256: "sha256:23fcfe3755f02e8a6a83f27149851322ab2b66d584e76d239d9c031f50d3a8f0"   # release SHA256SUMS
 
 node_version: "lts"          # chocolatey nodejs-lts; react2shell wants Node >= 18.18 (check package.json engines)
 

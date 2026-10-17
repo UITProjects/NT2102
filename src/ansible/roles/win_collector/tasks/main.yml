@@ -1,8 +1,8 @@
 ---
 # Collector install (native rewrite of scripts/02-tools.ps1 SilkETW part + scripts/04-collector.ps1).
-# Installs SilkETW/SilkService, embeddable Python, deploys the converter/shipper/etwctl, registers the
-# service. The converter and shipper are deployed from the repo's source-of-truth files, so the sha256
-# the live server checks (engine.py load_converter) stays identical.
+# Installs SilkETW/SilkService, embeddable Python, deploys the converter/windowing tool/shipper/etwctl,
+# registers the service. The Python tools are copied byte-for-byte from src/pipeline and src/live, so
+# Get-FileHash on the VM (experiment.json tools.*) equals the sha engine.py load_converter computes.
 
 # ---------- 1. VC++ runtime (SilkETW needs it) ----------
 - name: Install the VC++ 2015-2022 runtime
@@ -83,6 +83,11 @@
     src: "{{ src_dir }}/live/etwship.py"
     dest: "{{ lab_home }}\\etwship.py"
 
+- name: "Deploy the windowing tool (source of truth: src/pipeline/etwwindow.py, used by 07)"
+  ansible.windows.win_copy:
+    src: "{{ src_dir }}/pipeline/etwwindow.py"
+    dest: "{{ lab_home }}\\etwwindow.py"
+
 - name: Deploy etwctl.ps1
   ansible.windows.win_copy:
     src: etwctl.ps1
@@ -106,6 +111,10 @@
 
 - name: Converter selftest (proves it runs; not that it detects attacks)
   ansible.windows.win_command: '"{{ python_exe }}" "{{ lab_home }}\etw2nodlink.py" --selftest'
+  changed_when: false
+
+- name: Windowing-tool selftest
+  ansible.windows.win_command: '"{{ python_exe }}" "{{ lab_home }}\etwwindow.py" --selftest'
   changed_when: false
 
 # ---------- 5. SilkService Windows service ----------

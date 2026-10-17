@@ -9,6 +9,8 @@
     dest: "{{ repo_dest }}"
     version: "{{ repo_branch }}"
     update: true
+    recursive: false   # submodules (OCR-APT paper repo, NODLINK data) are reference material, not needed here;
+                       # with them the module reports "submodules_changed" on every run
 
 - name: uv sync (resolve torch, torch-geometric, fastapi, ...)
   become: false
@@ -16,7 +18,7 @@
   args:
     chdir: "{{ repo_dest }}"
   register: uv_sync
-  changed_when: "'Resolved' in uv_sync.stderr or 'Installed' in uv_sync.stderr"
+  changed_when: "'Installed' in uv_sync.stderr or 'Uninstalled' in uv_sync.stderr"   # "Resolved" prints every run
 
 # --- best-effort: copy the training experiment.json so the live converter-sha check can run ---
 # src/out/ is gitignored, so a fresh clone lacks it. If the control node has it, copy it over; the

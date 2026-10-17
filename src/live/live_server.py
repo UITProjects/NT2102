@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-live_server.py - HTTP layer around engine.Engine: ingest from the VM shipper, JSON API + SSE for the UI.
+live_server.py - HTTP layer around engine.Engine: ingest from Loki or the shipper, JSON API + SSE for the UI.
 
-    POST /ingest              shipper batches (JSON, optionally gzip). 409 = offset gap, body.expected
+    --loki-url URL            follow the newest test run in Loki (Alloy on the VM ships to it; loki_source.py)
+    POST /ingest              shipper/replay batches (JSON, optionally gzip). 409 = offset gap, body.expected
     GET  /api/status          shipper / session / model status
     GET  /api/windows         every window of the current session (summary rows)
     GET  /api/windows/{wid}   one window: top nodes per type, Alg. 1 subgraphs (score, level, kept),
@@ -35,7 +36,7 @@ sys.path.insert(0, HERE)
 from engine import Engine  # noqa: E402
 
 
-def create_app(engine: Engine, token: str | None) -> FastAPI:
+def create_app(engine: Engine, token: str | None, source=None) -> FastAPI:
     app = FastAPI(title="OCR-APT live")
     clients: set[tuple] = set()                  # (event loop, asyncio.Queue) per open SSE connection
 
@@ -57,7 +58,10 @@ def create_app(engine: Engine, token: str | None) -> FastAPI:
 
     @app.get("/api/status")
     async def status():
-        return engine.status()
+        st = engine.status()
+        if source is not None:
+            st["source"] = source.status()
+        return st
 
     @app.get("/api/windows")
     async def windows():
@@ -113,6 +117,14 @@ def main():
     ap.add_argument("--sessions-dir", default=os.path.join(HERE, "sessions"))
     ap.add_argument("--token", default=os.environ.get("LAB_TOKEN"), help="optional shared secret (X-Lab-Token)")
     ap.add_argument("--allow-collapsed", action="store_true")
+    g = ap.add_argument_group("Loki source (src/live/loki_source.py); without --loki-url only POST /ingest feeds the engine")
+    g.add_argument("--loki-url", default=None, help="e.g. http://127.0.0.1:3100 (Loki on this host)")
+    g.add_argument("--loki-split", default="test", choices=["train", "test"], help="follow the newest run of this split")
+    g.add_argument("--loki-poll-s", type=float, default=1.0)
+    g.add_argument("--loki-lookback-s", type=float, default=3600,
+                   help="how far back to look for the newest run (raise it to follow an old replayed run)")
+    g.add_argument("--loki-idle-s", type=float, default=None,
+                   help="no new line for this long -> the clock follows host time (default 2 x lateness)")
     g = ap.add_argument_group("Alg. 1 / SG-Det (src/pipeline/alg1.py)")
     g.add_argument("--n-seed", type=int, default=15, help="[PAPER] seed nodes per node type")
     g.add_argument("--min-nodes", type=int, default=3, help="[REPO] smallest subgraph kept by construction")
@@ -146,8 +158,14 @@ def main():
     print(f"[live] Alg. 1 {engine.sg}  train score range {engine.run.score_range}")
     print(f"[live] LLM {engine.llm_cfg}")
     print(f"[live] converter sha256 {engine.conv_sha} ({engine.conv_check})")
+    source = None
+    if a.loki_url:
+        from loki_source import LokiSource
+        source = LokiSource(engine, a.loki_url, split=a.loki_split, poll_s=a.loki_poll_s, lookback_s=a.loki_lookback_s,
+                            idle_s=a.loki_idle_s if a.loki_idle_s is not None else 2 * a.lateness_s).start()
+        print(f"[live] following Loki {a.loki_url} split={a.loki_split}")
     print(f"[live] UI: http://{a.bind}:{a.port}/")
-    uvicorn.run(create_app(engine, a.token), host=a.bind, port=a.port, log_level="warning")
+    uvicorn.run(create_app(engine, a.token, source), host=a.bind, port=a.port, log_level="warning")
 
 
 if __name__ == "__main__":

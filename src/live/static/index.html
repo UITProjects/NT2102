@@ -164,11 +164,12 @@ tr.flag td{color:var(--anom);font-weight:600}
     const p = status?.params;
     if (p) $("winParams").textContent = `w = ${p.window_min} min, s = ${p.stride_min} min, lateness ${p.lateness_s} s`;
     if (status) $("tauTxt").textContent = "τ per type: " + Object.entries(status.model.tau).map(([k,v]) => `${k} ${num(v,5)}`).join(" · ");
-    if (!s) { $("tiles").innerHTML = '<div class="muted">waiting for the shipper…</div>'; return; }
+    if (!s) { $("tiles").innerHTML = '<div class="muted">waiting for data (shipper or Loki)…</div>'; return; }
     $("sessionTxt").textContent = `session ${s.id} (${s.mode}${s.host ? ", " + s.host : ""})`;
     const ago = s.last_seen_s_ago;
     $("conn").className = "dot " + (ago == null ? "" : ago < 5 ? "on" : ago < 30 ? "stale" : "off");
-    $("connTxt").textContent = ago == null ? "no data" : `shipper seen ${ago}s ago`;
+    const src = status.source;
+    $("connTxt").textContent = ago == null ? "no data" : src ? `Loki data ${ago}s ago${src.idle ? " (idle: host clock)" : ""}` : `shipper seen ${ago}s ago`;
     const excl = Object.values(s.excluded || {}).reduce((a,b) => a+b, 0);
     const unres = Object.values(s.unresolved || {}).reduce((a,b) => a+b, 0);
     const edges = Object.values(s.edges || {}).reduce((a,b) => a+b, 0);
@@ -177,12 +178,13 @@ tr.flag td{color:var(--anom);font-weight:600}
       ["lines / s", s.lines_per_s],
       ["lines total", Object.values(s.lines_total).reduce((a,b)=>a+b,0).toLocaleString()],
       ["edges built", edges.toLocaleString()],
-      ["VM clock", s.clock_ms ? hms(s.clock_ms) : "–"],
+      [src ? "event clock (newest event)" : "VM clock", s.clock_ms ? hms(s.clock_ms) : "–"],
       ["event lag (VM clock − newest event)", lag == null ? "–" : lag + " s", lag != null && Math.abs(lag) > 600 ? "bad" : ""],
-      ["clock skew (host − VM)", s.clock_skew_s == null ? "–" : s.clock_skew_s + " s", s.clock_skew_s != null && Math.abs(s.clock_skew_s) > 60 ? "warn" : ""],
+      src ? ["pipeline lag (host − newest event, via Loki)", src.lag_s == null ? "–" : src.lag_s + " s", src.lag_s != null && Math.abs(src.lag_s) > 60 ? "warn" : ""]
+          : ["clock skew (host − VM)", s.clock_skew_s == null ? "–" : s.clock_skew_s + " s", s.clock_skew_s != null && Math.abs(s.clock_skew_s) > 60 ? "warn" : ""],
       ["late events dropped", s.late_dropped, s.late_dropped ? "warn" : ""],
       ["bad lines", s.bad_lines, s.bad_lines ? "warn" : ""],
-      ["excluded edges (shipper, collector)", excl],
+      ["excluded edges (shipper, collector, Alloy)", excl],
       ["unresolved lookups", unres],
       ["reorder buffer", s.heap],
       ["scoring queue", s.scoring_queue, s.scoring_queue > 1 ? "warn" : ""],
