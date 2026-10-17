@@ -1,0 +1,21 @@
+{
+  "name": "nt2102-ocrapt-slides",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "slidev --open",
+    "build": "slidev build",
+    "export": "slidev export"
+  },
+  "dependencies": {
+    "@slidev/cli": "52.20.1",
+    "@slidev/theme-default": "0.25.0",
+    "vue": "^3.5.44"
+  },
+  "overrides": {
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "playwright-chromium": "^1.64.1"
+  }
+}
