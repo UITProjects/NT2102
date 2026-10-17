@@ -40,7 +40,9 @@ class LokiSource:
         self.engine, self.lk, self.split = engine, Loki(url), split
         self.poll_s, self.idle_ns, self.overlap_ns = poll_s, int(idle_s * NS), int(overlap_s * NS)
         self.lookback_ns, self.grace_ns, self.now_ns, self.log = int(lookback_s * NS), int(grace_s * NS), now_ns, log
-        self.run = None
+        self.run = self.host = None
+        self.lag_ns = self.clock_ms = None
+        self.last_new = now_ns()
         self.last_poll = self.last_error = None
         self._stop = threading.Event()
 
@@ -174,6 +176,8 @@ def selftest():
                  {"stream": lab("live-1", "kfile"), "values": [[str(t0 + i * NS), f"f{i}"] for i in range(2)]}])
         eng = Rec()
         src = LokiSource(eng, fake.url, idle_s=30, overlap_s=10, now_ns=lambda: clock[0], log=lambda *_: None)
+        st = src.status()                                  # before any run is found (UI polls this)
+        assert st["run"] is None and st["lag_s"] is None and not st["idle"], st
         assert src.step() == 5
         c = eng.calls[-1]
         assert c["session"] == "live-1" and c["dos_map"] == {"\\device\\harddiskvolume4": "c:"}
