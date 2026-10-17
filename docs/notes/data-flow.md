@@ -30,7 +30,7 @@ Eight events on a VM, all on 2026-10-07 around 10:00:00 UTC:
 Plus two decoys: a `Write` by `SilkService` (the collector itself) and a `Read` by pid 77 on a file object whose
 `Create` we never saw.
 
-## 1. Raw events → edges (`etw2nodlink.py`, embedded in `src/scripts/04-collector.ps1`)
+## 1. Raw events → edges (`src/pipeline/etw2nodlink.py`)
 
 Every ETW event is classified by (provider, event name) (`classify`, ps1 l.157-181). Only these map to an edge;
 everything else is counted under `unmapped` in `*_summary.json`.
@@ -75,7 +75,7 @@ Timestamps are epoch **milliseconds**. 5 nodes, 6 edges. This is the NODLINK W10
 
 ## 2. Edges → windows
 
-**Training** (`etwwindow.py`, `src/scripts/05-collect-for-20-minutes.ps1` l.52-): the capture is cut into 5-min
+**Training** (`src/pipeline/etwwindow.py`): the capture is cut into 5-min
 windows with a 2-min stride, so a 20-min capture gives 8 windows. Window *i* covers $[s_i, s_i + 300\,\text{s})$ with
 $s_i = s_0 + 120\,i$. Example: $s_0 = 14{:}56{:}33$ → w0000 = 14:56:33–15:01:33, w0001 = 14:58:33–15:03:33
 (real values from `windows.csv`). An event at 14:59:00 lies in both. Every window gets its own copy of the nodes
@@ -185,8 +185,8 @@ see `docs/PROGRESS.md` "Open items" and the pitfalls in `src/README.md`.
 
 ## Reproduce
 
-The toy capture above is built on the converter's own selftest (embedded in `src/scripts/04-collector.ps1`,
-runs on the VM). The host selftests below exercise the same code paths on their own, smaller toys; they do
+The toy capture above is built on the converter's own selftest (`src/pipeline/etw2nodlink.py --selftest`,
+which Ansible also runs on the VM). The host selftests below exercise the same code paths on their own, smaller toys; they do
 not print the numbers in this note:
 
 ```

@@ -12,9 +12,10 @@ live_server.py - HTTP layer around engine.Engine: ingest from Loki or the shippe
     GET  /                    the UI (static/index.html)
 
 Usage (from the repo root): ./serve.sh [live|local] [flags] wraps
-    uv run python src/live/live_server.py --run-dir src/artifacts/runs/exp01 \
-        --scaler src/artifacts/features/self-dataset/feature_scaler.json \
-        --experiment src/out/etw/experiments/20261009T145632Z/experiment.json --bind 10.21.2.1
+    uv run python src/live/live_server.py --bind 127.0.0.1 [--loki-url http://127.0.0.1:3100]
+  The model comes from the current-model pointer (src/artifacts/current.local.json, else current.json;
+  `lab promote <run>` sets it). --run-dir / --scaler / --experiment override it, e.g.
+    --run-dir src/artifacts/runs/exp01 --scaler src/artifacts/features/self-dataset/feature_scaler.json
     add --llm-provider anthropic|openai|ollama|mock for the LLM verdict on red windows (src/live/README.md)
 """
 from __future__ import annotations
@@ -33,6 +34,7 @@ from starlette.concurrency import run_in_threadpool
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))          # src/: the `lab` package (current-model pointer)
 from engine import Engine  # noqa: E402
 
 
@@ -103,9 +105,9 @@ def create_app(engine: Engine, token: str | None, source=None) -> FastAPI:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run-dir", required=True, help="train_gnn_models.py output (models/, train_meta.json)")
-    ap.add_argument("--scaler", required=True, help="TRAIN feature_scaler.json")
-    ap.add_argument("--experiment", help="training experiment.json: checks the converter sha256 matches")
+    ap.add_argument("--run-dir", help="train_gnn_models.py output (models/, train_meta.json); default: current model")
+    ap.add_argument("--scaler", help="TRAIN feature_scaler.json; default: current model's")
+    ap.add_argument("--experiment", help="training experiment.json (converter sha256 check); default: current model's")
     ap.add_argument("--bind", default="10.21.2.1", help="host-only IP the VM can reach (127.0.0.1 for replay)")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--window-min", type=float, default=5, help="MUST equal the training window length")
@@ -142,6 +144,17 @@ def main():
     g.add_argument("--llm-base-url", default=None, help="e.g. a remote Ollama http://host:11434/v1")
     g.add_argument("--llm-max-subgraphs", type=int, default=5, help="kept subgraphs investigated per window")
     a = ap.parse_args()
+    if not (a.run_dir and a.scaler):
+        from lab import current
+        cur = current()
+        if not cur:
+            ap.error("no --run-dir/--scaler and no current-model pointer (src/artifacts/current.json)")
+        explicit = a.run_dir is not None
+        a.run_dir = a.run_dir or cur["run_dir"]
+        a.scaler = a.scaler or cur["scaler"]
+        if not explicit and a.experiment is None and cur.get("experiment") and os.path.exists(cur["experiment"]):
+            a.experiment = cur["experiment"]
+        print(f"[live] current model {cur['run']} ({os.path.relpath(cur['pointer'])})")
     if not 1 < a.sg_moderate_from <= 100:
         ap.error("--sg-moderate-from must be in (1, 100]")
 

@@ -134,16 +134,19 @@ stop, `07` waits `-ShipWaitSeconds` (default 15) so Alloy can push the last line
 files into the experiment folder. It used to move them; copying leaves the files Alloy tails in place.
 
 ```bash
-# on ubuntu-trainer (ssh in; LOKI_URL is set by /etc/profile.d/lokistack.sh), from the repo root:
-uv run python src/pipeline/loki_pull.py                 # interactive: pick a run or a custom time range
-uv run python src/pipeline/loki_pull.py --list          # what Loki has (runs, time ranges, line counts)
-uv run python src/pipeline/loki_pull.py --latest --yes --build    # newest train run -> experiment, no prompts
-uv run python src/pipeline/loki_pull.py --since 2h --split test --yes
+# on ubuntu-trainer (ssh in; LOKI_URL is set by /etc/profile.d/lokistack.sh):
+cd ~/NT2102 && source .venv/bin/activate   # `lab` comes with uv sync (src/lab/cli.py)
+lab status                                  # what Loki pulls / experiments / runs exist; provider coverage
+lab loop                                    # interactive: pick the run in Loki -> build -> features -> train
+lab loop --latest --yes --run-name exp02    # the same without prompts
+lab promote exp02 && sudo systemctl restart ocr-live    # the live server now loads exp02
 ```
-`--build` runs `build_experiment.py` on the result: convert, then window, then check, then write
-`experiment.json`. These are steps 4–7 of `07`, run on the trainer. Then retrain from that experiment.
-Finally, set `experiment_id` / `run_id` in `group_vars/all.yml` and re-run `--limit ubuntu`, so `ocr-live`
-loads the new model.
+`lab loop` = `loki_pull.py --build` (convert, window, check, `experiment.json`: `07` steps 4–7 on the
+trainer) → `encode_to_features.py` → `train_gnn_models.py`, all into one run folder
+`src/artifacts/runs/<run>/` (models, features + scaler, a copy of `experiment.json`, `lineage.json`).
+`lab promote` writes `src/artifacts/current.local.json` (gitignored), which `ocr-live` reads; nothing in
+`group_vars` names the model. To share a model, commit its run folder and `lab promote <run> --shared`
+(writes the tracked `current.json`).
 
 `collect-train.yml` (tar the VM's experiment folder and fetch it) is the **legacy fallback**, for when Loki
 is down.

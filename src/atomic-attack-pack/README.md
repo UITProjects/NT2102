@@ -15,7 +15,7 @@ The target demo (CVE exploit → RCE → ATT&CK follow-on) is not in this pack y
 
 ## Install
 
-Already done by `src/scripts/02-tools.ps1`: Invoke-AtomicRedTeam (PSGallery) + atomics in `C:\AtomicRedTeam`.
+Done by the legacy `src/legacy/vagrant-provisioners/02-tools.ps1` (not yet ported to Ansible): Invoke-AtomicRedTeam (PSGallery) + atomics in `C:\AtomicRedTeam`.
 It has pin slots for both (still empty, see `docs/PROGRESS.md`); do not use the upstream `IEX (IWR …)` installer.
 
 ## Run during a live session (end-goal path)

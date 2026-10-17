@@ -164,12 +164,14 @@ history of earlier progress) and, if relevant, this section.
 
 ### Pipeline map (where each stage lives)
 
-- VM side (PowerShell provisioners, embed the Python tools they install):
-  `src/scripts/01-base` → `02-tools` → `03-workload` → `04-collector` (SilkETW, `etwctl`,
-  `etw2nodlink.py` converter) → `05-collect-for-20-minutes` (`etwwindow.py`) → `06-benign-workload`
-  → `07-build-train-dataset` (per-experiment orchestrator: capture, convert, window, check)
-  → `08-live-shipper` (live capture + embedded copy of `src/live/etwship.py`; resync with
-  `src/live/sync_ps1.py`).
+- VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (SilkETW, `etwctl`,
+  copies `src/pipeline/etw2nodlink.py` / `etwwindow.py` / `src/live/etwship.py`), `win_alloy`
+  (Alloy → Loki), `win_shipper` (`start-live.ps1`), `win_benign` (`src/scripts/06-benign-workload`,
+  `07-build-train-dataset`), `win_vulnlab`. Pre-Ansible provisioners 01–05, 08: `src/legacy/`.
+- Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
+  = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
+  pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
+  `live_server.py`, `serve.sh`, `rejudge.sh` and `ocr-live` read.
 - Attack side: `src/atomic-attack-pack/` (scenarios 01–10, `LABELING.md`, `tools/build_node_labels.py`).
 - Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py`
   (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
@@ -182,8 +184,9 @@ history of earlier progress) and, if relevant, this section.
   windows); `etwship.py --replay` + `compare_replay.py` check the live path against the offline
   pipeline. Run guide: `src/live/README.md`.
 - Artefacts: `src/out/etw/experiments/<id>/` (raw, converted, windowed edges, `windows.csv`,
-  `experiment.json`, `check.json`, benign ledger in `labels/`), `src/artifacts/features/self-dataset/` and
-  `src/artifacts/features/paper/` (NODLINK W10), `src/artifacts/runs/<exp>/`, live sessions
+  `experiment.json`, `check.json`, `pull.json`, benign ledger in `labels/`), `src/artifacts/runs/<run>/`
+  (one model: `models/`, `features/` + scaler, `experiment.json`, `lineage.json`; `exp01` predates this and
+  uses `src/artifacts/features/self-dataset/`), `src/artifacts/features/paper/` (NODLINK W10), live sessions
   `src/live/sessions/<id>/` (raw copy + per-window CSV/JSON; gitignored). NODLINK data: `dataset/nodlink/`.
 - EDA notebooks: `src/notebooks/01-silketw-raw` … `05-features-paper` (numbered in reading order).
 - GraphDB: `src/graphdb/compose.yaml`. Explainer page (edges → features): `docs/explainers/`.

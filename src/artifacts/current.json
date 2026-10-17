@@ -1,0 +1,6 @@
+{
+ "run": "exp01",
+ "run_dir": "src/artifacts/runs/exp01",
+ "scaler": "src/artifacts/features/self-dataset/feature_scaler.json",
+ "experiment": "src/artifacts/runs/exp01/experiment.json"
+}

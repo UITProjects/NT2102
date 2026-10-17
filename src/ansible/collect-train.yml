@@ -6,8 +6,7 @@
 #   ansible-playbook collect-train.yml                         # newest experiment
 #   ansible-playbook collect-train.yml -e collect_id=20261017T030000Z
 #
-# collect_id is NOT experiment_id (group_vars/all.yml): that one names the experiment the live server
-# loads. Point experiment_id at the new folder only after you have retrained on it.
+# LEGACY fallback (Loki down). Normal path: `lab loop` on the trainer. collect_id = the experiment folder.
 
 - name: Pack the experiment on Windows and fetch it to the control node
   hosts: windows
@@ -80,6 +79,5 @@
     - name: Next step
       ansible.builtin.debug:
         msg: >-
-          {{ collect_id }} is in {{ exp_dest }}. Retrain on Ubuntu from this experiment, then set
-          experiment_id={{ collect_id }} and run_id=<new run> in group_vars/all.yml and re-run
-          `ansible-playbook site.yml --limit ubuntu` so ocr-live loads the new model.
+          {{ collect_id }} is in {{ exp_dest }}. On the trainer: `lab train --exp {{ collect_id }}`, then
+          `lab promote <run>` and `sudo systemctl restart ocr-live`.

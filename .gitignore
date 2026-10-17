@@ -28,3 +28,6 @@ __pycache__/
 /src/ansible/*.retry
 /src/ansible/.vault-pass
 /src/ansible/.venv/
+
+# per-machine current-model pointer written by `lab promote` (overrides src/artifacts/current.json)
+/src/artifacts/current.local.json

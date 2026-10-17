@@ -14,7 +14,6 @@ steps=(
   "src/pipeline/alg2.py --selftest"
   "src/live/engine.py --selftest"
   "src/live/etwship.py --selftest"
-  "src/live/sync_ps1.py --check"
   "src/pipeline/etw2nodlink.py --selftest"
   "src/pipeline/etwwindow.py --selftest"
   "src/pipeline/lokiclient.py --selftest"
@@ -22,6 +21,7 @@ steps=(
   "src/pipeline/build_experiment.py --selftest"
   "src/live/loki_push.py --selftest"
   "src/live/loki_source.py --selftest"
+  "-m lab selftest"
 )
 log_dir=$(mktemp -d)
 failed=0

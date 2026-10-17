@@ -12,7 +12,7 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 ## Done
 
 - GraphDB environment: `src/graphdb/compose.yaml` (GraphDB 10.8.0, security on, `nt2102-net` 10.21.3.0/24).
-- Windows 10 ETW lab VM + collector + converter, end to end: `src/scripts/01..07*.ps1`.
+- Windows 10 ETW lab VM + collector + converter, end to end: `src/legacy/vagrant-provisioners/01..05*.ps1` + `src/scripts/06, 07` (now Ansible, `src/ansible/`).
 - Benign train dataset, experiment `20261009T145632Z` (verified, `src/out/etw/experiments/20261009T145632Z/`):
   20-min capture, workload seed 42, launch mode explorer-com; 8 windows (5 min / 2 min stride);
   37,294 edges in → 68,319 windowed edges (484 outside any window); 6,810 node-window copies
@@ -27,7 +27,7 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   train_flag_rate ≈ contamination (process 0.0017 = 1/575). Model saved from run 0 (seed 360).
 - Live path code (with `--selftest` each): `src/pipeline/score_window.py` (shared scorer),
   `src/live/` (etwship.py shipper/replay, engine.py, live_server.py + UI, compare_replay.py),
-  `src/scripts/08-live-shipper.ps1`. See `src/live/README.md`, DEVIATIONS D8.
+  `src/legacy/vagrant-provisioners/08-live-shipper.ps1` (replaced by Alloy → Loki). See `src/live/README.md`, DEVIATIONS D8.
 - Live path end to end (verified): session `live-20261011T105718Z` showed converter sha256 `match`,
   dos_map `\device\harddiskvolume4 → c:` from the VM, shipper PID excluded. First scored window
   (`live-20261011T112141Z`, 11:25–11:30Z, VM running `03-workload.ps1`): 7,813 edges, 835 nodes, 19 flagged
@@ -58,6 +58,9 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   pull, host build = VM build, live via Loki = offline 8/8 windows; Windows side not yet run): `win_alloy` / `ubuntu_loki` roles, `src/pipeline/loki_pull.py` (interactive / flags) →
   `build_experiment.py`, `src/live/loki_source.py` (`live_server.py --loki-url`), `src/live/loki_push.py`
   (test feed). Lab moved to Windows Server 2022 + Ubuntu trainer (Ansible, `src/ansible/`).
+- Improve loop (code + selftest, 2026-10-17): `lab` CLI (`src/lab/cli.py`): status / pull / train / loop /
+  promote; one run folder per model; current-model pointer read by the live server, `serve.sh`,
+  `rejudge.sh` and `ocr-live`. Legacy provisioners moved to `src/legacy/`.
 - Concepts: provenance graphs; GNN message passing.
 
 ## Invalid / needs redo

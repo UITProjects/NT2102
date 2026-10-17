@@ -1,0 +1,102 @@
+\documentclass[a4paper]{article}
+
+%%%%%%%% CREATE DOCUMENT STRUCTURE %%%%%%%%
+%% Language and font encodings
+\usepackage[utf8]{inputenc}
+\usepackage[T5,T1]{fontenc}              % T5 cho tiếng Việt
+\usepackage[vietnamese, english]{babel}
+\usepackage[utf8]{vietnam}
+
+%% Sets page size and margins
+\usepackage[a4paper,top=3cm,bottom=2cm,left=2cm,right=2cm,marginparwidth=1.75cm]{geometry}
+
+%% Useful packages
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{sectsty}
+\usepackage{float}
+\usepackage{titling}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[square,sort,comma,numbers]{natbib}
+\usepackage{xcolor}
+\definecolor{darkgreen}{rgb}{0.0, 0.4, 0.0}
+\usepackage{tabularx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,shapes.geometric}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, breaklines=true, columns=fullflexible,
+        frame=single, backgroundcolor=\color{gray!8}}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\floatname{algorithm}{Thuật toán}
+
+%% Nhãn nguồn của một phát biểu: bài báo, mã nguồn gốc, nhóm, suy luận
+\newcommand{\tagbox}[2]{\textsf{\scriptsize\colorbox{#1!15}{#2}}}
+\newcommand{\tagpaper}{\tagbox{blue}{PAPER}}
+\newcommand{\tagrepo}{\tagbox{violet}{REPO}}
+\newcommand{\tagours}{\tagbox{darkgreen}{OURS}}
+\newcommand{\taginf}{\tagbox{orange}{INFERENCE}}
+%% Ô giữ chỗ cho số liệu chưa có
+\newcommand{\todoval}[1][TODO]{\textcolor{red}{[#1]}}
+
+%%%%%%%% DOCUMENT %%%%%%%%
+\begin{document}
+
+%%%% Title Page
+\begin{titlepage}
+
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
+\center
+
+% University
+\textsc{\LARGE ĐẠI HỌC QUỐC GIA THÀNH PHỐ HỒ CHÍ MINH}\\
+
+\textsc{\LARGE TRƯỜNG ĐẠI HỌC CÔNG NGHỆ THÔNG TIN}\\[1cm]
+
+\includegraphics[width=0.3\textwidth]{images/Logo_UIT_updated.jpg}\\[1cm]
+
+% Document info
+\Large Môn học: \textbf{[Tên môn học]}\\[0.2cm]
+\Large Mã lớp: \textbf{[NT2102.xxx]}\\[0.2cm]
+\Large Giảng viên: \textbf{[Họ tên giảng viên]}\\[0.2cm]
+\Large [Học kì -- Năm học]
+\HRule \\[0.8cm]
+
+{ \huge \bfseries Tên đề tài: \\ Phát hiện bất thường trên endpoint device log\\ dựa trên OCR-APT}\\[0.7cm]
+\HRule \\[1cm]
+
+\large
+\emph{Mã nhóm SV thực hiện: [Nhóm xx]}
+
+\bigskip
+\textbf{Thông tin thành viên nhóm:}
+
+\begin{tabular}{>{\bfseries}p{3.2cm} p{9cm}}
+MSSV          & Họ và tên \\[6pt]
+\midrule[0.3pt]
+[MSSV] & [Họ và tên] \\[6pt]
+[MSSV] & [Họ và tên] \\[6pt]
+[MSSV] & [Họ và tên] \\[6pt]
+\end{tabular}
+
+\vspace{1.5cm}
+
+{\large \today}\\[3cm]
+
+\vfill
+\end{titlepage}
+
+%%%% SECTIONS
+\include{contents}
+
+\bibliographystyle{unsrtnat}
+\bibliography{ref}
+
+\end{document}
