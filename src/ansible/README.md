@@ -95,7 +95,7 @@ ansible.cfg  requirements.yml  site.yml  windows.yml  ubuntu.yml
 inventory.local.ini  inventory.cloud.ini.example
 group_vars/   all.yml  windows.yml  ubuntu.yml  vault.yml.example
 roles/
-  win_base        OS config (01-base.ps1 rewritten): net profile, UTC, no-sleep, RDP, folders, Defender
+  win_base        OS config (01-base.ps1 rewritten): net profile, UTC+7, no-sleep, RDP, folders, Defender
   win_collector   SilkETW + VC++ + embeddable Python + etw2nodlink.py/etwship.py/etwctl + SilkService
   win_shipper     ship-live.ps1 (templated with trainer_host/server_port)
   win_benign      06-benign-workload.ps1

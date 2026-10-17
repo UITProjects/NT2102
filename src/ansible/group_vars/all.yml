@@ -13,6 +13,12 @@ server_port: 8000
 # The Ubuntu server binds all interfaces so it listens on the subnet IP whatever it is.
 server_bind: "0.0.0.0"
 
+# ---- lab clock ------------------------------------------------------------------------------------
+# Both VMs run on UTC+7. Safe for the pipeline: SilkETW writes the offset into every TimeStamp
+# (e.g. "...+07:00"), labels/ledger/window IDs use UTC explicitly, so epoch ms do not depend on the zone.
+tz_windows: "SE Asia Standard Time"   # Windows ID: (UTC+07:00) Bangkok, Hanoi, Jakarta
+tz_linux: "Asia/Ho_Chi_Minh"          # IANA name, UTC+7, no DST
+
 # ---- react2shell vulnlab (manual Node install, defensive detection target) ------------------------
 vulnlab_port: 3000
 vulnlab_repo: "https://github.com/hidden-investigations/react2shell-vulnlab.git"

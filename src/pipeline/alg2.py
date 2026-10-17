@@ -37,9 +37,22 @@ import re
 import struct
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+
+# [OURS] user-facing times (document lines, prompt header) in the lab's zone; stored IDs stay UTC.
+# Fixed offset, not zoneinfo: Vietnam has no DST and this needs no tzdata.
+DISPLAY_TZ = timezone(timedelta(hours=7), "UTC+07:00")
+
+
+def display_time(iso_utc: str) -> str:
+    """'2026-10-11T11:25:00Z' -> '2026-10-11 18:25' (DISPLAY_TZ). Unparseable input is returned as-is."""
+    try:
+        dt = datetime.fromisoformat(str(iso_utc).replace("Z", "+00:00"))
+    except ValueError:
+        return str(iso_utc)
+    return dt.astimezone(DISPLAY_TZ).strftime("%Y-%m-%d %H:%M")
 
 # --------------------------------------------------------------------------- [REPO] prompts, verbatim
 # OCR-APT/src/llm_prompt.py (= paper App. B). Kept byte-for-byte so the report step gets the paper's input.
@@ -262,7 +275,9 @@ def serialize(sg: dict, edges: pd.DataFrame, max_lines: int = 400) -> dict:
                         for s, d, t in zip(e["source-id"], e["destination-id"], e["edge-type"])],
         "anom": [info[s]["role"] == "anomalous" or info[d]["role"] == "anomalous"
                  for s, d in zip(e["source-id"], e["destination-id"])],
-        "ts": pd.to_datetime(e["timestamp"].astype("int64"), unit="ms", utc=True).values,
+        # wall-clock in DISPLAY_TZ, tz dropped so the minute grouping and strftime below use local time
+        "ts": pd.to_datetime(e["timestamp"].astype("int64"), unit="ms", utc=True)
+                .dt.tz_convert(DISPLAY_TZ).dt.tz_localize(None).values,
     })
     df["sec"] = df["ts"].dt.floor("s")
     df = df.drop_duplicates(["description", "sec"])
@@ -327,8 +342,8 @@ def triage(call, sg: dict, doc: dict, window: dict) -> dict:
     anom = [n for n in sg["nodes"] if n["role"] == "anomalous"]
     flagged = "\n".join(f"- {n['type']} {display_attr(n.get('attr'), n['type']) or n['id']} "
                         f"(score {n.get('score') or 0:.4f}, threshold {n.get('tau') or 0:.4f})" for n in anom[:40])
-    user = (f"Alert: window {window.get('start_utc', '?')} to {window.get('end_utc', '?')} (times in the document are "
-            f"UTC), subgraph #{sg['id']}, subgraph anomaly score {sg['sg_score']} ({sg['level']}), "
+    user = (f"Alert: window {display_time(window.get('start_utc', '?'))} to {display_time(window.get('end_utc', '?'))} "
+            f"(all times, here and in the document, are {DISPLAY_TZ.tzname(None)}), subgraph #{sg['id']}, subgraph anomaly score {sg['sg_score']} ({sg['level']}), "
             f"{sg['n_anomalous']} anomalous + {sg['n_connectors']} connector nodes.\n"
             f"Entities the detector flagged as anomalous:\n{flagged}\n\n"
             f"<document>\n{doc['text']}</document>")
@@ -509,7 +524,7 @@ def selftest():
     assert decode_net_attr("c:\\x.dll") == "c:\\x.dll"
 
     # (b) serialization: per-minute counts of distinct seconds, PROCESS -> object, decoded socket
-    t = 1_791_718_140_000                                  # 2026-10-11 11:29:00 UTC
+    t = 1_791_718_140_000                                  # 2026-10-11 11:29:00 UTC = 18:29 UTC+07:00
     nodes = [{"id": "p1", "type": "process", "attr": "powershell", "role": "anomalous", "score": 3.0, "tau": 2.0},
              {"id": "f1", "type": "file", "attr": "c:\\users\\a\\appdata\\local\\temp\\x.ps1", "role": "anomalous",
               "score": 0.5, "tau": 0.2},
@@ -523,9 +538,10 @@ def selftest():
     edges = pd.DataFrame(ev, columns=["source-id", "destination-id", "edge-type", "timestamp"])
     doc = serialize(sg, edges)
     assert doc["lines"] == [
-        "powershell WRITE the file : c:\\users\\a\\appdata\\local\\temp\\x.ps1 (2 times) on 2026-10-11 11:29.",
-        "powershell SEND the socket : 10.21.2.1:8000 on 2026-10-11 11:29.",
-        "powershell LOAD the file : c:\\windows\\system32\\amsi.dll on 2026-10-11 11:30."], doc["lines"]
+        "powershell WRITE the file : c:\\users\\a\\appdata\\local\\temp\\x.ps1 (2 times) on 2026-10-11 18:29.",
+        "powershell SEND the socket : 10.21.2.1:8000 on 2026-10-11 18:29.",
+        "powershell LOAD the file : c:\\windows\\system32\\amsi.dll on 2026-10-11 18:30."], doc["lines"]
+    assert display_time("2026-10-11T11:25:00Z") == "2026-10-11 18:25"
     assert serialize(sg, edges, max_lines=2)["truncated"] == 1
     assert all("amsi" not in ln for ln in serialize(sg, edges, max_lines=2)["lines"]), "anomalous lines first"
 

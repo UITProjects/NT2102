@@ -15,9 +15,10 @@
       }
   changed_when: false
 
-- name: Time zone = UTC (ETW timestamps must line up with the host-side labels)
+- name: Time zone = UTC+7 ({{ tz_windows }})
+  # ETW TimeStamps carry their offset and labels use UTC, so the zone does not shift epoch ms.
   ansible.windows.win_timezone:
-    timezone: UTC
+    timezone: "{{ tz_windows }}"
 
 - name: Resync the clock
   ansible.windows.win_command: w32tm /resync /force

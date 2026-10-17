@@ -6,7 +6,7 @@
   # Credentials: local mode reads win_user/win_password from inventory.local.ini (public box defaults).
   # Cloud mode supplies them from the vault: add `-e @group_vars/vault.yml --ask-vault-pass`.
   roles:
-    - win_base        # OS config: network profile, UTC clock, no-sleep, RDP, folders, Defender
+    - win_base        # OS config: network profile, UTC+7 clock, no-sleep, RDP, folders, Defender
     - win_collector   # SilkETW/SilkService + embeddable Python + converter + etwctl + etwship
     - win_shipper     # ship-live.ps1: start a capture and stream it to the Ubuntu server
     - win_benign      # scripted benign workload generator (green windows for the demo)

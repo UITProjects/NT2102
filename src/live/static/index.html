@@ -144,8 +144,10 @@ tr.flag td{color:var(--anom);font-weight:600}
 (() => {
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-  const hm = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
-  const hms = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  // All displayed times in the lab zone (UTC+7), whatever the viewing browser's zone is.
+  const TZ = "Asia/Ho_Chi_Minh";
+  const hm = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", timeZone:TZ});
+  const hms = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit", timeZone:TZ});
   const num = (v, d=3) => v == null ? "–" : Number(v).toFixed(d);
   const base = p => String(p || "").split(/[\\/]/).pop() || p;
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();

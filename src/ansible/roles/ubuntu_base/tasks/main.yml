@@ -1,6 +1,17 @@
 ---
 # Base packages + uv for the trainer VM.
 
+- name: Time zone = UTC+7 ({{ tz_linux }})
+  community.general.timezone:
+    name: "{{ tz_linux }}"
+
+- name: Keep the clock NTP-synced (counterpart of w32tm /resync on Windows)
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    enabled: true
+    state: started
+  failed_when: false   # cloud images may use chrony instead
+
 - name: Install apt dependencies
   ansible.builtin.apt:
     name:
