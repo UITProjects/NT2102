@@ -79,5 +79,5 @@
     - name: Next step
       ansible.builtin.debug:
         msg: >-
-          {{ collect_id }} is in {{ exp_dest }}. On the trainer: `lab train --exp {{ collect_id }}`, then
+          {{ collect_id }} is in {{ exp_dest }}. On the trainer: `lab train --experiment {{ collect_id }} --model <name>`, then
           `lab promote <run>` and `sudo systemctl restart ocr-live`.

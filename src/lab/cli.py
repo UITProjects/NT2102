@@ -1,28 +1,29 @@
-"""lab - the improve loop in one command: pull from Loki -> build -> features -> train -> promote.
+"""lab - the improve loop: capture in Loki -> experiment -> model -> live server.
 
-Setup once (repo root):  uv sync ; source .venv/bin/activate      -> `lab` is on PATH (or: uv run lab ...)
+Three words, three things (each lab option names exactly one of them):
 
-    lab status                         current model, experiments, runs; flags short provider coverage
-    lab pull   [loki_pull flags]       Loki -> src/out/etw/experiments/<id>/ and build it (convert, window, check)
-    lab train  --exp <id> [--run NAME] [-- train_gnn_models flags]
-                                       features + OCRGCN into ONE run folder src/artifacts/runs/<run>/
-    lab loop   [loki_pull flags] [--run NAME]
-                                       pull + train in one go (interactive when no flags)
-    lab promote <run> [--shared]       make <run> the model the live server loads
-    lab current [--field run_dir]      print the current-model pointer (used by serve.sh / rejudge.sh)
-    lab selftest
+  capture      what the Windows VM recorded: one SilkETW run, stored in Loki under its run label
+               (07-build-train-dataset.ps1 names them x-<UTC>, start-live.ps1 live-<UTC>)
+  experiment   a capture pulled from Loki and built into training input
+               src/out/etw/experiments/<capture>/  (raw, edges, 5-min windows, experiment.json)
+  model        features + trained OCRGCN, one folder each      src/artifacts/runs/<model>/
+               (the live server loads the CURRENT model: `lab promote <model>`)
 
-Every stage still runs the existing script as its own process and writes standalone files (CLAUDE.md §6):
-loki_pull.py, build_experiment.py, encode_to_features.py, train_gnn_models.py.
+Commands (`lab <command> -h` shows every option with examples):
 
-Run folder (everything one model needs; nothing shared is overwritten):
-    src/artifacts/runs/<run>/experiment.json      the training data's record (converter sha, windowing, pull)
-                             features/            features_raw.csv, features_model.csv, feature_scaler.json
-                             models/ train_meta.json train_scores.csv runs_summary.csv   (train_gnn_models)
-                             lineage.json         which experiment, commands, git commit, tool sha256s
+  lab status                          what you have: current model, experiments, models
+  lab loop                            capture -> experiment -> model, in one go (interactive)
+  lab pull                            capture -> experiment only
+  lab train  --experiment ID          experiment -> model only
+  lab promote MODEL                   make MODEL the one the live server loads
+  lab current                         print the current model's paths
+  lab selftest                        prove the plumbing runs (fake Loki, tiny model)
 
-Current model: src/artifacts/current.json (in git) or, if present, current.local.json (gitignored; what
-`lab promote` writes, so a machine can switch models without touching tracked files).
+Typical session on the trainer:
+  source .venv/bin/activate           (once per shell; uv sync installed `lab` into .venv/bin)
+  lab status
+  lab loop                            pick the capture with the arrow keys, name the model
+  lab promote <model> && sudo systemctl restart ocr-live
 """
 from __future__ import annotations
 
@@ -135,7 +136,7 @@ def cmd_status(a):
         print(f"  converter_check vs today's etw2nodlink.py: {converter_check(c.get('experiment'))}")
     else:
         print("  none (no src/artifacts/current.json)")
-    print("\nexperiments  (src/out/etw/experiments; provider coverage = minutes with events / capture minutes)")
+    print("\nexperiments  (src/out/etw/experiments; per provider: minutes with events / capture minutes)")
     for d in sorted(glob.glob(os.path.join(EXPS, "*")), key=os.path.getmtime, reverse=True)[:a.limit]:
         if not os.path.isdir(d):
             continue
@@ -148,7 +149,7 @@ def cmd_status(a):
         print(f"  {os.path.basename(d):<26} {rec.get('source', 'vm-07'):<9} {built:<9} windows {res.get('windows', '-')!s:<3} "
               + " ".join(f"{p} {m:.0f}/{span:.0f}m" for p, (m, _, _) in cov.items())
               + (f"   WARNING short coverage: {', '.join(flags)}" if flags else ""))
-    print("\nruns  (src/artifacts/runs)")
+    print("\nmodels  (src/artifacts/runs; * = current)")
     for d in sorted(glob.glob(os.path.join(RUNS, "*")), key=os.path.getmtime, reverse=True)[:a.limit]:
         lin = os.path.join(d, "lineage.json")
         src = json.load(open(lin)).get("experiment", "?") if os.path.exists(lin) else "(no lineage.json)"
@@ -158,12 +159,26 @@ def cmd_status(a):
 
 
 # --------------------------------------------------------------------------- pull / train / loop
-def cmd_pull(rest):
-    """loki_pull.py with --build; -> the experiment folder it produced (newest new/changed folder)."""
+def loki_pull_args(a):
+    """lab's capture options -> loki_pull.py flags (that script calls a capture a "run")."""
+    out = []
+    if a.capture:
+        out += ["--run", a.capture]
+    if a.latest:
+        out.append("--latest")
+    for flag in ("since", "start", "end", "split", "lookback", "loki"):
+        v = getattr(a, flag, None)
+        if v:
+            out += ["--" + flag, v]
+    if a.yes:
+        out.append("--yes")
+    return out
+
+
+def pull(loki_args, out_root=None):
+    """loki_pull.py --build; -> the experiment folder it produced (the new or updated one)."""
     before = {d: os.path.getmtime(d) for d in glob.glob(os.path.join(EXPS, "*"))}
-    args = list(rest)
-    if "--build" not in args:
-        args.append("--build")
+    args = [*loki_args, "--build", "--out-root", out_root or EXPS]
     run([os.path.join(PIPE, "loki_pull.py"), *args])
     after = [d for d in glob.glob(os.path.join(EXPS, "*"))
              if os.path.isdir(d) and (d not in before or os.path.getmtime(d) > before[d])]
@@ -172,20 +187,22 @@ def cmd_pull(rest):
     return max(after, key=os.path.getmtime)
 
 
-def train(exp_id, run_name=None, trainer_args=(), runs_root=None):
-    runs_root = runs_root or RUNS
-    exp = exp_id if os.path.isdir(exp_id) else os.path.join(EXPS, exp_id)
+def train(experiment, model=None, seeds=3, epochs=None, extra=()):
+    """features + OCRGCN for one experiment into a NEW model folder src/artifacts/runs/<model>/."""
+    exp = experiment if os.path.isdir(experiment) else os.path.join(EXPS, experiment)
     edges = os.path.join(exp, EDGES)
     if not os.path.exists(edges):
-        sys.exit(f"[lab] {edges} missing: build the experiment first (lab pull, or build_experiment.py --exp)")
-    run_dir = os.path.join(runs_root, run_name or "run-" + os.path.basename(os.path.normpath(exp)))
+        sys.exit(f"[lab] {rel(edges)} missing: build the experiment first (lab pull)")
+    run_dir = os.path.join(RUNS, model or "model-" + os.path.basename(os.path.normpath(exp)))
     if os.path.exists(run_dir):
-        sys.exit(f"[lab] {rel(run_dir)} exists; choose another --run (a trained run is never overwritten)")
+        sys.exit(f"[lab] model {os.path.basename(run_dir)} already exists ({rel(run_dir)}); "
+                 "pick another --model (a trained model is never overwritten)")
     feats = os.path.join(run_dir, "features")
+    trainer = ["--runs", str(seeds), *(["--epochs", str(epochs)] if epochs else []), *extra]
     cmds = [[os.path.join(PIPE, "encode_to_features.py"), "--edges", edges, "--out-dir", feats],
             [os.path.join(PIPE, "train_gnn_models.py"), "--edges", edges,
              "--features", os.path.join(feats, "features_model.csv"),
-             "--scaler", os.path.join(feats, "feature_scaler.json"), "--out-dir", run_dir, *trainer_args]]
+             "--scaler", os.path.join(feats, "feature_scaler.json"), "--out-dir", run_dir, *trainer]]
     os.makedirs(run_dir)
     try:
         for c in cmds:
@@ -201,8 +218,9 @@ def train(exp_id, run_name=None, trainer_args=(), runs_root=None):
     git = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True, text=True)
     dirty = subprocess.run(["git", "status", "--porcelain", "--", "src/pipeline"], cwd=REPO,
                            capture_output=True, text=True).stdout.strip()
-    lineage = {"run": os.path.basename(run_dir), "experiment": os.path.basename(os.path.normpath(exp)),
-               "experiment_source": rec.get("source"), "created_utc": datetime.now(timezone.utc).isoformat(),
+    lineage = {"model": os.path.basename(run_dir), "experiment": os.path.basename(os.path.normpath(exp)),
+               "experiment_source": rec.get("source"), "seeds": seeds, "epochs": epochs,
+               "created_utc": datetime.now(timezone.utc).isoformat(),
                "git_commit": git.stdout.strip() or None, "pipeline_uncommitted_changes": bool(dirty),
                "converter_sha256": rec.get("tools", {}).get("converter"),
                "tools": {os.path.basename(p): sha(os.path.join(PIPE, p))
@@ -210,33 +228,14 @@ def train(exp_id, run_name=None, trainer_args=(), runs_root=None):
                "commands": [" ".join(rel(x) if os.path.isabs(x) else x for x in c) for c in cmds]}
     with open(os.path.join(run_dir, "lineage.json"), "w") as fh:
         json.dump(lineage, fh, indent=1)
-    print(f"[lab] run ready: {rel(run_dir)}   next: lab promote {os.path.basename(run_dir)}")
+    print(f"[lab] model ready: {rel(run_dir)}")
+    print(f"[lab] next: lab promote {os.path.basename(run_dir)}")
     return run_dir
 
 
-def split_rest(argv):
-    """'... -- x y' -> (before, after)."""
-    if "--" in argv:
-        i = argv.index("--")
-        return argv[:i], argv[i + 1:]
-    return argv, []
-
-
-def cmd_loop(rest):
-    pull_args, trainer_args = split_rest(rest)
-    run_name = None
-    if "--run-name" in pull_args:
-        i = pull_args.index("--run-name")
-        run_name = pull_args[i + 1]
-        del pull_args[i:i + 2]
-    exp = cmd_pull(pull_args)
-    if run_name is None and sys.stdin.isatty() and "--yes" not in pull_args:
-        import questionary
-        run_name = questionary.text("Name of the new model run:", default="run-" + os.path.basename(exp)).ask()
-        if not run_name:
-            return 1
-    train(exp, run_name, trainer_args)
-    return 0
+def ask_model_name(exp):
+    import questionary
+    return questionary.text("Name for the new model:", default="model-" + os.path.basename(exp)).ask()
 
 
 def promote(run, shared=False):
@@ -244,7 +243,7 @@ def promote(run, shared=False):
     rec = pointer_for(run_dir)
     for k in ("scaler", "experiment"):
         if not os.path.exists(os.path.join(REPO, rec[k])):
-            sys.exit(f"[lab] {rec[k]} missing: only runs made by `lab train` can be promoted this way")
+            sys.exit(f"[lab] {rec[k]} missing: only models made by `lab train` / `lab loop` can be promoted")
     if not glob.glob(os.path.join(run_dir, "models", "*.pt")):
         sys.exit(f"[lab] no models in {rel(run_dir)}/models")
     dest = POINTER if shared else LOCAL
@@ -278,9 +277,9 @@ def selftest():
             os.makedirs(cap)
             _synthetic_capture(cap, random.Random(7))
             push_run(Loki(fake.url), cap, "train", "x-20261017T030000Z", log=lambda *_: None)
-            exp = cmd_pull(["--loki", fake.url, "--latest", "--yes", "--out-root", EXPS, "--lookback", "3650d"])
+            exp = pull(["--loki", fake.url, "--latest", "--yes", "--lookback", "3650d"])
             assert os.path.exists(os.path.join(exp, EDGES)), exp
-            rd = train(os.path.basename(exp), "t1", ["--runs", "1", "--epochs", "3"])
+            rd = train(os.path.basename(exp), "t1", seeds=1, epochs=3)
             for f in ("experiment.json", "lineage.json", "features/feature_scaler.json", "train_meta.json"):
                 assert os.path.exists(os.path.join(rd, f)), f
             assert glob.glob(os.path.join(rd, "models", "*.pt"))
@@ -331,38 +330,142 @@ def _synthetic_capture(run_dir, rng):
             fh.write("\n".join(lines) + "\n")
 
 
-# --------------------------------------------------------------------------- main
-def main(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] in ("pull", "loop"):          # everything after the subcommand goes to loki_pull
-        if argv[0] == "pull":
-            cmd_pull(argv[1:])
-            return 0
-        return cmd_loop(argv[1:])
+# --------------------------------------------------------------------------- command line
+EX_LOOP = """examples:
+  lab loop                                    interactive: pick the capture, name the model
+  lab loop --latest --model exp02 --yes       newest TRAIN capture, no questions
+  lab loop --capture x-20261017T030000Z --model exp02 --yes
+  lab loop --capture x-20261009T145632Z --split train --lookback 30d --model exp02 --seeds 1 --yes
+                                              an older capture (> 7 days: --lookback), one seed (quick test)
+  lab loop --since 2h --split train --model exp03 --yes      a time range instead of one capture
+
+after it: lab promote <model> && sudo systemctl restart ocr-live"""
+
+EX_PULL = """examples:
+  lab pull                                    interactive picker (captures, or a custom time range)
+  lab pull --list                             just list the captures Loki has
+  lab pull --latest --yes                     newest TRAIN capture
+  lab pull --capture x-20261017T030000Z --yes
+  lab pull --start "2026-10-17 10:00+07:00" --end "2026-10-17 10:30+07:00" --split train --yes"""
+
+EX_TRAIN = """examples:
+  lab train --experiment x-20261017T030000Z --model exp02
+  lab train --experiment x-20261017T030000Z --model exp02-quick --seeds 1 --epochs 30
+  lab train --experiment x-20261017T030000Z --model exp02-h64 --trainer-args "--hidden 64 --lr 0.001"
+the experiment must be built first (lab pull); the model folder must not exist yet"""
+
+EX_PROMOTE = """examples:
+  lab promote exp02                 this machine only (writes src/artifacts/current.local.json, gitignored)
+  lab promote exp02 --shared        for everyone (writes src/artifacts/current.json; commit it + the model)
+then restart the live server:  sudo systemctl restart ocr-live"""
+
+
+def _parser(sub, name, summary, description, epilog=None):
+    return sub.add_parser(name, help=summary, description=description, epilog=epilog,
+                          formatter_class=argparse.RawDescriptionHelpFormatter)
+
+
+def _capture_options(p):
+    g = p.add_argument_group("which CAPTURE to pull from Loki (none of these = interactive picker)")
+    g.add_argument("--capture", metavar="NAME", help="one capture by name, e.g. x-20261017T030000Z (see: lab pull --list)")
+    g.add_argument("--latest", action="store_true", help="the newest capture of --split (default: train)")
+    g.add_argument("--since", metavar="AGE", help="a time range ending now instead of a capture, e.g. 2h, 90m")
+    g.add_argument("--start", metavar="TIME", help="time range start: ISO 8601 (e.g. 2026-10-17T10:00+07:00) or now-2h")
+    g.add_argument("--end", metavar="TIME", help="time range end (default: now)")
+    g.add_argument("--split", choices=["train", "test"],
+                   help="train = 07 training captures, test = start-live demo captures")
+    g.add_argument("--lookback", metavar="AGE", help="how far back to look for captures (default 7d)")
+    g.add_argument("--loki", metavar="URL", help="Loki address (default: $LOKI_URL, else http://127.0.0.1:3100)")
+    g.add_argument("--yes", action="store_true", help="no questions: needs a capture choice and (for loop) --model")
+
+
+def _model_options(p, required=False):
+    g = p.add_argument_group("the new MODEL")
+    g.add_argument("--model", metavar="NAME", required=required,
+                   help="folder name under src/artifacts/runs/ (default: model-<experiment>); never overwritten")
+    g.add_argument("--seeds", type=int, default=3, metavar="N",
+                   help="train N times with different random seeds and report mean ± std (default 3; 1 = quick test)")
+    g.add_argument("--epochs", type=int, metavar="N", help="max training epochs per seed (default 100, early stop)")
+    g.add_argument("--trainer-args", metavar='"..."', default="",
+                   help='any other train_gnn_models.py flags as one quoted string, e.g. "--hidden 64"')
+
+
+def build_parser():
     ap = argparse.ArgumentParser(prog="lab", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("status")
-    s.add_argument("--limit", type=int, default=10)
-    sub.add_parser("pull", help="loki_pull.py flags pass through; --build is added")
-    sub.add_parser("loop", help="pull + train; loki_pull flags, --run-name NAME, then -- trainer flags")
-    t = sub.add_parser("train")
-    t.add_argument("--exp", required=True, help="experiment id under src/out/etw/experiments (or a path)")
-    t.add_argument("--run", help="run folder name (default run-<exp>)")
-    t.add_argument("trainer_args", nargs=argparse.REMAINDER, help="after --: train_gnn_models.py flags")
-    p = sub.add_parser("promote")
-    p.add_argument("run")
-    p.add_argument("--shared", action="store_true", help="write the tracked current.json instead of current.local.json")
-    c = sub.add_parser("current")
-    c.add_argument("--field", choices=["run", "run_dir", "scaler", "experiment"])
-    sub.add_parser("selftest")
-    a = ap.parse_args(argv)
+    sub = ap.add_subparsers(dest="cmd", metavar="<command>")
+
+    s = _parser(sub, "status", "what you have: current model, experiments, models",
+                "Show the current model (and whether its converter still matches), the experiments under\n"
+                "src/out/etw/experiments (with how many minutes each provider covers), and the models.")
+    s.add_argument("--limit", type=int, default=10, metavar="N", help="show the N newest experiments/models")
+
+    lp = _parser(sub, "loop", "capture -> experiment -> model in one go",
+                 "Pull a capture from Loki, build it into an experiment, compute features and train a new\n"
+                 "model. Same as `lab pull` followed by `lab train`. Does NOT switch the live server.", EX_LOOP)
+    _capture_options(lp)
+    _model_options(lp)
+
+    pp = _parser(sub, "pull", "capture -> experiment (pull from Loki + build)",
+                 "Pull a capture from Loki into src/out/etw/experiments/<capture>/ and build it: convert to\n"
+                 "edges, cut 5-min windows, check, write experiment.json.", EX_PULL)
+    _capture_options(pp)
+    pp.add_argument("--list", action="store_true", help="only list the captures in Loki")
+
+    tp = _parser(sub, "train", "experiment -> model (features + OCRGCN)",
+                 "Compute the 15 behaviour features and train one OCRGCN per node type, all into a new\n"
+                 "folder src/artifacts/runs/<model>/ (+ a copy of experiment.json and lineage.json).", EX_TRAIN)
+    tp.add_argument("--experiment", required=True, metavar="ID",
+                    help="folder name under src/out/etw/experiments/ (see: lab status), or a path")
+    _model_options(tp)
+
+    pr = _parser(sub, "promote", "make MODEL the one the live server loads",
+                 "Point the live server (ocr-live, serve.sh) at a model made by lab train / lab loop.", EX_PROMOTE)
+    pr.add_argument("model", metavar="MODEL", help="folder name under src/artifacts/runs/")
+    pr.add_argument("--shared", action="store_true",
+                    help="write the tracked src/artifacts/current.json instead of this machine's current.local.json")
+
+    c = _parser(sub, "current", "print the current model's paths",
+                "Print which model the live server loads (used by serve.sh and rejudge.sh).")
+    c.add_argument("--field", choices=["run", "run_dir", "scaler", "experiment"], help="print just this path")
+
+    _parser(sub, "selftest", "prove the plumbing runs (fake Loki, tiny model)",
+            "Fake Loki <- synthetic capture -> pull -> train (1 seed, 3 epochs) -> promote. Proves it RUNS,\n"
+            "not that it detects attacks.")
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
+    a = ap.parse_args(sys.argv[1:] if argv is None else argv)
+    if a.cmd is None:
+        ap.print_help()
+        return 0
     if a.cmd == "status":
         return cmd_status(a)
-    if a.cmd == "train":
-        train(a.exp, a.run, [x for x in a.trainer_args if x != "--"])
+    if a.cmd == "pull":
+        if a.list:
+            return run([os.path.join(PIPE, "loki_pull.py"), "--list",
+                        *(["--lookback", a.lookback] if a.lookback else []), *(["--loki", a.loki] if a.loki else [])])
+        pull(loki_pull_args(a))
+        return 0
+    if a.cmd in ("loop", "train"):
+        import shlex
+        extra = shlex.split(a.trainer_args)
+        if a.cmd == "train":
+            train(a.experiment, a.model, a.seeds, a.epochs, extra)
+            return 0
+        if a.yes and not a.model:
+            ap.error("loop --yes needs --model NAME (no question is asked)")
+        if a.yes and not (a.capture or a.latest or a.since or a.start):
+            ap.error("loop --yes needs a capture choice: --capture, --latest, --since or --start")
+        exp = pull(loki_pull_args(a))
+        model = a.model or (ask_model_name(exp) if sys.stdin.isatty() else None)
+        if not model:
+            return 1
+        train(exp, model, a.seeds, a.epochs, extra)
         return 0
     if a.cmd == "promote":
-        promote(a.run, a.shared)
+        promote(a.model, a.shared)
         return 0
     if a.cmd == "current":
         cur = current()

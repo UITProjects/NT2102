@@ -19,11 +19,17 @@ uv sync                          # also installs the `lab` command into .venv/bi
 source .venv/bin/activate        # `lab` is now on PATH (without activating: uv run lab ...)
 ```
 
+Three words, used consistently by every `lab` option:
+- **capture**: what the VM recorded, one run in Loki (`x-<UTC>` from `07`, `live-<UTC>` from `start-live.ps1`).
+- **experiment**: a capture pulled and built, in `out/etw/experiments/<capture>/`.
+- **model**: features plus a trained OCRGCN, in `artifacts/runs/<model>/`.
+
 ```bash
-lab status                       # current model, experiments (provider coverage), runs
-lab loop                         # pull a run from Loki (interactive) -> build -> features -> train
-lab loop --latest --yes --run-name exp02          # the same, no prompts: newest train run
-lab train --exp x-20261017T030000Z --run exp02 -- --runs 3   # retrain an experiment you already have
+lab                              # overview; `lab <command> -h` = all options + examples
+lab status                       # current model, experiments (provider coverage), models
+lab loop                         # capture -> experiment -> model (interactive: pick the capture, name the model)
+lab loop --latest --model exp02 --yes                        # the same, no questions: newest train capture
+lab train --experiment x-20261017T030000Z --model exp03      # retrain an experiment you already have
 lab promote exp02                # make it the model the live server loads
 sudo systemctl restart ocr-live  # (on the trainer) load it
 ```
@@ -31,13 +37,13 @@ sudo systemctl restart ocr-live  # (on the trainer) load it
 | step | stage script (writes standalone files you can inspect) | writes |
 |---|---|---|
 | pull + build | `pipeline/loki_pull.py` → `pipeline/build_experiment.py` | `out/etw/experiments/<id>/`: raw, converted and windowed edges, `windows.csv`, `check.json`, `experiment.json` |
-| features | `pipeline/encode_to_features.py` | `artifacts/runs/<run>/features/` (the scaler is fit on this train data) |
-| train | `pipeline/train_gnn_models.py` | `artifacts/runs/<run>/models/`, `train_meta.json`, `train_scores.csv` |
-| record | `lab` | `artifacts/runs/<run>/experiment.json` (a copy) + `lineage.json` (experiment, commands, git commit) |
+| features | `pipeline/encode_to_features.py` | `artifacts/runs/<model>/features/` (the scaler is fit on this train data) |
+| train | `pipeline/train_gnn_models.py` | `artifacts/runs/<model>/models/`, `train_meta.json`, `train_scores.csv` |
+| record | `lab` | `artifacts/runs/<model>/experiment.json` (a copy) + `lineage.json` (experiment, commands, git commit) |
 | promote | `lab` | `artifacts/current.local.json`, the current-model pointer |
 
-**One run folder = one model.** Everything the live server needs is inside `artifacts/runs/<run>/`, and a
-trained run is never overwritten.
+**One folder = one model.** Everything the live server needs is inside `artifacts/runs/<model>/`, and a
+trained model is never overwritten.
 
 **Current model:**
 - `artifacts/current.local.json` if it exists (per machine, gitignored, written by `lab promote`);
@@ -84,7 +90,7 @@ Then pick a path. All commands run from the **repo root** after `uv sync`; `lab`
 | understand the model | no | read `pipeline/train_gnn_models.py` top to bottom (shapes in comments) |
 | see what you have | no | `lab status` |
 | watch the demo without the Windows VM | trainer only | feed Loki from a recording: `live/README.md` step 5 (`loki_push.py`) |
-| retrain | trainer | `lab loop`, then `lab promote <run>` |
+| retrain | trainer | `lab loop`, then `lab promote <model>` |
 | run the real live demo | both | `ansible/README.md`, then `live/README.md` step 5 |
 
 `out/` and `live/sessions/` are not in git. To replay or retrain on our first capture, ask a teammate for a
@@ -123,7 +129,7 @@ src/
 ├── scripts/                  06-benign-workload.ps1, 07-build-train-dataset.ps1 (deployed to C:\scripts)
 ├── artifacts/                data we keep in git
 │   ├── current.json            the current-model pointer (current.local.json overrides it, not in git)
-│   ├── runs/<run>/             one model: models/, features/, experiment.json, lineage.json, train_*.csv
+│   ├── runs/<model>/           one model: models/, features/, experiment.json, lineage.json, train_*.csv
 │   ├── runs/exp01/             the first model (Win10 data); its features are in features/self-dataset/
 │   └── features/               self-dataset/ (exp01's features + scaler), paper/ (NODLINK W10)
 ├── out/                      local data (not in git)
@@ -144,7 +150,7 @@ paths as they were at training time. They are a record of that run; do not edit 
 
 1. VM: `scripts/07` (training) or `start-live.ps1` (demo) captures; Alloy ships every line to Loki on the trainer.
 2. Trainer: `lab loop` runs `loki_pull.py --build` → `encode_to_features.py` → `train_gnn_models.py`, all into
-   `artifacts/runs/<run>/`. Then `lab promote <run>`.
+   `artifacts/runs/<model>/`. Then `lab promote <model>`.
 3. Live: Loki → `live/live_server.py --loki-url` (current model) → `live/sessions/<id>/` + web UI.
 
 The converter (`pipeline/etw2nodlink.py`) is the same file on the VM and the trainer. `experiment.json`
@@ -154,7 +160,7 @@ records its sha256 and the live server compares it (`converter_check`). Edit it 
 
 | symptom | cause → fix |
 |---|---|
-| collapsed model, all-zero features | trained on un-windowed edges (e.g. `out/_old/etw/SimulatedW10_train_edges.csv`) → train on an experiment folder (`lab train --exp`) |
+| collapsed model, all-zero features | trained on un-windowed edges (e.g. `out/_old/etw/SimulatedW10_train_edges.csv`) → train on an experiment folder (`lab train --experiment`) |
 | a provider covers only a minute of the capture | `lab status` warns (e.g. `kfile 1/21m` in `20261009T145632Z`) → check the collector before training on it |
 | installer activity flagged in a "benign" test | software installs are not benign workload → use `06-benign-workload.ps1` |
 | VM dies, looks like OOM | VMSVGA segfault in `libnvidia-glcore` (3D acceleration) → keep `accelerate3d off`; check `journalctl -k` and `VBox.log.1` first |

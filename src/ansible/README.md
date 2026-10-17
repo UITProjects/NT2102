@@ -136,16 +136,16 @@ files into the experiment folder. It used to move them; copying leaves the files
 ```bash
 # on ubuntu-trainer (ssh in; LOKI_URL is set by /etc/profile.d/lokistack.sh):
 cd ~/NT2102 && source .venv/bin/activate   # `lab` comes with uv sync (src/lab/cli.py)
-lab status                                  # what Loki pulls / experiments / runs exist; provider coverage
-lab loop                                    # interactive: pick the run in Loki -> build -> features -> train
-lab loop --latest --yes --run-name exp02    # the same without prompts
+lab status                                  # current model, experiments, models; provider coverage
+lab loop                                    # interactive: pick the capture in Loki -> build -> features -> train
+lab loop --latest --model exp02 --yes       # the same without questions (lab loop -h: all options)
 lab promote exp02 && sudo systemctl restart ocr-live    # the live server now loads exp02
 ```
 `lab loop` = `loki_pull.py --build` (convert, window, check, `experiment.json`: `07` steps 4–7 on the
 trainer) → `encode_to_features.py` → `train_gnn_models.py`, all into one run folder
-`src/artifacts/runs/<run>/` (models, features + scaler, a copy of `experiment.json`, `lineage.json`).
+`src/artifacts/runs/<model>/` (models, features + scaler, a copy of `experiment.json`, `lineage.json`).
 `lab promote` writes `src/artifacts/current.local.json` (gitignored), which `ocr-live` reads; nothing in
-`group_vars` names the model. To share a model, commit its run folder and `lab promote <run> --shared`
+`group_vars` names the model. To share a model, commit its model folder and `lab promote <model> --shared`
 (writes the tracked `current.json`).
 
 `collect-train.yml` (tar the VM's experiment folder and fetch it) is the **legacy fallback**, for when Loki
