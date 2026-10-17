@@ -11,7 +11,9 @@
 % =====================================================
 
 \begin{abstract}
-Nhật ký kiểm toán (audit log) của máy trạm ghi lại mọi tiến trình, tệp và kết nối mạng, nên chứa dấu vết của các cuộc tấn công. Tuy nhiên, khối lượng log rất lớn, nhãn tấn công hầu như không có, và các hệ thống phát hiện bất thường hiện nay thường cảnh báo ở mức quá thô (cả đồ thị, cả cửa sổ thời gian) hoặc quá vụn (từng nút riêng lẻ), đồng thời phụ thuộc vào thuộc tính dễ giả mạo như đường dẫn tệp hay địa chỉ IP. OCR-APT \cite{aly2025ocrapt} biểu diễn log thành đồ thị nguồn gốc (provenance graph), trích đặc trưng hành vi cho từng nút, huấn luyện cho mỗi loại nút một mô hình one-class RGCN (OCRGCN) chỉ trên dữ liệu lành tính, gom các nút bất thường thành đồ thị con có điểm bất thường (Thuật toán 1), rồi dùng mô hình ngôn ngữ lớn (LLM) để dựng lại câu chuyện tấn công (Thuật toán 2).
+Đồ án nhắm tới một bài toán thực tế: phát hiện \emph{trực tiếp}, từ log nhân của một máy Windows, một cuộc tấn công phổ biến: kẻ tấn công khai thác lỗ hổng (CVE) của một dịch vụ web trong lab, thực thi mã từ xa (RCE), rồi chạy tiếp các kỹ thuật MITRE ATT\&CK (khám phá hệ thống, duy trì truy cập, đánh cắp thông tin xác thực, kênh điều khiển C2, rút dữ liệu). Log nhân ghi lại mọi tiến trình, tệp và kết nối mạng nên chứa dấu vết của chuỗi này, nhưng khối lượng rất lớn và không có nhãn tấn công để huấn luyện. Các hệ thống phát hiện bất thường hiện nay thường cảnh báo ở mức quá thô (cả đồ thị, cả cửa sổ thời gian) hoặc quá vụn (từng nút riêng lẻ), đồng thời phụ thuộc vào thuộc tính dễ giả mạo như đường dẫn tệp hay địa chỉ IP.
+
+Đồ án lấy \emph{phương pháp} từ OCR-APT \cite{aly2025ocrapt}, một hệ thống vốn được thiết kế cho tấn công APT. OCR-APT biểu diễn log thành đồ thị nguồn gốc (provenance graph), trích đặc trưng hành vi cho từng nút, huấn luyện cho mỗi loại nút một mô hình one-class RGCN (OCRGCN) chỉ trên dữ liệu lành tính, gom các nút bất thường thành đồ thị con có điểm bất thường (Thuật toán 1), rồi dùng mô hình ngôn ngữ lớn (LLM) để dựng lại câu chuyện tấn công (Thuật toán 2). Vì mô hình chỉ học hành vi lành tính, nó gắn cờ mọi hành vi mà dữ liệu huấn luyện chưa từng có, nên không bị giới hạn ở APT.
 
 Đồ án xây dựng lại phần lõi của OCR-APT dưới dạng một bản chứng minh khái niệm (proof of concept) chạy gần thời gian thực trên dữ liệu ETW do nhóm tự thu thập từ một máy Windows trong phòng lab: log được đẩy qua Grafana Alloy về Loki, chuyển sang lược đồ NODLINK Windows 10, cắt thành cửa sổ 5 phút, chấm điểm bằng OCRGCN tự hiện thực, lọc bằng điểm đồ thị con, và (tuỳ chọn) được LLM phân loại và viết báo cáo. Báo cáo trình bày lý thuyết cốt lõi của bài báo, các điểm nhóm làm khác bài báo cùng lý do và giới hạn kèm theo, và kết quả thực nghiệm. \todoval[Kết quả chính: số cửa sổ lành tính bị cảnh báo nhầm, cửa sổ tấn công có chuyển đỏ hay không, kết luận của LLM.]
 \end{abstract}
@@ -28,7 +30,7 @@ Mục tiêu của đồ án là:
 \begin{itemize}
     \item Hiểu và trình bày được từng thành phần cốt lõi của OCR-APT: đồ thị nguồn gốc, đặc trưng hành vi, RGCN, học một lớp (one-class), mô hình theo loại nút, xây dựng đồ thị con bất thường và điều tra bằng LLM.
     \item Tự hiện thực lại phần lõi đó (khoảng 40\% hệ thống trong bài báo) thành một pipeline có thể kiểm tra từng bước: mỗi giai đoạn ghi ra CSV/JSON độc lập để phân tích (EDA).
-    \item Trình diễn trực tiếp ý tưởng của bài báo: khi một cuộc tấn công thật (khai thác CVE trên dịch vụ lab $\rightarrow$ thực thi mã từ xa $\rightarrow$ các kỹ thuật MITRE ATT\&CK \cite{mitre_attack}) chạy trong buổi demo, cửa sổ chứa tấn công chuyển sang cảnh báo đỏ, còn các cửa sổ lành tính giữ màu xanh.
+    \item Trình diễn trực tiếp ý tưởng của bài báo: khi một cuộc tấn công thật (khai thác CVE trên dịch vụ lab $\rightarrow$ thực thi mã từ xa $\rightarrow$ các kỹ thuật MITRE ATT\&CK \cite{mitre_attack}) chạy trong buổi demo, cửa sổ chứa tấn công chuyển sang cảnh báo đỏ, còn các cửa sổ lành tính giữ màu xanh. Tấn công mục tiêu là một tấn công phổ biến, không phải APT: OCR-APT cung cấp phương pháp, không phải mô hình mối đe doạ.
     \item Ghi lại trung thực quan hệ với bài báo: phần nào tái hiện, phần nào điều chỉnh, phần nào bỏ qua, và những khẳng định nào vì thế không được phép đưa ra.
 \end{itemize}
 
@@ -42,7 +44,7 @@ Mục tiêu của đồ án là:
 \label{sec:overview}
 
 \paragraph{Bối cảnh và vấn đề.}
-Tấn công có chủ đích kéo dài (APT) và các cuộc tấn công nói chung trên máy trạm thường để lại dấu vết trong log của hệ điều hành: tiến trình nào sinh tiến trình nào, ghi tệp gì, kết nối tới đâu. Đồ thị nguồn gốc (provenance graph) mô hình hoá các log này thành một đồ thị có hướng, không đồng nhất, trong đó nút là thực thể hệ thống và cạnh là hành động, cho phép lần theo quan hệ nhân quả mà log dạng tuyến tính làm mất \cite{zipperle2022survey}. Vấn đề là đồ thị này rất lớn (hàng triệu nút), còn phần liên quan tới tấn công chỉ chiếm dưới 0.01\% số nút trong các bộ dữ liệu chuẩn \tagpaper~\cite{aly2025ocrapt}.
+Một kịch bản xâm nhập máy trạm rất phổ biến là khai thác lỗ hổng của một dịch vụ hướng ra mạng (ATT\&CK T1190), lấy được quyền thực thi lệnh, rồi khám phá hệ thống, cài cơ chế duy trì, đánh cắp thông tin xác thực, mở kênh C2 và rút dữ liệu. Mỗi bước đều để lại dấu vết trong log của hệ điều hành: tiến trình nào sinh tiến trình nào, ghi tệp gì, kết nối tới đâu. Tấn công có chủ đích kéo dài (APT), động lực chính của bài báo OCR-APT, là trường hợp khó nhất của cùng bài toán này: nhiều giai đoạn, chậm và kín đáo. Đồ thị nguồn gốc (provenance graph) mô hình hoá các log này thành một đồ thị có hướng, không đồng nhất, trong đó nút là thực thể hệ thống và cạnh là hành động, cho phép lần theo quan hệ nhân quả mà log dạng tuyến tính làm mất \cite{zipperle2022survey}. Vấn đề là đồ thị này rất lớn (hàng triệu nút), còn phần liên quan tới tấn công chỉ chiếm dưới 0.01\% số nút trong các bộ dữ liệu chuẩn \tagpaper~\cite{aly2025ocrapt}.
 
 \paragraph{Giới hạn của các hệ thống hiện có} \tagpaper~(§1--2 của bài báo).
 \begin{itemize}
@@ -56,11 +58,19 @@ Tấn công có chủ đích kéo dài (APT) và các cuộc tấn công nói ch
 \paragraph{Hướng tiếp cận của OCR-APT.}
 OCR-APT giải quyết các điểm trên bằng: (i) đặc trưng hành vi và cấu trúc thay vì thuộc tính nút; (ii) RGCN để giữ loại cạnh khi tổng hợp thông tin láng giềng; (iii) học một lớp chỉ trên dữ liệu lành tính, không cần nhãn tấn công; (iv) một mô hình cho mỗi loại nút; (v) gom nút bất thường thành đồ thị con và lọc theo điểm bất thường của đồ thị con; (vi) một pipeline LLM nhiều bước có kiểm tra ảo giác để viết báo cáo tấn công. Trên DARPA TC3 \cite{darpa_tc3}, DARPA OpTC \cite{darpa_optc} và tập NODLINK mô phỏng \cite{nodlink_data}, bài báo báo cáo độ chính xác ngang hoặc cao hơn các hệ thống hiện có \tagpaper.
 
+\paragraph{Từ APT sang tấn công phổ biến.}
+Đồ án dùng phương pháp của OCR-APT cho một tấn công phổ biến chứ không cho APT. Lý do phương pháp vẫn áp dụng được:
+\begin{itemize}
+    \item Mô hình một lớp chỉ học hành vi lành tính, không học dấu hiệu của một loại tấn công cụ thể. Bất kỳ hành vi nào dữ liệu huấn luyện chưa từng có đều có thể gây cảnh báo, dù là APT hay không.
+    \item Một chuỗi sau RCE (dịch vụ web sinh ra shell, thả tệp, kết nối ra ngoài) diễn ra nhanh và để lại nhiều cạnh bất thường gần nhau trong đồ thị. \taginf{} Với bộ phát hiện này, nó dễ hơn một APT ``low and slow''.
+    \item Một số phần của bài báo gắn chặt với APT trở nên ít trung tâm hơn: lập luận ``nút APT nghỉ lâu hơn'' cho đặc trưng thời gian nghỉ (Mục~\ref{sec:theory-features}), và báo cáo theo giai đoạn kill chain của APT, mà đồ án ánh xạ sang tactic ATT\&CK (Mục~\ref{sec:dev-llm}).
+\end{itemize}
+
 \paragraph{Khoảng trống và câu hỏi của đồ án.}
 Bài báo đánh giá OCR-APT ngoại tuyến (offline) trên toàn bộ log của các bộ dữ liệu công bố sẵn. Đồ án đặt câu hỏi: \emph{ý tưởng cốt lõi đó có hoạt động được khi chạy gần thời gian thực, theo từng cửa sổ 5 phút, trên dữ liệu Windows do chính nhóm thu thập hay không?} Cụ thể:
 \begin{itemize}
     \item \textbf{RQ1:} Với hoạt động lành tính, các cửa sổ có giữ được trạng thái xanh (không có đồ thị con nào đạt mức cảnh báo) không?
-    \item \textbf{RQ2:} Khi một cuộc tấn công thật chạy trong lúc demo, cửa sổ chứa tấn công có chuyển đỏ, và đồ thị con cảnh báo có chứa các thực thể của tấn công không?
+    \item \textbf{RQ2:} Khi một cuộc tấn công thật (khai thác CVE $\rightarrow$ RCE $\rightarrow$ các kỹ thuật ATT\&CK) chạy trong lúc demo, cửa sổ chứa tấn công có chuyển đỏ, và đồ thị con cảnh báo có chứa các thực thể của tấn công không?
     \item \textbf{RQ3:} LLM có phân biệt được cảnh báo thật với cảnh báo nhầm và viết lại được diễn biến tấn công từ đồ thị con không?
 \end{itemize}
 
@@ -75,29 +85,18 @@ Phần này trình bày các thành phần cốt lõi của OCR-APT theo thứ t
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[
-  box/.style={draw, rounded corners, align=center, minimum height=1cm, text width=2.5cm, font=\small, fill=gray!8},
-  arr/.style={-{Stealth[length=2mm]}, thick},
-  node distance=0.5cm and 0.7cm]
-  \node[box, text width=1.8cm] (log) {Audit log};
-  \node[box, right=of log] (pg) {Xây dựng đồ thị nguồn gốc (RDF)};
-  \node[box, right=of pg] (feat) {Mã hoá \& trích đặc trưng hành vi};
-  \node[box, right=of feat, fill=blue!8] (gnn) {OCRGCN theo loại nút};
-  \node[box, below=1.3cm of gnn, fill=blue!8] (alg1) {Đồ thị con bất thường (Alg.~1) + SG-Det};
-  \node[box, below=1.3cm of feat, fill=orange!10] (llm) {Điều tra bằng LLM (Alg.~2)};
-  \node[box, below=1.3cm of pg] (rep) {Báo cáo tấn công};
-  \node[box, above=0.8cm of feat, text width=1.8cm] (db) {Graph DB};
-  \coordinate (ex) at ([xshift=0.6cm]gnn.east);
-  \draw[arr] (log) -- (pg);
-  \draw[arr] (pg) -- (feat);
-  \draw[arr] (feat) -- node[above, font=\scriptsize]{PyG} (gnn);
-  \draw[arr] (gnn) -- node[left, font=\scriptsize]{nút bất thường} (alg1);
-  \draw[arr] (alg1) -- node[above, font=\scriptsize]{A-SGs} (llm);
-  \draw[arr] (llm) -- (rep);
-  \draw[arr] (pg) |- (db);
-  \draw[arr, dashed] (db) -| node[pos=0.25, above, font=\scriptsize]{truy vấn SPARQL} (ex) |- (alg1.east);
+\begin{tikzpicture}
+  \node[anchor=south west, inner sep=0] (img) at (0,0) {\includegraphics[width=\textwidth]{images/paper-fig1-architecture.pdf}};
+  \begin{scope}[x={(img.south east)}, y={(img.north west)}]  % (0,0) = góc dưới trái, (1,1) = góc trên phải của ảnh
+    \node[num] at (0.085, 0.84) {1};
+    \node[num] at (0.103, 0.37) {2};
+    \node[num] at (0.312, 0.33) {3};
+    \node[num] at (0.540, 0.33) {4};
+    \node[num] at (0.812, 0.33) {5};
+  \end{scope}
 \end{tikzpicture}
-\caption{Kiến trúc tổng thể của OCR-APT, vẽ lại theo Hình~1 của bài báo \cite{aly2025ocrapt}. Khung xanh: bộ phát hiện đồ thị con bất thường; khung cam: bộ điều tra dùng LLM.}
+\caption{\textbf{Log thô đi vào, báo cáo tấn công đi ra, qua 5 bước.} Đọc theo số: \stepnum{1} dựng đồ thị nguồn gốc từ audit log; \stepnum{2} mã hoá đồ thị và trích đặc trưng hành vi; \stepnum{3} mô hình OCRGCN chấm điểm từng nút; \stepnum{4} gom các nút bất thường thành đồ thị con và lọc theo điểm; \stepnum{5} LLM viết báo cáo tấn công. Mỗi số tương ứng với một mục của phần này (\stepnum{1}~Mục~\ref{sec:theory-pg}, \stepnum{2}~Mục~\ref{sec:theory-features}, \stepnum{3}~Mục~\ref{sec:theory-rgcn}--\ref{sec:theory-tsmod}, \stepnum{4}~Mục~\ref{sec:theory-alg1}, \stepnum{5}~Mục~\ref{sec:theory-llm}). Nguồn: Hình~1 của \cite{aly2025ocrapt}, số thứ tự do nhóm thêm vào.}
+\figlegend{\textbf{Chú giải:} khung xanh lá nét đứt lớn = bộ phát hiện đồ thị con bất thường (bước \stepnum{3}+\stepnum{4}); \emph{PG} = đồ thị nguồn gốc; \emph{PYG} = đồ thị đã mã hoá cho PyTorch Geometric; \emph{A-Nodes} = các nút bất thường; \emph{A-SGs} = các đồ thị con bất thường; \emph{SG}/\emph{Query} = truy vấn đồ thị con từ Graph DB; \emph{Retrieve}/\emph{Augment} = LLM lấy thêm ngữ cảnh từ Graph DB để bổ sung báo cáo.}
 \label{fig:ocrapt-arch}
 \end{figure}
 
@@ -117,25 +116,33 @@ OCR-APT lưu đồ thị dưới dạng RDF, tức tập bộ ba $\langle$subjec
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[
-  proc/.style={draw, rectangle, rounded corners, fill=blue!10, font=\small\ttfamily, minimum height=0.7cm},
-  file/.style={draw, ellipse, fill=gray!10, font=\small\ttfamily},
-  net/.style={draw, diamond, aspect=2.2, fill=orange!15, font=\small\ttfamily, inner sep=1pt},
-  arr/.style={-{Stealth[length=2mm]}, thick},
-  lab/.style={font=\scriptsize, midway, fill=white, inner sep=1pt}]
+  proc/.style={draw, rectangle, rounded corners, fill=white, font=\small\ttfamily, minimum height=0.7cm},
+  file/.style={draw, ellipse, fill=white, font=\small\ttfamily},
+  net/.style={draw, diamond, aspect=2.2, fill=white, font=\small\ttfamily, inner sep=1pt},
+  atk/.style={-{Stealth[length=2.2mm]}, very thick, catk},
+  ben/.style={-{Stealth[length=2mm]}, gray},
+  lab/.style={font=\scriptsize, midway, fill=white, inner sep=1pt},
+  t/.style={circle, fill=catk, text=white, font=\tiny\bfseries, inner sep=1pt}]
   \node[proc] (svc) at (0,0) {node.exe};
   \node[proc] (cmd) at (3.6,0) {cmd.exe};
   \node[proc] (ps)  at (7.2,0) {powershell.exe};
   \node[net]  (c2)  at (11,0.9) {10.0.0.5:443};
   \node[file] (pay) at (11,-0.9) {payload.exe};
   \node[file] (dll) at (3.6,-1.7) {ntdll.dll};
-  \draw[arr] (svc) -- node[lab]{Start} (cmd);
-  \draw[arr] (cmd) -- node[lab]{Start} (ps);
-  \draw[arr] (ps) -- node[lab, sloped]{Send} (c2);
-  \draw[arr] (c2) to[bend left=20] node[lab]{Recv} (ps);
-  \draw[arr] (ps) -- node[lab, sloped]{Write} (pay);
-  \draw[arr] (cmd) -- node[lab]{Load} (dll);
+  \draw[atk] (svc) -- node[lab]{Start} node[t, above=3pt]{1} (cmd);
+  \draw[atk] (cmd) -- node[lab]{Start} node[t, above=3pt]{2} (ps);
+  \draw[atk] (ps) -- node[lab, sloped]{Send} node[t, above=4pt]{3} (c2);
+  \draw[atk] (c2) to[bend left=20] node[lab]{Recv} (ps);
+  \draw[atk] (ps) -- node[lab, sloped]{Write} node[t, below=4pt]{4} (pay);
+  \draw[ben] (cmd) -- node[lab]{Load} (dll);
 \end{tikzpicture}
-\caption{Ví dụ một đồ thị nguồn gốc nhỏ theo lược đồ Windows 10 của NODLINK: hình chữ nhật là \texttt{PROCESS}, hình elip là \texttt{FILE}, hình thoi là \texttt{NET}. Một dịch vụ web (\texttt{node.exe}) sinh ra shell là dạng ``cha bất thường'' điển hình sau khi bị khai thác RCE. Cạnh \texttt{Recv} được vẽ từ NET về tiến trình theo chiều luồng dữ liệu; trong dữ liệu, chủ thể của mọi cạnh là tiến trình.}
+\caption{\textbf{Một cuộc tấn công nhìn dưới dạng đồ thị.} Đọc theo số đỏ: \textcolor{catk}{1} dịch vụ web \texttt{node.exe} bị khai thác RCE và sinh ra \texttt{cmd.exe} (một ``cha bất thường''); \textcolor{catk}{2} \texttt{cmd.exe} mở \texttt{powershell.exe}; \textcolor{catk}{3} PowerShell kết nối tới máy chủ C2; \textcolor{catk}{4} PowerShell thả tệp \texttt{payload.exe}. Cạnh xám là hoạt động bình thường mà tiến trình nào cũng có. Đồ thị minh hoạ của nhóm theo lược đồ Windows 10 của NODLINK.}
+\figlegend{\textbf{Chú giải:}
+  \tikz[baseline=-0.6ex]\node[draw, rounded corners, minimum width=0.6cm, minimum height=0.3cm]{};~tiến trình (\texttt{PROCESS})\quad
+  \tikz[baseline=-0.6ex]\node[draw, ellipse, minimum width=0.6cm, minimum height=0.3cm]{};~tệp (\texttt{FILE})\quad
+  \tikz[baseline=-0.6ex]\node[draw, diamond, aspect=2, minimum width=0.6cm, minimum height=0.3cm, inner sep=0]{};~luồng mạng (\texttt{NET})\quad
+  \arrowkey{-{Stealth[length=2mm]}, very thick, catk}{bước tấn công (số = thứ tự thời gian)}\quad
+  \arrowkey{-{Stealth[length=2mm]}, gray}{hoạt động bình thường}. Nhãn trên cạnh là loại hành động; chủ thể của mọi cạnh là tiến trình (cạnh \texttt{Recv} vẽ ngược chiều để thể hiện luồng dữ liệu).}
 \label{fig:pg-example}
 \end{figure}
 
@@ -165,7 +172,7 @@ Sắp các dấu thời gian của mọi cạnh chạm tới nút theo thứ t�
 \[
 x' = \frac{x - x_{\min}}{x_{\max} - x_{\min}},
 \]
-trong đó $x_{\min}, x_{\max}$ lấy trên tập dữ liệu. Bài báo lập luận rằng nút liên quan tới APT thường nghỉ lâu hơn nút lành tính (``low and slow''), nên các thống kê này là tín hiệu quan trọng \tagpaper.
+trong đó $x_{\min}, x_{\max}$ lấy trên tập dữ liệu. Bài báo lập luận rằng nút liên quan tới APT thường nghỉ lâu hơn nút lành tính (``low and slow''), nên các thống kê này là tín hiệu quan trọng \tagpaper. Với tấn công mục tiêu của đồ án thì khác: một chuỗi sau RCE chạy nhanh, nên có thể cho khoảng nghỉ \emph{ngắn} hoặc một tổ hợp hành động chưa từng thấy hơn là khoảng nghỉ dài; khi đó các tỉ lệ hành động được kỳ vọng mang phần lớn tín hiệu \taginf.
 \begin{itemize}
     \item \emph{Ví dụ 1:} một tiến trình có sự kiện ở giây 0, 2, 3, 9. Khoảng nghỉ là 2, 1, 6, nên min $= 1$, max $= 6$, trung bình $= 3$. Nếu trên tập huấn luyện max-idle nằm trong $[0, 290]$ giây thì max-idle chuẩn hoá $= 6/290 \approx 0.021$.
     \item \emph{Ví dụ 2:} một tiến trình nằm im 145 giây giữa hai sự kiện có max-idle chuẩn hoá $= 145/290 = 0.5$. Nếu trong dữ liệu kiểm thử một nút nghỉ 300 giây thì giá trị là $300/290 \approx 1.034$, \emph{vượt khỏi} $[0, 1]$, vì thang đo cố định theo tập huấn luyện (Mục~\ref{sec:dev-features}).
@@ -232,6 +239,40 @@ $s_i > 0$ nghĩa là nút nằm ngoài siêu cầu.
     \item \emph{Ví dụ 2:} $\mathbf{z} = (3, 4)$: $\|\mathbf{z} - \mathbf{c}\|^2 = 9 + 16 = 25$, nên $s = 24 > 0$, bất thường.
 \end{itemize}
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.95,
+  ben/.style={circle, fill=gray!70, inner sep=1.3pt},
+  lbl/.style={font=\scriptsize, align=left}]
+  % mặt cầu học được (R = 1) và ngưỡng theta (lớn hơn một chút)
+  \fill[cdet] (0,0) circle (1);
+  \draw[thick, blue!60!black] (0,0) circle (1);
+  \draw[densely dotted, thick] (0,0) circle (1.3);
+  % nút lành tính: phần lớn nằm trong, vài nút nằm ngoài nhưng dưới ngưỡng
+  \foreach \p in {(0.2,0.3),(-0.4,0.1),(0.1,-0.5),(-0.2,-0.3),(0.5,-0.1),(-0.6,0.5),(0.3,0.6),(-0.1,0.7),(-0.7,-0.4),(0.6,-0.6)}
+    \node[ben] at \p {};
+  \node[ben] at (1.05,0.3) {}; \node[ben] at (-0.95,-0.55) {};
+  % tâm và bán kính
+  \node[circle, fill=black, inner sep=1.2pt, label={[font=\scriptsize]below:$\mathbf{c}$}] (c) at (0,0) {};
+  \draw[-{Stealth[length=1.5mm]}] (0,0) -- (-1,0) node[midway, above, font=\scriptsize]{$R$};
+  % hai ví dụ
+  \node[circle, fill=blue!70!black, inner sep=1.6pt] (z1) at (0.6,0.8) {};
+  \node[lbl, anchor=east] at (-1.5,1.2) {Ví dụ 1: $\mathbf{z}=(0.6,0.8)$\\ trên mặt cầu, $s = 0$};
+  \draw[gray, thin] (z1) -- (0.3,1.5) -- (-1.5,1.5);
+  % (3,4) vẽ gần lại cho gọn: khoảng cách thật là 5, tức 5 lần bán kính
+  \node[circle, fill=catk, inner sep=2pt] (z2) at (4.6,1.2) {};
+  \draw[catk, dashed, -{Stealth[length=1.5mm]}] (c) -- (z2);
+  \node[lbl, anchor=west, text=catk] at (4.8,1.2) {Ví dụ 2: $\mathbf{z}=(3,4)$, cách tâm 5\\ (vẽ gần lại, không đúng tỉ lệ)\\ $s = 25 - 1 = 24 > \theta$ $\Rightarrow$ bất thường};
+\end{tikzpicture}
+\caption{\textbf{``Bình thường'' là một hình cầu; càng xa tâm càng bất thường.} Mỗi chấm là embedding của một nút (vẽ trong 2 chiều thay cho 32 chiều). Mô hình học tâm $\mathbf{c}$ và bán kính $R$ sao cho phần lớn nút lành tính nằm trong cầu. Vài nút lành tính được phép nằm ngoài (do $\beta$), nên ngưỡng cảnh báo $\theta$ (vòng chấm) nằm ngoài mặt cầu một chút. Hình minh hoạ của nhóm, dùng đúng số của hai ví dụ trên.}
+\figlegend{\textbf{Chú giải:}
+  \tikz[baseline=-0.6ex]\node[circle, fill=gray!70, inner sep=1.3pt]{};~nút lành tính (dữ liệu huấn luyện)\quad
+  \tikz[baseline=-0.6ex]\node[circle, fill=catk, inner sep=2pt]{};~nút bất thường\quad
+  \swatch{cdet}{vùng ``bình thường'' (siêu cầu)}\quad
+  \tikz[baseline=-0.6ex]\draw[densely dotted, thick] (0,0) -- (0.7,0);~ngưỡng cảnh báo $\theta$.}
+\label{fig:hypersphere}
+\end{figure}
+
 \paragraph{Hàm mất mát và tham số $\beta$.}
 Theo cách hiện thực OCGNN trong PyGOD \taginf:
 \[
@@ -259,18 +300,9 @@ Hành vi bình thường của tiến trình, tệp và luồng mạng khác nha
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[
-  box/.style={draw, rounded corners, align=center, font=\small, fill=gray!8, minimum height=0.8cm},
-  m/.style={draw, rounded corners, align=center, font=\small, fill=blue!8, minimum height=0.8cm, text width=3.2cm},
-  arr/.style={-{Stealth[length=2mm]}, thick}]
-  \node[box, text width=2.4cm] (g) at (0,0) {Đồ thị lành tính\\ $X$ [N,15], 12 quan hệ};
-  \node[m] (mp) at (5,1.3) {OCRGCN\textsubscript{PROCESS}\\ $\mathbf{c}_P, R_P, \theta_P$};
-  \node[m] (mf) at (5,0) {OCRGCN\textsubscript{FILE}\\ $\mathbf{c}_F, R_F, \theta_F$};
-  \node[m] (mn) at (5,-1.3) {OCRGCN\textsubscript{NET}\\ $\mathbf{c}_N, R_N, \theta_N$};
-  \node[box, text width=3cm] (out) at (10,0) {Nút bất thường\\ $s_i > \theta_{\tau(i)}$ + điểm $s_i$};
-  \foreach \t in {mp, mf, mn} { \draw[arr] (g) -- (\t.west); \draw[arr] (\t.east) -- (out); }
-\end{tikzpicture}
-\caption{Một mô hình cho mỗi loại nút: cùng đồ thị đầu vào, mỗi mô hình học tâm, bán kính và ngưỡng riêng.}
+\includegraphics[width=\textwidth]{images/paper-fig2-ocrgcn.pdf}
+\caption{\textbf{Ba mô hình, ba định nghĩa ``bình thường''.} \emph{Bên trái (huấn luyện):} đồ thị lành tính được mã hoá và trích đặc trưng, rồi tách theo loại nút (Process, File, Network Flow). Mỗi loại có một OCRGCN riêng: ước lượng hệ số nhiễm bẩn, qua nhiều lớp RGCN để ra embedding, rồi học một siêu cầu (khối \emph{One Class SVM}, giống Hình~\ref{fig:hypersphere}). \emph{Bên phải (suy luận):} đồ thị cần kiểm tra đi qua đúng các bước đó; mỗi nút được chấm bởi mô hình của loại mình, kết quả là danh sách nút bất thường kèm điểm. Nguồn: Hình~2 của \cite{aly2025ocrapt}.}
+\figlegend{\textbf{Chú giải:} chấm xanh dương = nút lành tính; chấm đỏ = nút độc hại (chỉ có ở đồ thị kiểm tra); khung xanh lá = một mô hình OCRGCN; hình tròn trong khung \emph{One Class SVM} = siêu cầu của loại nút đó; \emph{Estimate Contamination} = ước lượng $\gamma$ (Mục~\ref{sec:theory-oneclass}); \emph{Multi-Layers of RGCN} = bộ mã hoá ở Mục~\ref{sec:theory-rgcn}.}
 \label{fig:tsmod}
 \end{figure}
 
@@ -278,7 +310,20 @@ Hành vi bình thường của tiến trình, tệp và luồng mạng khác nha
 \subsection{Xây dựng đồ thị con bất thường và lọc theo điểm (SG-Det)}
 \label{sec:theory-alg1}
 
-Nút bất thường riêng lẻ khó điều tra và có thể là dương tính giả. Thuật toán~\ref{alg:alg1} nối chúng thành các đồ thị con có quan hệ nhân quả, rồi chỉ giữ các đồ thị con đủ bất thường \tagpaper~(§5.2).
+Nút bất thường riêng lẻ khó điều tra và có thể là dương tính giả. Thuật toán~\ref{alg:alg1} nối chúng thành các đồ thị con có quan hệ nhân quả, rồi chỉ giữ các đồ thị con đủ bất thường \tagpaper~(§5.2). Hình~\ref{fig:alg1-stages} cho thấy ý tưởng trước, thuật toán đầy đủ ở ngay sau.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/paper-fig3-subgraphs.pdf}
+\caption{\textbf{Từ các nút rời rạc thành vài ``câu chuyện'' liên thông.} Đọc từ trái sang phải, mỗi khung là một bước của Thuật toán~\ref{alg:alg1}: (1) \emph{Detected Anomalous Nodes}: các nút bị mô hình gắn cờ, chưa nối với nhau; (2) \emph{Direct Connections}: nối các nút bất thường có cạnh trực tiếp (dòng 3); (3) \emph{1-hop Neighbourhood}: mở rộng 1 bước để thấy nút bình thường đóng vai cầu nối (dòng 4, 9); (4) \emph{Constructed Anomalous Subgraphs}: chỉ giữ đường dẫn tới nút bất thường khác, bỏ phần thừa (dòng 10--11). Nguồn: Hình~3 của \cite{aly2025ocrapt}.}
+\figlegend{\textbf{Chú giải (dịch từ hình gốc):}
+  \tikz[baseline=-0.6ex]\node[circle, fill=red!80!black, inner sep=2pt]{};~bị gắn cờ, thật sự độc hại\quad
+  \tikz[baseline=-0.6ex]\node[circle, fill=orange!90, inner sep=2pt]{};~bị gắn cờ nhưng lành tính (dương tính giả)\quad
+  \tikz[baseline=-0.6ex]\node[circle, fill=blue!45, inner sep=2pt]{};~dự đoán bình thường, đúng là lành tính\quad
+  \tikz[baseline=-0.6ex]\node[circle, fill=brown!70!black, inner sep=2pt]{};~dự đoán bình thường nhưng độc hại (bỏ sót)\quad
+  khung vàng nét đứt = vùng lân cận 1 bước. Ở bước cuối, nút bỏ sót (nâu) được kéo vào đồ thị con nhờ nằm giữa các nút bất thường.}
+\label{fig:alg1-stages}
+\end{figure}
 
 \begin{algorithm}[H]
 \caption{Xây dựng đồ thị con bất thường (theo Thuật toán 1 của \cite{aly2025ocrapt})}
@@ -340,7 +385,16 @@ Bài báo nhận thấy một prompt duy nhất ``viết báo cáo từ đồ th
     \item \textbf{Báo cáo tổng hợp:} trích IOC theo từng giai đoạn tấn công từ các $R_{atk}$, lọc ảo giác lần nữa, rồi tổng hợp thành $R_{comp}$.
     \item \textbf{Làm giàu:} một LLM ``giám khảo'' chọn IOC quan trọng nhất cho mỗi loại nút; truy vấn graph DB lấy ngữ cảnh 1 bước quanh IOC đó và bổ sung vào $R_{comp}$.
 \end{enumerate}
-LLM chính trong bài báo là GPT-4o-mini với temperature 0; LLaMA3-8B chạy cục bộ cho kết quả gần tương đương \tagpaper~(§7.2.2, Bảng~5). Lưu ý: bộ điều tra luôn giả định đồ thị con là một phần của tấn công; nó \emph{không} phân loại tấn công hay lành tính.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/paper-fig4-investigator.pdf}
+\caption{\textbf{Viết báo cáo theo từng bước nhỏ, mỗi bước được kiểm tra.} Đọc từ trái sang phải, khớp với 6 bước ở trên: đồ thị con được tuần tự hoá thành tài liệu log (1) và đánh chỉ mục trong vector store; LLM trích IOC (2), IOC được lọc ảo giác (3), rồi LLM tóm tắt mỗi tài liệu thành một báo cáo (4). Các báo cáo được đánh chỉ mục lần nữa, trích IOC theo giai đoạn, lọc, và gộp thành báo cáo tổng hợp (5, khung viền đỏ). Cuối cùng một LLM giám khảo chọn IOC quan trọng nhất, lấy đồ thị con ngữ cảnh từ Graph DB và bổ sung vào báo cáo (6). Đồ án dừng ở bước 5 (Mục~\ref{sec:dev-llm}). Nguồn: Hình~4 của \cite{aly2025ocrapt}.}
+\figlegend{\textbf{Chú giải:} khối có biểu tượng \emph{LLM} = một lời gọi LLM với một prompt riêng; hình trụ = kho dữ liệu (vector store hoặc Graph DB); \emph{Filter Hallucinations} = bỏ IOC không có trong tài liệu gốc; \emph{Indexing} = cắt tài liệu và tính embedding để truy hồi (RAG).}
+\label{fig:llm-investigator}
+\end{figure}
+
+LLM chính trong bài báo là GPT-4o-mini với temperature 0; LLaMA3-8B chạy cục bộ cho kết quả gần tương đương \tagpaper~(§7.2.2, Bảng~5). Lưu ý: bộ điều tra luôn giả định đồ thị con là một phần của tấn công; nó \emph{không} phân loại tấn công hay lành tính. Các prompt cũng đặt LLM vào vai ``người điều tra tấn công APT'' và yêu cầu báo cáo theo giai đoạn kill chain của APT \tagrepo. Mục~\ref{sec:dev-llm} mô tả cách đồ án dùng chúng cho một tấn công không phải APT.
 
 % -----------------------------------------------------
 \subsection{Cách bài báo đánh giá và các lưu ý}
@@ -386,32 +440,39 @@ Phòng lab gồm hai máy ảo được dựng bằng Ansible (cấu hình theo 
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[
-  box/.style={draw, rounded corners, align=center, font=\small, fill=gray!8, minimum height=0.9cm, text width=2.5cm},
-  arr/.style={-{Stealth[length=2mm]}, thick},
-  node distance=0.8cm and 0.9cm]
-  \node[box, fill=orange!10] (etw) {SilkETW\\ (ws-etw)};
-  \node[box, right=of etw, fill=orange!10] (alloy) {Grafana Alloy};
-  \node[box, right=of alloy] (loki) {Loki\\ (ubuntu-trainer)};
-  \node[box, right=of loki] (conv) {Chuyển sang lược đồ NODLINK W10};
-  \node[box, below=1cm of conv] (win) {Cửa sổ 5 phút (theo thời gian sự kiện)};
-  \node[box, left=of win] (feat) {15 đặc trưng (bộ chuẩn hoá của tập train)};
-  \node[box, left=of feat, fill=blue!8] (gnn) {OCRGCN theo loại nút};
-  \node[box, left=of gnn, fill=blue!8] (alg1) {Alg.~1 + SG-Det};
-  \node[box, below=1cm of alg1, fill=orange!10] (llm) {LLM: phân loại + báo cáo (tuỳ chọn)};
-  \node[box, right=of llm] (ui) {Giao diện web (SSE)};
+\begin{tikzpicture}[node distance=0.8cm and 0.9cm]
+  % máy Windows: thu thập
+  \node[prep] (etw)   at (0,0)    {SilkETW\\ \scriptsize log nhân (tiến trình, tệp, mạng)};
+  \node[prep] (alloy) at (0,-1.8) {Grafana Alloy\\ \scriptsize gửi nguyên văn từng dòng};
+  % máy Ubuntu: xử lý, phát hiện, hiển thị
+  \node[prep] (loki) at (3.6,0)    {Loki\\ \scriptsize kho log};
+  \node[prep] (s1)   at (7.0,0)    {Chuyển sang đồ thị + cắt cửa sổ 5 phút};
+  \node[prep] (s2)   at (10.4,0)   {15 đặc trưng hành vi\\ \scriptsize (thang đo của tập train)};
+  \node[det]  (s3)   at (10.4,-1.8) {OCRGCN theo loại nút\\ \scriptsize chấm điểm từng nút};
+  \node[det]  (s4)   at (7.0,-1.8)  {Alg.~1 + lọc điểm\\ \scriptsize đồ thị con $\ge 30$?};
+  \node[inv]  (s5)   at (3.6,-1.8)  {LLM: phân loại + báo cáo\\ \scriptsize (tuỳ chọn)};
+  \node[outp] (ui)   at (7.0,-3.6)  {Giao diện web\\ \scriptsize cửa sổ xanh / đỏ};
+  \foreach \n/\k in {s1/1, s2/2, s3/3, s4/4, s5/5} \node[num] at (\n.north west) {\k};
+  % luồng dữ liệu
   \draw[arr] (etw) -- (alloy);
-  \draw[arr] (alloy) -- node[above, font=\scriptsize]{HTTP} (loki);
-  \draw[arr] (loki) -- (conv);
-  \draw[arr] (conv) -- (win);
-  \draw[arr] (win) -- (feat);
-  \draw[arr] (feat) -- (gnn);
-  \draw[arr] (gnn) -- (alg1);
-  \draw[arr] (alg1) -- (llm);
-  \draw[arr] (alg1) -- (ui);
-  \draw[arr, dashed] (llm) -- (ui);
+  \draw[arr] (alloy.east) -- node[sloped, above, font=\scriptsize]{HTTP} (loki.west);
+  \draw[arr] (loki) -- (s1);
+  \draw[arr] (s1) -- (s2);
+  \draw[arr] (s2) -- (s3);
+  \draw[arr] (s3) -- (s4);
+  \draw[opt] (s4) -- (s5);
+  \draw[arr] (s4) -- (ui);
+  \draw[opt] (s5) |- (ui);
+  % khung máy
+  \begin{scope}[on background layer]
+    \node[frame, fit=(etw)(alloy), label={[font=\scriptsize\ttfamily]above:ws-etw (Windows)}] {};
+    \node[frame, fit=(loki)(s2)(ui)(s5), label={[font=\scriptsize\ttfamily]above:ubuntu-trainer}] {};
+  \end{scope}
 \end{tikzpicture}
-\caption{Pipeline của đồ án. Cùng một luồng được dùng cho cả huấn luyện (kéo dữ liệu lành tính từ Loki theo lần chạy) và demo trực tiếp (theo dõi Loki liên tục). Graph DB không nằm trên đường chạy trực tiếp.}
+\caption{\textbf{Cùng 5 bước như Hình~\ref{fig:ocrapt-arch}, nhưng chạy liên tục trên từng cửa sổ 5 phút.} Máy Windows chỉ thu thập và gửi log; mọi xử lý chạy trên máy Ubuntu. Đọc theo số \stepnum{1}$\to$\stepnum{5}: các số trùng với bước tương ứng của bài báo, nên có thể so từng khối. Một cửa sổ chuyển đỏ khi bước \stepnum{4} tìm được ít nhất một đồ thị con đạt mức Moderate. Luồng này dùng cho cả huấn luyện (kéo log lành tính từ Loki) và demo trực tiếp. Các điểm khác bài báo được tổng hợp ở Bảng~\ref{tab:deviations}.}
+\figlegend{\textbf{Chú giải:} \swatch{cprep}{chuẩn bị dữ liệu}\quad \swatch{cdet}{phát hiện}\quad \swatch{cinv}{điều tra bằng LLM}\quad \swatch{cout}{kết quả cho người xem}\quad
+  \arrowkey{arr}{luồng dữ liệu}\quad \arrowkey{opt}{tuỳ chọn}\quad
+  \tikz[baseline=-0.6ex]\draw[dashed, gray, rounded corners=1pt] (0,-0.15) rectangle (0.6,0.15);~một máy ảo.}
 \label{fig:our-pipeline}
 \end{figure}
 
@@ -427,6 +488,7 @@ Phòng lab gồm hai máy ảo được dựng bằng Ansible (cấu hình theo 
 \toprule
 \textbf{Thành phần} & \textbf{Bài báo / mã gốc} & \textbf{Đồ án} & \textbf{Lý do} \\
 \midrule
+Loại tấn công mục tiêu & APT nhiều giai đoạn (red team của DARPA, APT mô phỏng của NODLINK) & Một tấn công phổ biến: khai thác CVE của ứng dụng web trong lab $\rightarrow$ RCE $\rightarrow$ các kỹ thuật ATT\&CK & Demo trực tiếp thực tế, chạy lại được \\
 Dữ liệu & DARPA TC3, OpTC, NODLINK mô phỏng & ETW tự thu thập trên Windows lab, đưa về lược đồ NODLINK W10; workload lành tính dạng script có seed & Tự làm chủ pipeline đầu--cuối cho demo; dữ liệu đủ nhỏ để kiểm tra bằng tay \\
 Chế độ phát hiện & Ngoại tuyến trên toàn bộ log kiểm thử & Gần thời gian thực, cửa sổ 5 phút; mỗi nút được sao theo từng cửa sổ & Demo cần chấm điểm có giới hạn và tăng dần \\
 Lưu trữ đồ thị & RDF trong GraphDB, truy vấn SPARQL & Bảng cạnh CSV, Alg.~1 chạy trong bộ nhớ cho từng cửa sổ & Một cửa sổ đủ nhỏ để nằm trong RAM \\
@@ -439,9 +501,21 @@ Mức cảnh báo & Moderate từ $>10$; lấy top-$k$ khi không có gì đạt
 LLM & Alg.~2 đầy đủ, RAG, GPT-4o-mini & Thêm bước phân loại (tấn công / lành tính / chưa rõ) trước Alg.~2 dòng 3--15; không RAG; bỏ dòng 16--25 & GNN không phân biệt được ``chưa từng thấy'' với ``độc hại''; tài liệu một cửa sổ vừa trong prompt \\
 \bottomrule
 \end{tabularx}
-\caption{Tổng hợp các điểm đồ án làm khác bài báo. Chi tiết và tác động ở Mục~\ref{sec:dev-data}--\ref{sec:dev-labels}.}
+\caption{Tổng hợp các điểm đồ án làm khác bài báo. Chi tiết và tác động ở Mục~\ref{sec:dev-attack}--\ref{sec:dev-labels}.}
 \label{tab:deviations}
 \end{table}
+
+% -----------------------------------------------------
+\subsection{Kịch bản tấn công mục tiêu}
+\label{sec:dev-attack}
+
+\tagpaper{} OCR-APT được đánh giá trên các cuộc tấn công APT nhiều giai đoạn: tấn công của đội red team trong DARPA TC3/OpTC (kéo dài nhiều ngày) và các APT mô phỏng của NODLINK. \tagours{} Đồ án nhắm tới một tấn công phổ biến trên một máy Windows, chạy trọn trong buổi demo:
+\begin{itemize}
+    \item \textbf{Mục tiêu:} một ứng dụng web Next.js cố ý để chưa vá (\texttt{react2shell}), chạy trên \texttt{ws-etw}, chỉ truy cập được trong mạng lab. Lỗ hổng: \todoval[mã CVE].
+    \item \textbf{Chuỗi tấn công:} khai thác ứng dụng hướng ra mạng (T1190) $\rightarrow$ thực thi lệnh qua shell (T1059) $\rightarrow$ các kỹ thuật tiếp theo: khám phá hệ thống, duy trì truy cập, đánh cắp thông tin xác thực, kênh C2, rút dữ liệu. \todoval[Mã kỹ thuật ATT\&CK cụ thể của kịch bản cuối cùng.]
+    \item \textbf{Hiện trạng:} hiện mới có các kịch bản Atomic Red Team \cite{atomic_red_team} và script ATT\&CK tự viết; kịch bản CVE $\rightarrow$ RCE đang được lên kế hoạch.
+\end{itemize}
+\textbf{Giới hạn:} chỉ một loại tấn công trên một host, nên đồ án không khẳng định gì về khả năng phát hiện APT, tấn công nhiều host, hay tấn công trải dài nhiều ngày.
 
 % -----------------------------------------------------
 \subsection{Dữ liệu và workload lành tính}
@@ -465,6 +539,42 @@ LLM & Alg.~2 đầy đủ, RAG, GPT-4o-mini & Thêm bước phân loại (tấn 
     \item \emph{Huấn luyện (cửa sổ trượt, bước 2 phút):} bản ghi 20 phút bắt đầu 14:56:00 cho các cửa sổ $[14{:}56, 15{:}01)$, $[14{:}58, 15{:}03)$, $[15{:}00, 15{:}05)$, \ldots{} Một sự kiện lúc 14:59:30 thuộc cả hai cửa sổ đầu, nên các cửa sổ chồng lấn có các hàng đặc trưng tương quan.
     \item \emph{Demo (cửa sổ lật, thẳng hàng đồng hồ):} $[11{:}25, 11{:}30)$, $[11{:}30, 11{:}35)$, \ldots{} Sự kiện lúc 11:29:59.9 thuộc cửa sổ đầu; sự kiện lúc 11:30:00.0 thuộc cửa sổ sau.
 \end{itemize}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=1.2cm, y=0.5cm,
+  win/.style={draw, fill=cprep, rounded corners=1pt, minimum height=0.35cm},
+  hit/.style={draw, fill=cdet, rounded corners=1pt, minimum height=0.35cm},
+  ev/.style={circle, fill=catk, inner sep=1.5pt}]
+  % (a) huấn luyện: cửa sổ trượt 5 phút, bước 2 phút; trục: phút kể từ 14:56
+  \node[font=\small\bfseries, anchor=west] at (-0.2,1.6) {(a) Huấn luyện: cửa sổ trượt (dài 5 phút, bước 2 phút)};
+  \draw[-{Stealth}] (0,0) -- (11.3,0);
+  \foreach \m/\t in {0/14:56,2/14:58,4/15:00,6/15:02,8/15:04,10/15:06}
+    {\draw (\m,0.15) -- (\m,-0.15) node[below, font=\scriptsize]{\t};}
+  % đường của sự kiện vẽ trước để các thanh cửa sổ che lên; màu xanh đánh dấu cửa sổ chứa sự kiện
+  \draw[catk, densely dotted, thick] (3.5,0) -- (3.5,-4.7);
+  \node[hit, minimum width=6cm, anchor=west] at (0,-1.6) {\scriptsize w0000 $[14{:}56, 15{:}01)$};
+  \node[hit, minimum width=6cm, anchor=west] at (2,-2.5) {\scriptsize w0001 $[14{:}58, 15{:}03)$};
+  \node[win, minimum width=6cm, anchor=west] at (4,-3.4) {\scriptsize w0002 $[15{:}00, 15{:}05)$};
+  \node[win, minimum width=6cm, anchor=west] at (6,-4.3) {\scriptsize w0003 $[15{:}02, 15{:}07)$};
+  \node[ev, label={[font=\scriptsize, text=catk]above:14:59:30}] (e) at (3.5,0) {};
+  % (b) demo: cửa sổ lật thẳng hàng đồng hồ; trục: phút kể từ 11:25
+  \begin{scope}[yshift=-4.4cm]
+  \node[font=\small\bfseries, anchor=west] at (-0.2,1.6) {(b) Demo trực tiếp: cửa sổ lật (dài 5 phút, nối tiếp nhau)};
+  \draw[-{Stealth}] (0,0) -- (11.3,0);
+  \foreach \m/\t in {0/11:25,5/11:30,10/11:35}
+    {\draw (\m,0.15) -- (\m,-0.15) node[below, font=\scriptsize]{\t};}
+  \node[win, minimum width=6cm, anchor=west] at (0,-1.6) {\scriptsize $[11{:}25, 11{:}30)$};
+  \node[win, minimum width=6cm, anchor=west] at (5,-1.6) {\scriptsize $[11{:}30, 11{:}35)$};
+  \node[ev] at (4.85,0) {}; \node[ev] at (5.15,0) {};
+  \node[font=\scriptsize, text=catk, anchor=south east] at (4.85,0.15) {11:29:59.9 $\to$ cửa sổ trước};
+  \node[font=\scriptsize, text=catk, anchor=south west] at (5.15,0.15) {11:30:00.0 $\to$ cửa sổ sau};
+  \end{scope}
+\end{tikzpicture}
+\caption{\textbf{Một cửa sổ là 5 phút log được chấm điểm cùng nhau.} Ký hiệu $[t, t+5)$: gồm thời điểm $t$, không gồm $t + 5$. (a) Khi huấn luyện, các cửa sổ chồng lên nhau, nên một sự kiện (chấm đỏ lúc 14:59:30) rơi vào hai cửa sổ (tô xanh). (b) Khi demo, các cửa sổ nối tiếp không chồng lấn, nên mỗi sự kiện thuộc đúng một cửa sổ; sự kiện nằm sát ranh giới vẫn chỉ thuộc một bên.}
+\figlegend{\textbf{Chú giải:} \swatch{cprep}{một cửa sổ}\quad \swatch{cdet}{cửa sổ chứa sự kiện đang xét}\quad \tikz[baseline=-0.6ex]\node[circle, fill=catk, inner sep=1.5pt]{};~một sự kiện trong log.}
+\label{fig:windows}
+\end{figure}
+
 Mỗi nút được sao riêng cho từng cửa sổ (tiền tố \texttt{w0007\_}), nên thống kê thời gian nghỉ bị chặn trên bởi độ dài cửa sổ (max idle trên tập huấn luyện là 290 giây). Đồng hồ của demo là thời gian sự kiện mới nhất trừ độ trễ cho phép 20 giây (sự kiện được sắp lại theo thời gian sự kiện); khi không có log mới thì chuyển sang đồng hồ của máy chủ. Cửa sổ bắt đầu trước khi bắt đầu thu thập được đánh dấu \emph{partial} và không chấm. \textbf{Giới hạn:} không khẳng định gì về chất lượng phát hiện trên toàn bộ log; tấn công kéo dài qua ranh giới cửa sổ bị nhìn thấy từng mảnh.
 
 % -----------------------------------------------------
@@ -505,7 +615,7 @@ với $s^{train}_{\min,\tau}, s^{train}_{\max,\tau}$ là điểm nhỏ nhất/l�
 \subsection{Bước LLM: phân loại trước, báo cáo sau}
 \label{sec:dev-llm}
 
-\tagpaper{} Thuật toán 2 coi mọi đồ thị con là một phần của tấn công và không bao giờ phân loại. \tagours{} Với mỗi cửa sổ đỏ, một prompt trung lập trước hết trả về kết luận dạng JSON (\emph{attack} / \emph{benign} / \emph{uncertain}, các tactic ATT\&CK, các dòng bằng chứng). Dòng bằng chứng phải xuất hiện nguyên văn trong tài liệu, nếu không kết luận bị hạ thành \emph{uncertain}. Chỉ khi kết luận là \emph{attack} thì mới chạy các prompt của bài báo (sao nguyên văn từ mã gốc): trích IOC $\rightarrow$ lọc ảo giác $\rightarrow$ báo cáo từng đồ thị con $\rightarrow$ (nếu có $\ge 2$ đồ thị con tấn công) IOC theo giai đoạn $\rightarrow$ báo cáo tổng hợp, tức Thuật toán~2 dòng 3--15.
+\tagpaper{} Thuật toán 2 coi mọi đồ thị con là một phần của tấn công và không bao giờ phân loại. \tagours{} Với mỗi cửa sổ đỏ, một prompt trung lập trước hết trả về kết luận dạng JSON (\emph{attack} / \emph{benign} / \emph{uncertain}, các tactic ATT\&CK, các dòng bằng chứng). Prompt này không giả định APT và dùng tactic ATT\&CK thay cho giai đoạn kill chain của APT, phù hợp với tấn công mục tiêu (Mục~\ref{sec:dev-attack}). Dòng bằng chứng phải xuất hiện nguyên văn trong tài liệu, nếu không kết luận bị hạ thành \emph{uncertain}. Chỉ khi kết luận là \emph{attack} thì mới chạy các prompt của bài báo (sao nguyên văn từ mã gốc): trích IOC $\rightarrow$ lọc ảo giác $\rightarrow$ báo cáo từng đồ thị con $\rightarrow$ (nếu có $\ge 2$ đồ thị con tấn công) IOC theo giai đoạn $\rightarrow$ báo cáo tổng hợp, tức Thuật toán~2 dòng 3--15. Các prompt này vẫn giữ nguyên cách gọi ``APT'' của bài báo; báo cáo vì thế có thể dùng từ ngữ APT cho một tấn công không phải APT.
 \begin{itemize}
     \item Không dùng vector store: tài liệu của một cửa sổ vừa trong prompt; tài liệu dài hơn 400 dòng bị cắt, ưu tiên các dòng chạm nút bất thường.
     \item Bỏ dòng 16--25 (LLM giám khảo chọn IOC, truy vấn graph DB, làm giàu báo cáo).
@@ -592,7 +702,7 @@ Trả lời RQ1. Với hoạt động lành tính (workload có seed và hoạt 
 Trả lời RQ2. Cửa sổ chứa tấn công có ít nhất một đồ thị con đạt Moderate, và đồ thị con đó chứa các thực thể của tấn công (ví dụ dịch vụ web sinh ra shell, tệp được thả, kết nối ra ngoài).
 
 \paragraph{Thiết lập.}
-Kịch bản: khai thác lỗ hổng \todoval[mã CVE] trên ứng dụng web chưa vá trong lab (\texttt{react2shell}) $\rightarrow$ thực thi mã từ xa $\rightarrow$ \todoval[các kỹ thuật ATT\&CK tiếp theo, ví dụ T1059 / T1105 / T1053]. Tấn công chạy song song với workload lành tính và tự ghi nhãn (Mục~\ref{sec:dev-labels}). Mốc Moderate giữ nguyên 30 như đã đặt trên dữ liệu lành tính; \emph{không} chỉnh mốc theo cửa sổ tấn công, vì như vậy là khớp ngưỡng theo dữ liệu kiểm thử.
+Kịch bản (Mục~\ref{sec:dev-attack}): khai thác lỗ hổng \todoval[mã CVE] trên ứng dụng web chưa vá trong lab (\texttt{react2shell}) $\rightarrow$ thực thi mã từ xa $\rightarrow$ khám phá hệ thống, duy trì truy cập, đánh cắp thông tin xác thực, kênh C2, rút dữ liệu \todoval[mã kỹ thuật ATT\&CK và thời điểm từng bước]. Tấn công chạy song song với workload lành tính và tự ghi nhãn (Mục~\ref{sec:dev-labels}). Mốc Moderate giữ nguyên 30 như đã đặt trên dữ liệu lành tính; \emph{không} chỉnh mốc theo cửa sổ tấn công, vì như vậy là khớp ngưỡng theo dữ liệu kiểm thử.
 
 \begin{table}[H]
 \centering
@@ -682,7 +792,8 @@ Nhà cung cấp và mô hình: \todoval. Số lần chạy lại mỗi cửa s�
 \begin{itemize}
     \item Dữ liệu lành tính hẹp; hoạt động nền chưa thấy lúc huấn luyện bị gắn cờ, và thang mức Moderate $\ge 30$ chỉ che dương tính giả đó.
     \item Ngưỡng nút $\theta$ nằm sát điểm huấn luyện lớn nhất (contamination 0.001), nên bất kỳ nút lành tính nào trong một ngữ cảnh mới đều dễ vượt ngưỡng.
-    \item Cửa sổ 5 phút cắt rời hành vi kéo dài; tấn công ``low and slow'' trải qua nhiều cửa sổ có thể không đạt mức cảnh báo ở cửa sổ nào.
+    \item Cửa sổ 5 phút cắt rời hành vi kéo dài; một tấn công có các bước rải ra nhiều cửa sổ có thể không đạt Moderate ở cửa sổ nào.
+    \item Chỉ trình diễn một loại tấn công trên một host; không khẳng định gì về APT hay tấn công nhiều host.
     \item Mốc 30 được đặt từ một cửa sổ lành tính và chưa kiểm chứng trên tấn công.
 \end{itemize}
 
