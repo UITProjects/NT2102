@@ -7,7 +7,8 @@ Wants=network-online.target
 Type=simple
 User={{ ansible_user }}
 WorkingDirectory={{ repo_dest }}
-Environment=PYTHONUNBUFFERED=1   # print the [live] lines to journalctl immediately
+# print the [live] lines to journalctl immediately (systemd allows no comment after a value)
+Environment=PYTHONUNBUFFERED=1
 # Mirrors serve.sh, but binds {{ server_bind }} (all interfaces) so it listens on the subnet IP.
 # Model = the repo's current-model pointer (`lab promote <run>`, then `sudo systemctl restart ocr-live`).
 ExecStart=/usr/local/bin/uv run python src/live/live_server.py --bind {{ server_bind }} --port {{ server_port }} --loki-url http://127.0.0.1:{{ loki_port }}
