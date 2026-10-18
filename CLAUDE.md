@@ -170,7 +170,7 @@ history of earlier progress) and, if relevant, this section.
 - VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (SilkETW, `etwctl`,
   copies `src/pipeline/etw2nodlink.py` / `etwwindow.py` / `src/live/etwship.py`), `win_alloy`
   (Alloy → Loki), `win_shipper` (`start-live.ps1`), `win_benign` (`src/scripts/06-benign-workload`,
-  `07-build-train-dataset`), `win_vulnlab`. Pre-Ansible provisioners 01–05, 08: `src/legacy/`.
+  `07-build-train-dataset`), `win_vulnlab`.
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that

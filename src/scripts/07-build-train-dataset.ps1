@@ -30,7 +30,7 @@
   Run in an ELEVATED PowerShell inside the VM's RDP/console desktop (not vagrant powershell / WinRM).
   Elevation is needed for SilkService; the workload still starts apps through explorer.exe, so they run
   un-elevated with explorer as parent, like a real user.
-  Needs etwwindow.py, installed by 05-collect-for-20-minutes.ps1 (run it once with -WindowOnly if missing).
+  Needs etwwindow.py, installed by the win_collector Ansible role.
 #>
 [CmdletBinding()]
 param(
@@ -212,9 +212,9 @@ function Invoke-Native([string]$Exe, [string[]]$ArgList, [int[]]$Ok = @(0)) {
 }
 
 # ---------------------------------------------------------------- config + tools
-$Cfg = Get-Content (Join-Path $LabDir 'etwlab.json') -Raw | ConvertFrom-Json   # written by 04-collector.ps1
+$Cfg = Get-Content (Join-Path $LabDir 'etwlab.json') -Raw | ConvertFrom-Json   # written by the win_collector role
 foreach ($p in @($Cfg.Python, $Cfg.Converter, $EtwctlPs1)) {
-    if (-not (Test-Path $p)) { throw "missing $p - re-run the collector provisioner" }
+    if (-not (Test-Path $p)) { throw "missing $p - re-run windows.yml (win_collector)" }
 }
 if (-not (Test-Path $WinPy)) { throw "missing $WinPy - run '05-collect-10-minutes-window.ps1 -WindowOnly' once to install it" }
 # install/refresh the checker only when its content changed (keeps the file's hash stable across runs)

@@ -4,7 +4,7 @@
     etwctl stop                                      stop the collector
     etwctl status                                    service state + current run file sizes
     etwctl convert -Split train|test                 raw\<split>\*\*.json -> <Graph>_<split>_*.csv
-  Settings come from C:\ProgramData\etwlab\etwlab.json (written by the collector provisioner).
+  Settings come from C:\ProgramData\etwlab\etwlab.json (written by the win_collector role).
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)][ValidateSet("start", "stop", "status", "convert")][string]$Command,

@@ -1,5 +1,5 @@
 ---
-# Collector install (native rewrite of scripts/02-tools.ps1 SilkETW part + scripts/04-collector.ps1).
+# Collector install: SilkETW, converter, etwctl, SilkService.
 # Installs SilkETW/SilkService, embeddable Python, deploys the converter/windowing tool/shipper/etwctl,
 # registers the service. The Python tools are copied byte-for-byte from src/pipeline and src/live, so
 # Get-FileHash on the VM (experiment.json tools.*) equals the sha engine.py load_converter computes.

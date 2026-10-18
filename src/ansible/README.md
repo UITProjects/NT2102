@@ -219,7 +219,7 @@ ansible.cfg  requirements.yml  requirements.txt  site.yml  windows.yml  ubuntu.y
 inventory.local.ini  inventory.cloud.ini.example
 group_vars/   all.yml  windows.yml  ubuntu.yml  vault.yml.example
 roles/
-  win_base        OS config (01-base.ps1 rewritten): net profile, UTC+7, no-sleep, RDP, folders, Defender
+  win_base        OS config: net profile, UTC+7, no-sleep, RDP, folders, Defender
   win_collector   SilkETW + VC++ + embeddable Python + etw2nodlink.py/etwwindow.py/etwship.py/etwctl + SilkService
   win_alloy       Grafana Alloy (native installer, service) + config.alloy -> Loki
   win_shipper     start-live.ps1 (start/stop a live test capture)

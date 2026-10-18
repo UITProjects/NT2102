@@ -11,7 +11,7 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 
 ## Done
 
-- Windows 10 ETW lab VM + collector + converter, end to end: `src/legacy/vagrant-provisioners/01..05*.ps1` + `src/scripts/06, 07` (now Ansible, `src/ansible/`).
+- Windows 10 ETW lab VM + collector + converter, end to end (Ansible, `src/ansible/`) + `src/scripts/06, 07`.
 - Benign train dataset, experiment `20261009T145632Z` (verified, `src/out/etw/experiments/20261009T145632Z/`):
   20-min capture, workload seed 42, launch mode explorer-com; 8 windows (5 min / 2 min stride);
   37,294 edges in → 68,319 windowed edges (484 outside any window); 6,810 node-window copies
@@ -25,11 +25,10 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   1 val (w0007); emb_std 0.05–0.19 for every type and seed; thresholds differ across seeds;
   train_flag_rate ≈ contamination (process 0.0017 = 1/575). Model saved from run 0 (seed 360).
 - Live path code (with `--selftest` each): `src/pipeline/score_window.py` (shared scorer),
-  `src/live/` (etwship.py shipper/replay, engine.py, live_server.py + UI, compare_replay.py),
-  `src/legacy/vagrant-provisioners/08-live-shipper.ps1` (replaced by Alloy → Loki). See `src/live/README.md`, DEVIATIONS D8.
+  `src/live/` (etwship.py shipper/replay, engine.py, live_server.py + UI, compare_replay.py). See `src/live/README.md`, DEVIATIONS D8.
 - Live path end to end (verified): session `live-20261011T105718Z` showed converter sha256 `match`,
   dos_map `\device\harddiskvolume4 → c:` from the VM, shipper PID excluded. First scored window
-  (`live-20261011T112141Z`, 11:25–11:30Z, VM running `03-workload.ps1`): 7,813 edges, 835 nodes, 19 flagged
+  (`live-20261011T112141Z`, 11:25–11:30Z, VM running the old server-install workload): 7,813 edges, 835 nodes, 19 flagged
   (2.3 %), all FILE (445 file nodes; process 0/147, net 0/243). 18 of the 19 are syswow64 DLLs loaded once
   by a short-lived `updater` process (0 `updater` processes in training; the DLLs themselves are in
   training). Identical score 0.3220 vs τ_file 0.2297 (train max 0.2312), so prob = 1 each (clamped).
@@ -77,7 +76,7 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   (test feed). Lab moved to Windows Server 2022 + Ubuntu trainer (Ansible, `src/ansible/`).
 - Improve loop (code + selftest, 2026-10-17): `lab` CLI (`src/lab/cli.py`): status / pull / train / loop /
   promote; one run folder per model; current-model pointer read by the live server, `serve.sh`,
-  `rejudge.sh` and `ocr-live`. Legacy provisioners moved to `src/legacy/`.
+  `rejudge.sh` and `ocr-live`.
 - Concepts: provenance graphs; GNN message passing.
 
 ## Invalid / needs redo
@@ -127,8 +126,6 @@ Model:
 - τ comes from training scores, so it sits at the training maximum (τ_file 0.2297 vs max 0.2312);
   any benign file in an unseen neighbourhood crosses it. Benign coverage is one 20-min scripted capture,
   so background jobs (e.g. the 32-bit `updater`) are unseen and get flagged.
-- `03-workload.ps1` is a provisioner (choco installs, config edits), not a benign generator: use
-  `06-benign-workload.ps1` for benign live tests.
 
 Data validation (LLM input):
 - NET attrs are SilkETW signed integers (`-1,707,025,385:-17663` = `23.220.64.154:443`); decoded only for
@@ -145,12 +142,8 @@ Code bugs found in the 2026-10-13 docs pass (verified in code, not fixed yet):
 - `etwship.py --speed` help says "0 = no sleep", but 0 hangs (see Live tooling); default is 60, `replay.sh` uses 120.
 - `build_node_labels.py` expects `node_id,type,name,timestamp`; the converter writes `node,node_type,node_attr`
   (no timestamp, types `PROCESS/FILE/NET`), and NET is checked as `network`. It cannot run as is.
-- `attack-lib.ps1` / `cleanup-all.ps1` import `C:\AtomicRedTeam\invoke-atomicredteam\*.psd1`, but `02-tools.ps1`
-  installs the module from PSGallery (`-Scope AllUsers`).
 - `selftest.sh` skips `encode_to_features.py --selftest`.
-- Runtime messages name old files: `07-build-train-dataset.ps1` ("05-collect-10-minutes-window.ps1") and `02-tools.ps1` ("Run base.ps1 first").
-- `02-tools.ps1` pins (`SilkZipSha256`, `InvokeArtVersion`, `AtomicsRef`) are still empty, so rebuilds
-  install "latest"; copy them from `lab-versions.json`.
+- Runtime message names an old file: `07-build-train-dataset.ps1` ("05-collect-10-minutes-window.ps1").
 - `src/Vagrantfile:13` names `./host-setup.sh`; the file is `src/setup-virtualbox.sh`.
 - `live_server.py --sg-moderate-from` hard-codes 30.0 instead of `alg1.MODERATE_FROM`.
 - Scenarios 05 (lsass handle access) and 09 (timestomp) may be invisible to the collector's file keywords

@@ -1,5 +1,5 @@
 ---
-# Base OS configuration for the collector VM (native rewrite of scripts/01-base.ps1). Idempotent.
+# Base OS configuration for the collector VM. Idempotent.
 
 - name: Set the lab (private_ip) network adapter to the Private profile
   # Public profile restricts the WinRM/RDP firewall rules; the host-only/subnet NIC must be Private.

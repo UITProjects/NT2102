@@ -66,7 +66,6 @@ trained model is never overwritten.
 | `out/` | local data: experiments pulled from Loki, raw captures | trainer / host | no |
 | `atomic-attack-pack/` | attack scenarios + labelling scheme | VM (isolated) | yes |
 | `notebooks/` | EDA notebooks, numbered in reading order | Jupyter | yes |
-| `legacy/` | replaced files kept for reference (Vagrant provisioners 01–05, the HTTP shipper 08); see `legacy/README.md` | — | yes |
 
 ## Start here (new member)
 
@@ -136,8 +135,7 @@ src/
 │   ├── etw/raw/{train,test}/   raw SilkETW captures (VM side)
 │   └── _old/                   early test captures and an un-windowed capture; do not train on them
 ├── atomic-attack-pack/       10 attack scenarios (Atomic Red Team + custom), LABELING.md, tools/
-├── notebooks/                EDA: 01-silketw-raw … 05-features-paper
-└── legacy/                   vagrant-provisioners/01–05, 08 + sync_ps1.py (legacy/README.md)
+└── notebooks/                EDA: 01-silketw-raw … 05-features-paper
 ```
 
 `artifacts/runs/exp01/train_meta.json` and `artifacts/features/*/feature_scaler.json` record the input

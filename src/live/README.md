@@ -77,22 +77,6 @@ uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train
     --split test --run live-replay1 --shift-to-now --speed 10
 ```
 
-## 5b. Live via the HTTP shipper (legacy, pre-Loki)
-
-Host: `./serve.sh` (binds 10.21.2.1). Only if ufw is active (find the interface with
-`ip -br addr | grep 10.21.2.1`): `sudo ufw allow in on vboxnet0 to 10.21.2.1 port 8000 proto tcp`.
-
-Kept for the Win10 Vagrant lab; the script is now `src/legacy/vagrant-provisioners/08-live-shipper.ps1`.
-VM, elevated PowerShell:
-```
-C:\scripts\08-live-shipper.ps1             # shell 1: capture + ship
-C:\scripts\06-benign-workload.ps1          # shell 2: benign activity, as in training
-```
-A window closes about 20 s (`--lateness-s`) after each 5-min boundary; the first one is `partial` and not
-scored. Benign windows should be mostly
-green (flag rate near the contamination rate, 0.1 %). Start the attack just after a boundary and watch
-that window.
-
 ### Alert rule (Alg. 1 + SG-Det, `src/pipeline/alg1.py`, DEVIATIONS D8)
 - Subgraph score = Σ prob over its anomalous nodes; prob = (score − train min) / (train max − train min), clamped to [0, 1].
 - Window is red only if ≥ 1 subgraph is ≥ Moderate = score ≥ 30 (our live scale; [AUTHOR CODE] is > 10).
