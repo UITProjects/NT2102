@@ -10,6 +10,7 @@
     dest: "{{ tools_dir }}\\alloy-installer-{{ alloy_version }}.exe"
     checksum: "{{ alloy_sha256 | regex_replace('^sha256:', '') or omit }}"
     checksum_algorithm: sha256
+    force: false   # version-pinned URL: do not re-download each run (idempotent)
 
 - name: Installed Alloy version
   ansible.windows.win_powershell:

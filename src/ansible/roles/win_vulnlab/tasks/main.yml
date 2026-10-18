@@ -4,12 +4,37 @@
 # it while the collector captures the provenance graph. This role installs and serves it; it contains
 # no exploit steps. Keep it OFF the public internet (subnet/host-only only).
 
-- name: Install Node.js LTS and git
+- name: Install git
   chocolatey.chocolatey.win_chocolatey:
-    name:
-      - nodejs-lts
-      - git
+    name: git
     state: present
+
+# Pin Node to a version Next 15.0.3 supports. The bare "nodejs-lts" package drifted to Node v24, whose
+# build worker OOM'd. An MSI *downgrade* over a newer Node fails (1603), so when a different version is
+# installed we uninstall first, then install the pin. Idempotent: once at the pin, both steps no-op.
+# node_version="" falls back to the latest LTS (no uninstall).
+- name: Check the installed Node version
+  ansible.windows.win_powershell:
+    script: |
+      try { $v = (& node --version 2>$null) } catch { $v = '' }
+      $Ansible.Result = @{ version = ($v | Out-String).Trim() }
+      $Ansible.Changed = $false
+  register: node_now
+  changed_when: false
+
+- name: Remove the non-pinned Node (the MSI blocks a direct downgrade)
+  chocolatey.chocolatey.win_chocolatey:
+    name: nodejs-lts
+    state: absent
+  when:
+    - (node_version | default('', true)) | length > 0
+    - (node_now.result.version | default('')) != ('v' ~ node_version)
+
+- name: Install Node.js {{ node_version | default('(latest LTS)', true) }}
+  chocolatey.chocolatey.win_chocolatey:
+    name: nodejs-lts
+    version: "{{ node_version | default(omit, true) }}"
+    state: "{{ 'present' if (node_version | default('', true)) else 'latest' }}"
 
 - name: Defender exclusion for the vulnlab dir
   ansible.windows.win_powershell:
@@ -40,6 +65,17 @@
   ansible.builtin.debug:
     msg: "Installed Node {{ vulnlab_engines.result.node | default('?') }}; app engines: {{ vulnlab_engines.result.engines | default('(none declared)') }}"
 
+- name: Neutralize Next 'standalone' output (its build-trace step OOMs on Windows; we serve with `next start`)
+  # `output: 'standalone'` triggers @vercel/nft file tracing, which runs the whole node_modules through a
+  # worker that exhausts V8 heap on this VM ("Fatal process out of memory: Zone" at "Collecting build
+  # traces"). start-vulnlab.cmd serves via `npm start` = `next start`, which uses .next/ directly and does
+  # NOT need standalone output, so disabling it removes the OOM with no change to how the app serves.
+  community.windows.win_lineinfile:
+    path: "{{ vulnlab_dir }}\\next.config.js"
+    regexp: "^\\s*output:\\s*'standalone',"
+    line: "  // output: 'standalone', // disabled by Ansible: standalone build-trace collection OOMs on Windows; served via `next start`"
+    backrefs: true   # only act when the active line matches; never append -> idempotent once commented
+
 - name: npm install (--legacy-peer-deps, required by the app's intentional version pinning)
   ansible.windows.win_command: npm.cmd install --legacy-peer-deps
   args:
@@ -49,15 +85,16 @@
     PATH: 'C:\Program Files\nodejs;{{ ansible_facts.env.PATH | default("") }}'
 
 - name: npm run build
-  # Known issue (2026-10-17, ws-etw): `next build` (Next 15.0.3 on Node v24 from nodejs-lts) dies with
-  # "JavaScript heap out of memory" in a build worker, over WinRM and as SYSTEM alike. Unresolved; the
-  # role is opt-in (vulnlab_enabled) because the demo target may already run elsewhere.
+  # The earlier "JavaScript heap out of memory" (Next 15.0.3 on Node v24) had two causes, both fixed:
+  # Node is now pinned to {{ node_version }} (a supported LTS), and NODE_OPTIONS lifts the V8 old-space
+  # cap for the build worker. The VM has 8 GB, so 4 GB of heap is safe.
   ansible.windows.win_command: npm.cmd run build
   args:
     chdir: "{{ vulnlab_dir }}"
     creates: "{{ vulnlab_dir }}\\.next\\prerender-manifest.json"   # written last; a crashed build leaves .next and BUILD_ID behind
   environment:
     PATH: 'C:\Program Files\nodejs;{{ ansible_facts.env.PATH | default("") }}'
+    NODE_OPTIONS: "--max-old-space-size=4096"
 
 - name: Deploy the vulnlab start script
   ansible.windows.win_copy:

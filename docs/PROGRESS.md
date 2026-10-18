@@ -1,4 +1,4 @@
-# PROGRESS (status as of 2026-10-17)
+# PROGRESS (status as of 2026-10-18)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 
@@ -51,10 +51,28 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   Plumbing verified with the keyword mock on a replay of `live-20261011T112141Z` (before the scale
   change; now needs `--sg-moderate-from 10.0001`): 1 red window (11:25 `updater`), verdict attached,
   `llm/` files written. No real LLM run yet (provider not chosen).
-- Attack pack + labelling scheme drafted: `src/atomic-attack-pack/` (10 scenarios, `LABELING.md`,
-  `tools/build_node_labels.py`). Not yet run.
+- Attack pack is now ONE attack: the RCE kill chain (`src/atomic-attack-pack/scenarios/rce-killchain.ps1`),
+  delivered from a Kali attacker VM (`tools/launch_exploit.py`; local-only Vagrant box, pack mounted at
+  `/opt/attack-pack`, not Ansible-managed). Kali exploits react2shell and the RCE shell runs Discovery
+  (T1033/T1082/T1057/T1016) → T1105 → T1053.005,
+  self-logging labels (`LABELING.md`, D6). Launcher `--selftest` passes on the host; the old 01–10
+  scenarios + orchestrator + local sink are removed.
+- Windows collector provisioned + verified on `ws-etw` via Ansible (2026-10-18): `ansible-playbook
+  windows.yml -e vulnlab_enabled=true` installs every tool — SilkETW/Python/converter/etwctl, Alloy,
+  `start-live.ps1`, benign `06`/`07`, and react2shell. New `src/ansible/verify-windows.yml` asserts all
+  present and react2shell serving HTTP 200 on :3000 (Node v22.11.0). **Idempotent: a 2nd run is
+  `changed=0`** (downloads now `force: no` + SilkETW/Python checksums pinned; Node is uninstall-then-install
+  guarded by installed version). react2shell build fix (`win_vulnlab`): uninstall the drifted Node v24 then
+  pin 22.11.0 (MSI blocks an in-place downgrade), `NODE_OPTIONS=4096`, and disable Next `output:'standalone'`
+  whose @vercel/nft trace step OOMs on Windows (we serve with `next start`, which doesn't need it).
+- Alloy → Loki data path verified end to end on `ws-etw` → `ubuntu-trainer` (2026-10-18): a 37 s test
+  capture shipped **losslessly** — Loki's per-provider counts equal the raw files (kproc 3372 / knet 223 /
+  kfile 28224), with labels job/host/split/run/provider correct and line JSON intact. (The provisioning-time
+  "Loki not reachable" warning was just Loki still initializing ~1 min after a trainer reboot; the trainer's
+  host-only NIC also needed a `vagrant reload` once.)
 - Log pipeline Alloy → Loki (code + selftests, 2026-10-17; Ubuntu side verified on `ubuntu-trainer`: lossless
-  pull, host build = VM build, live via Loki = offline 8/8 windows; Windows side not yet run): `win_alloy` / `ubuntu_loki` roles, `src/pipeline/loki_pull.py` (interactive / flags) →
+  pull, host build = VM build, live via Loki = offline 8/8 windows; Windows side verified 2026-10-18:
+  capture ships to Loki losslessly, counts match): `win_alloy` / `ubuntu_loki` roles, `src/pipeline/loki_pull.py` (interactive / flags) →
   `build_experiment.py`, `src/live/loki_source.py` (`live_server.py --loki-url`), `src/live/loki_push.py`
   (test feed). Lab moved to Windows Server 2022 + Ubuntu trainer (Ansible, `src/ansible/`).
 - Improve loop (code + selftest, 2026-10-17): `lab` CLI (`src/lab/cli.py`): status / pull / train / loop /
@@ -71,12 +89,14 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 - Data check (verified 2026-10-17): in capture `20261009T145632Z`, `kfile.json` only covers 14:56:33–14:57:40
   (67 s of a 20-min capture). FILE Read/Write edges come from that first minute. Check the next capture's
   per-provider time span before training on it.
-- Windows side of Alloy → Loki on `ws-etw` (user, by hand: checklist in `src/ansible/README.md`), then a
-  new benign train capture (07) pulled from Loki, retrain, and a new run replacing `exp01`.
+- New benign train capture (07) pulled from Loki, retrain, and a new run replacing `exp01`. (The
+  Alloy→Loki path itself is now verified end to end — see Done, 2026-10-18.)
 
-- CVE → RCE demo scenario (target attack for the end goal): exploit a lab service (e.g. Apache /
-  PostgreSQL installed by `03-workload.ps1`), then ATT&CK follow-on. The attack pack has only
-  Atomic/custom scripts today.
+- Run the RCE kill chain end to end: react2shell now builds + serves on :3000 (verified 2026-10-18).
+  Remaining: `vagrant up kali` (mounts the pack at `/opt/attack-pack`); confirm react2shell's real
+  injection vector from `C:\lab\react2shell` for the launcher's `--exploit-path/--exploit-field`; then
+  `python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000` during a live
+  session and check the window reaches ≥ Moderate (sg_score ≥ 30) while benign stays green.
 - Concepts 2 (rest) to 9. Phase 0 toy exercises; Phase 1 one-page paper summary + hyperparameter list.
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
@@ -151,6 +171,6 @@ Repo hygiene:
    `sg_score` per window, mean ± std over ~10 windows.
 2. Replay equivalence without the VM (`src/live/README.md` step 4, `--stride-min 2 --origin-ms
    1791557793343`); `compare_replay.py` must print `ALL MATCH`.
-3. End goal: run one Atomic scenario during a live session. Check that its window reaches ≥ Moderate
-   (sg_score ≥ 30). If not, the cut-off must stay above the benign max from step 1; record the outcome in
-   DEVIATIONS D8 (decided on benign data, confirmed on the attack, not tuned to it).
+3. End goal: run the RCE kill chain (`launch_exploit.py` from Kali) during a live session. Check that its window
+   reaches ≥ Moderate (sg_score ≥ 30). If not, the cut-off must stay above the benign max from step 1;
+   record the outcome in DEVIATIONS D8 (decided on benign data, confirmed on the attack, not tuned to it).

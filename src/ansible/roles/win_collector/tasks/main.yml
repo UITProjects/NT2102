@@ -17,6 +17,7 @@
     dest: "{{ tools_dir }}\\SilkETW_{{ silketw_tag }}.zip"
     checksum: "{{ silketw_sha256 | regex_replace('^sha256:', '') or omit }}"
     checksum_algorithm: sha256
+    force: false   # version-pinned URL: keep the existing file, do not re-download each run (idempotent)
   register: silk_dl
 
 - name: Report the SilkETW zip sha256 (pin silketw_sha256 to this)
@@ -61,6 +62,7 @@
     dest: "{{ tools_dir }}\\python-{{ python_embed_version }}-embed-amd64.zip"
     checksum: "{{ python_embed_sha256 | regex_replace('^sha256:', '') or omit }}"
     checksum_algorithm: sha256
+    force: false   # version-pinned URL: do not re-download each run (idempotent)
 
 - name: Extract embeddable Python
   community.windows.win_unzip:

@@ -36,22 +36,25 @@ vulnlab_enabled: false       # optional demo target; it may already run elsewher
 vulnlab_port: 3000
 vulnlab_repo: "https://github.com/hidden-investigations/react2shell-vulnlab.git"
 vulnlab_dir: 'C:\lab\react2shell'
+# The Kali attacker (exploit + RCE kill chain) is a local-only Vagrant box, NOT managed by Ansible: it
+# gets the attack pack via a synced-folder mount (src/Vagrantfile). No attacker vars here.
 
 # ---- pinned tool versions -------------------------------------------------------------------------
 silketw_tag: "v0.8"
 # v0.8 release asset. Pin the sha256 after the first download (printed by the role) to make it immutable.
 silketw_url: "https://github.com/mandiant/SilkETW/releases/download/v0.8/SilkETW_SilkService_v8.zip"
-silketw_sha256: ""          # e.g. "sha256:ABCD..." once pinned
+silketw_sha256: "sha256:6c612c406844c72cde51bcd0660ca6bb704656549043cb5a8b8bbba5fe3d8dc3"
 
 python_embed_version: "3.12.7"
 python_embed_url: "https://www.python.org/ftp/python/{{ python_embed_version }}/python-{{ python_embed_version }}-embed-amd64.zip"
-python_embed_sha256: ""     # pin after first download
+python_embed_sha256: "sha256:0d57bb6cb078b74d23dbfe91f77d6780d45bed328911609f1f7ee2ba1606bf44"
 
 alloy_version: "1.20.1"
 alloy_url: "https://github.com/grafana/alloy/releases/download/v{{ alloy_version }}/alloy-installer-windows-amd64.exe"
 alloy_sha256: "sha256:23fcfe3755f02e8a6a83f27149851322ab2b66d584e76d239d9c031f50d3a8f0"   # release SHA256SUMS
 
-node_version: "lts"          # chocolatey nodejs-lts; react2shell wants Node >= 18.18 (check package.json engines)
+node_version: "22.11.0"      # pinned Node 22 LTS (Next 15.0.3 supports 18.18+/20/22; "lts" drifted to v24,
+                             # whose build worker OOM'd — see win_vulnlab). Set "" to track the latest LTS.
 
 # ---- Windows lab paths ----------------------------------------------------------------------------
 graph_name: "SimulatedW10"   # the repo asserts the host name against a fixed list; keep this name

@@ -1,60 +1,26 @@
 {
   "pack": "ocr-apt-attack-pack",
-  "purpose": "Generate labeled 'attacked' telemetry for the OCR-APT (NT2102) reproduction, observable via SilkETW Kernel-Process/File/Network providers.",
+  "purpose": "The OCR-APT (NT2102) demo attack: exploit react2shell (RCE) from a Kali VM, then run a compact MITRE ATT&CK chain on the target, observable via SilkETW Kernel-Process/File/Network and self-labelled.",
   "host": "SimulatedW10",
   "label_file": "C:\\lab-labels\\attack-labels.jsonl",
-  "note": "ART test numbers drift between repo versions — confirm each with 'Invoke-AtomicTest <Txxxx> -ShowDetailsBrief' before relying on a number.",
+  "attacker": {
+    "vm": "kali",
+    "launcher": "tools/launch_exploit.py",
+    "input": "the vulnerable web URL (e.g. http://10.21.2.10:3000); the pack is mounted on Kali at /opt/attack-pack (Vagrant)",
+    "stage_endpoints": ["/attack-lib.ps1", "/killchain.ps1", "/tool.bin"],
+    "note": "react2shell's exact injection path/field is confirmed from C:\\lab\\react2shell at run time (launcher --exploit-path/--exploit-field), not baked in."
+  },
+  "note": "One scenario, custom steps only (no Atomic Red Team dependency). Whether its window reaches the SG-Det cut-off (one subgraph of ~>=30 anomalous nodes, DEVIATIONS D8) is confirmed on a capture, not tuned to the attack.",
   "scenarios": [
-    {"id": "01", "file": "scenarios/01-discovery.ps1", "tactic": "discovery",
-     "techniques": ["T1033","T1082","T1087.001","T1057"], "source": "atomic-red-team",
-     "node_types": ["process"], "admin": false,
-     "indicators": {"process": ["whoami.exe","systeminfo.exe","net.exe","tasklist.exe"], "file": [], "network": []}},
-
-    {"id": "02", "file": "scenarios/02-lolbin-exec.ps1", "tactic": "defense-evasion",
-     "techniques": ["T1218.011","T1218.010","T1218.005"], "source": "atomic-red-team",
-     "node_types": ["process","file","network"], "admin": false,
-     "indicators": {"process": ["rundll32.exe","regsvr32.exe","mshta.exe"], "file": [], "network": []}},
-
-    {"id": "03", "file": "scenarios/03-ingress-transfer.ps1", "tactic": "command-and-control",
-     "techniques": ["T1105"], "source": "custom",
-     "node_types": ["process","network","file"], "admin": false,
-     "indicators": {"process": ["powershell.exe"], "file": ["C:\\Users\\Public\\downloaded_tool.bin"], "network": ["<sink>:8888"]}},
-
-    {"id": "04", "file": "scenarios/04-persistence.ps1", "tactic": "persistence",
-     "techniques": ["T1053.005","T1547.001"], "source": "atomic-red-team",
-     "node_types": ["process","file"], "admin": "partial",
-     "indicators": {"process": ["schtasks.exe"], "file": ["C:\\Windows\\System32\\Tasks\\*","*\\Startup\\*"], "network": []}},
-
-    {"id": "05", "file": "scenarios/05-credential-access-lsass.ps1", "tactic": "credential-access",
-     "techniques": ["T1003.001"], "source": "atomic-red-team",
-     "node_types": ["process","file"], "admin": true,
-     "indicators": {"process": ["rundll32.exe"], "file": ["*\\lsass*.dmp"], "network": []}},
-
-    {"id": "06", "file": "scenarios/06-c2-beacon.ps1", "tactic": "command-and-control",
-     "techniques": ["T1071.001"], "source": "custom",
-     "node_types": ["process","network"], "admin": false,
-     "indicators": {"process": ["powershell.exe"], "file": [], "network": ["<sink>:8888"]}},
-
-    {"id": "07", "file": "scenarios/07-collection-staging.ps1", "tactic": "collection",
-     "techniques": ["T1005","T1074.001","T1560.001"], "source": "custom",
-     "node_types": ["process","file"], "admin": false,
-     "indicators": {"process": ["powershell.exe"], "file": ["C:\\Users\\Public\\stage\\*","C:\\Users\\Public\\exfil.zip"], "network": []}},
-
-    {"id": "08", "file": "scenarios/08-exfiltration.ps1", "tactic": "exfiltration",
-     "techniques": ["T1041"], "source": "custom",
-     "node_types": ["process","file","network"], "admin": false,
-     "indicators": {"process": ["powershell.exe"], "file": ["C:\\Users\\Public\\exfil.zip"], "network": ["<sink>:8888"]}},
-
-    {"id": "09", "file": "scenarios/09-defense-evasion.ps1", "tactic": "defense-evasion",
-     "techniques": ["T1070.001","T1070.006"], "source": "atomic-red-team",
-     "node_types": ["process","file"], "admin": true,
-     "indicators": {"process": ["wevtutil.exe","powershell.exe"], "file": ["C:\\Users\\Public\\*"], "network": []}},
-
-    {"id": "10", "file": "scenarios/10-apt-chain.ps1", "tactic": "full-kill-chain",
-     "techniques": ["T1082","T1053.005","T1003.001","T1071.001","T1560.001","T1041","T1070.001"], "source": "mixed",
-     "node_types": ["process","file","network"], "admin": true,
-     "indicators": {"process": ["systeminfo.exe","schtasks.exe","rundll32.exe","powershell.exe","wevtutil.exe"],
-                    "file": ["*\\lsass*.dmp","C:\\Users\\Public\\stage\\*","C:\\Users\\Public\\exfil.zip"],
-                    "network": ["<sink>:8888"]}}
+    {"id": "rce-killchain", "file": "scenarios/rce-killchain.ps1",
+     "tactics": ["initial-access","execution","discovery","command-and-control","persistence"],
+     "techniques": ["T1190","T1059.001","T1033","T1082","T1057","T1016","T1105","T1053.005"],
+     "source": "custom", "node_types": ["process","file","network"], "admin": false,
+     "delivery": "Kali exploits react2shell; the RCE shell (node.exe -> powershell) fetches + runs this script",
+     "indicators": {
+        "process": ["node.exe","powershell.exe","whoami.exe","systeminfo.exe","hostname.exe","tasklist.exe","ipconfig.exe","netstat.exe","net.exe","schtasks.exe"],
+        "file": ["C:\\Users\\Public\\downloaded_tool.bin","C:\\Windows\\System32\\Tasks\\UpdaterSync"],
+        "network": ["<attacker>:8080"]
+     }}
   ]
 }

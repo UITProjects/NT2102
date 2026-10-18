@@ -134,9 +134,12 @@ history of earlier progress) and, if relevant, this section.
   the trainer with the training converter code, scaler and relation list; the live clock is event time
   (newest event − lateness), with a host-clock fallback when idle (DEVIATIONS D8). The HTTP shipper
   (`etwship.py`) remains for replay only.
-- Collection lab: two VMs provisioned by Ansible (`src/ansible/`, cloud-portable via inventory): Windows
-  Server 2022 `ws-etw` (SilkETW/SilkService on Kernel-Process, Kernel-File, Kernel-Network + Alloy, no
-  training) and Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server). The Vagrantfile only
+- Collection lab: three VMs provisioned by Ansible (`src/ansible/`, cloud-portable via inventory): Windows
+  Server 2022 `ws-etw` (SilkETW/SilkService on Kernel-Process, Kernel-File, Kernel-Network + Alloy + the
+  react2shell vulnlab, no training), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
+  Kali `kali` (attacker: exploits react2shell + delivers the RCE kill chain, same host-only subnet;
+  LOCAL LAB ONLY and NOT Ansible-managed — it mounts `src/atomic-attack-pack` via a Vagrant synced
+  folder). The Vagrantfile only
   builds the bare VMs.
 - Target schema (NODLINK W10, as the repo expects): 3 node types `PROCESS`, `FILE`, `NET`
   (repo `database_config.py`), 6 edge types (Write, Read, Send, Recv, Start, Load), epoch-millisecond
@@ -172,7 +175,9 @@ history of earlier progress) and, if relevant, this section.
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
   `live_server.py`, `serve.sh`, `rejudge.sh` and `ocr-live` read.
-- Attack side: `src/atomic-attack-pack/` (scenarios 01–10, `LABELING.md`, `tools/build_node_labels.py`).
+- Attack side: `src/atomic-attack-pack/` — one RCE kill chain (`scenarios/rce-killchain.ps1`) delivered
+  from the Kali VM by `tools/launch_exploit.py` (pack mounted at `/opt/attack-pack` by Vagrant, not
+  Ansible); exploits react2shell then runs Discovery→T1105→T1053.005. `LABELING.md`, `tools/build_node_labels.py`.
 - Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py`
   (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
 - Host side: `src/pipeline/encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →

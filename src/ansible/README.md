@@ -7,6 +7,10 @@ Provisions the lab the Vagrantfile builds (or any two cloud VMs in one subnet):
 | `ws-etw` (`windows`) | 10.21.2.10 | SilkETW collector, **Grafana Alloy** (ships raw ETW to Loki), benign workload, react2shell vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
 | `ubuntu-trainer` (`ubuntu`) | 10.21.2.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
 
+> The lab also has a **Kali attacker VM** (`10.21.2.30`), but it is **not provisioned by Ansible** — it
+> is a local-only Vagrant box that mounts `src/atomic-attack-pack` at `/opt/attack-pack` via a synced
+> folder (`src/Vagrantfile`), and runs the exploit launcher directly. See that pack's `README.md`.
+
 ```
 SilkService -> C:\lab-out\etw\raw\<split>\<run>\{kproc,kfile,knet}.json
   -> Alloy (Windows service) -> Loki :3100 on the trainer  <- Grafana :3000 (browse / LogQL)
@@ -34,8 +38,18 @@ sum by (provider) (count_over_time({job="silketw", run="live-20261017T040000Z"}[
 ```
 
 > The react2shell app is a deliberately unpatched Next.js lab target, installed for **defensive
-> detection practice** in an isolated network. This role installs and serves it; the teammate runs the
-> exploit during the demo.
+> detection practice** in an isolated network. `win_vulnlab` installs and serves it (Node pinned to a
+> supported LTS so `next build` no longer OOMs); the local Kali box drives the exploit during the demo,
+> running the launcher from the mounted pack:
+>
+> ```bash
+> # on Kali (pack mounted at /opt/attack-pack by Vagrant):
+> python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000   # only input is the URL
+> python3 -I /opt/attack-pack/tools/launch_exploit.py --selftest                        # serve+fetch, no target
+> ```
+>
+> Confirm react2shell's real injection vector from `C:\lab\react2shell` and pass
+> `--exploit-path`/`--exploit-field`; the launcher warns while the placeholders are in use.
 
 > **Ports stay inside the subnet.** ufw enforces this on the trainer:
 > - Loki 3100: only from the Windows host.
