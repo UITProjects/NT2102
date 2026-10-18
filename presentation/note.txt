@@ -1,0 +1,42 @@
+Q&A NOTES (không trình chiếu; dùng khi khán giả hỏi)
+=====================================================
+
+Q1. Vì sao dùng RGCN mà không dùng GNN thường (GCN)?
+----------------------------------------------------
+Trả lời ngắn: vì loại edge mang nghĩa. GCN dùng chung MỘT trọng số W cho mọi neighbor, nên
+"rundll32 Load stage.dll" và "một process Write stage.dll" bị nhân cùng một trọng số, dù với
+người phân tích bảo mật đây là hai hành vi khác hẳn. RGCN có một trọng số W_r riêng cho mỗi
+loại edge (Write, Read, Send, Recv, Start, Load), mô hình tự học mỗi loại "kéo" bao nhiêu.
+[PAPER §5.1.1: RGCN "incorporating edge types during the embedding aggregation process"]
+
+Ví dụ (feature chỉ 1 số, cùng số với slide animation một lớp RGCN):
+  rundll32 h = 1, stage.dll h = 2, kernel32.dll h = 4, flow 203.0.113.50 h = 10
+  W_0 = 0.5 (chính nó), W_load = -0.2, W_write = 0.1, W_send = 0.02
+
+                       chính nó    2 file (trung bình 3)    flow             kết quả
+  Load (thật)          0.5 * 1     3 * (-0.2) = -0.6        10 * 0.02 = 0.2   0.1
+  Write (giả sử)       0.5 * 1     3 * 0.1    =  0.3        0.2               1.0
+
+Cùng neighbor, cùng feature, chỉ khác loại edge -> biểu diễn khác (0.1 so với 1.0).
+Với GCN (một W chung) hai trường hợp ra cùng một số, nên mô hình không phân biệt được.
+
+
+Q2. Mỗi lớp RGCN "nhìn xa" bao nhiêu? (ví dụ rundll32, vết 17 event ở ②)
+-------------------------------------------------------------------------
+Mỗi lớp nhìn xa thêm 1 bước trên đồ thị:
+  1 bước: powershell (start rundll32), stage.dll, kernel32.dll, flow 203.0.113.50
+  2 bước: stage.dll do chính powershell ghi ra; flow đó powershell cũng dùng; kernel32.dll chrome cũng nạp
+  3 bước: invoice.docm, explorer, chrome (đã tải invoice.docm)
+Sau 3 lớp, embedding Z của rundll32 mang thông tin từ cả chuỗi:
+  tài liệu -> powershell -> thả DLL -> rundll32 nạp -> gửi ra ngoài.
+[PAPER §7.2.1: 3 lớp RGCN, 32 chiều]
+
+
+Q3. Vì sao có 12 quan hệ, không phải 6?
+---------------------------------------
+6 loại edge (Write, Read, Send, Recv, Start, Load) + 6 quan hệ ngược (inv_load, inv_send, ...).
+Thông điệp chỉ chạy theo chiều edge (source -> destination). Edge "rundll32 Load stage.dll" chỉ đưa
+thông tin từ rundll32 sang stage.dll; quan hệ ngược inv_load cho chiều kia, nên rundll32 cũng nhận
+được thông tin từ stage.dll mà nó nạp.
+[REPO: mã gốc thêm "inv_<rel>" cho mỗi bộ ba; đồ án giữ nguyên, src/pipeline/train_gnn_models.py
+ lưu quan hệ ngược dạng "dst|inv_rel|src"]

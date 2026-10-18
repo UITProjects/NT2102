@@ -18,7 +18,7 @@ const benign = [[0.2, 0.3], [-0.4, 0.1], [0.1, -0.5], [-0.2, -0.3], [0.5, -0.1],
   <svg viewBox="0 0 680 260" class="hs">
     <circle :cx="X(0)" :cy="Y(0)" :r="S" class="sphere" />
     <circle :cx="X(0)" :cy="Y(0)" :r="1.3 * S" class="theta" />
-    <text :x="X(1.34) + 4" :y="Y(-0.55)" class="lbl muted">ngưỡng θ</text>
+    <text :x="X(1.34) + 4" :y="Y(-0.55)" class="lbl muted">threshold θ</text>
     <circle v-for="(p, i) in benign" :key="i" :cx="X(p[0])" :cy="Y(p[1])" r="4" class="ben"
             :style="{ animationDelay: `${i * 0.25}s` }" />
     <circle :cx="X(0)" :cy="Y(0)" r="3.5" fill="#111" />
@@ -34,7 +34,7 @@ const benign = [[0.2, 0.3], [-0.4, 0.1], [0.1, -0.5], [-0.2, -0.3], [0.5, -0.1],
     <g :class="['ex', { on: k >= 2 }]">
       <line :x1="X(0)" :y1="Y(0)" :x2="X(4.5)" :y2="Y(1.2)" class="far" />
       <circle :cx="X(4.6)" :cy="Y(1.2)" r="8" class="anom" />
-      <text x="392" :y="Y(1.2) + 40" class="lbl atk">Ví dụ 2: z = (3, 4), cách tâm 5</text>
+      <text x="392" :y="Y(1.2) + 40" class="lbl atk">Ví dụ 2: z = (3, 4), cách center 5</text>
       <text x="392" :y="Y(1.2) + 58" class="lbl atk">s = 25 − 1 = 24 &gt; θ ⇒ bất thường</text>
       <text x="392" :y="Y(1.2) + 74" class="tinylbl">(vẽ gần lại, không đúng tỉ lệ)</text>
     </g>

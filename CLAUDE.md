@@ -102,7 +102,7 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
 
 ## 8. Current direction (source of truth; change only when the user says so)
 
-- Scope: a proof of concept covering roughly 40% of the paper. Keeps OCR-APT's core idea
+- Scope: a proof of concept of the paper's core (no coverage percentage: user, 2026-10-18). Keeps OCR-APT's core idea
   (per-node-type one-class RGCN on behavior features over a provenance graph) but is not an exact
   reproduction.
 - Current focus: the live detection demo. A valid training run (`runs/exp01`) and the live path
@@ -188,6 +188,14 @@ history of earlier progress) and, if relevant, this section.
   `src/live/sessions/<id>/` (raw copy + per-window CSV/JSON; gitignored). NODLINK data: `dataset/nodlink/`.
 - EDA notebooks: `src/notebooks/01-silketw-raw` … `05-features-paper` (numbered in reading order).
 - Explainer page (edges → features): `docs/explainers/`.
+- Deliverables (Vietnamese text, technical terms kept in English):
+  - Report: `latex/` (`main.tex` title page + preamble, `contents.tex` body, `ref.bib`; build with
+    `latexmk -pdf main.tex`).
+  - Slides: `presentation/` (Slidev; `slides.md`; Vue diagrams in `components/`: `RgcnLayer` one-layer
+    animation, `HiddenLayers`, `Hypersphere`, `OurPipeline`, `Windows`, `AttackGraph`; Q&A backup in
+    `note.txt`). `npm run dev` / `npx slidev build`; check layout with
+    `npx slidev export --format png [--range N] [--with-clicks]`. Max 30 slides; the text cites slide
+    numbers ("slide 19"), so re-check them whenever slides are added or removed.
 - Root shortcuts: `selftest.sh`, `serve.sh`, `replay.sh`, `rejudge.sh` (wrap the documented commands).
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.

@@ -38,6 +38,7 @@
 .card.inv { background: #fff7ed; border-color: #fdba74; }     /* LLM step */
 .card.atk { background: #fef2f2; border-color: #fca5a5; }     /* attack / limits */
 .card.neutral { background: #f8fafc; }
+.card.det { background: #eff4fe; border-color: #a5b8ef; }     /* detection (GNN) step */
 
 .small { font-size: 0.85rem; }
 .tiny { font-size: 0.75rem; }
@@ -98,3 +99,12 @@ tr.slidev-vclick-hidden { transform: none; }
 
 /* Sub-items under a numbered agenda entry. */
 .slidev-layout ol ul { padding-left: 1.4rem; }
+
+/* Final feature matrix (slide ② Kết quả): 15 numeric columns, zeros shown as a dot. */
+table.feat { font-size: 0.68rem; font-family: 'JetBrains Mono', monospace; }
+table.feat th, table.feat td { padding: 0.18rem 0.3rem; text-align: right; }
+table.feat th.g { text-align: center; font-family: 'Be Vietnam Pro', sans-serif; }
+table.feat td.n { text-align: left; }
+table.feat td.z { color: #cbd5e1; }
+table.feat tr.hl td { background: #f8fafc; font-weight: 700; }
+table.feat td.hot { background: #fef2f2; color: var(--c-atk); font-weight: 700; }

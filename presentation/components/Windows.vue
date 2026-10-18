@@ -18,7 +18,7 @@ const dh = (m: number) => { const t = 11 * 60 + 25 + m; return `${Math.floor(t /
 <template>
   <svg viewBox="0 0 830 330" class="wn">
     <!-- (a) training -->
-    <text x="20" y="18" class="ttl">(a) Huấn luyện: cửa sổ trượt (dài 5 phút, bước 2 phút)</text>
+    <text x="20" y="18" class="ttl">(a) Huấn luyện: sliding window (dài 5 phút, bước 2 phút)</text>
     <line :x1="X(0)" y1="44" :x2="X(11.3)" y2="44" class="axis" />
     <g v-for="m in [0, 2, 4, 6, 8, 10]" :key="m">
       <line :x1="X(m)" y1="40" :x2="X(m)" y2="48" class="axis" />
@@ -35,7 +35,7 @@ const dh = (m: number) => { const t = 11 * 60 + 25 + m; return `${Math.floor(t /
 
     <!-- (b) demo -->
     <g :class="['part', { on: showB }]">
-      <text x="20" y="208" class="ttl">(b) Demo trực tiếp: cửa sổ lật (dài 5 phút, nối tiếp, thẳng hàng đồng hồ)</text>
+      <text x="20" y="208" class="ttl">(b) Demo trực tiếp: tumbling window (dài 5 phút, nối tiếp, thẳng hàng đồng hồ)</text>
       <line :x1="X(0)" y1="246" :x2="X(11.3)" y2="246" class="axis" />
       <g v-for="m in [0, 5, 10]" :key="m">
         <line :x1="X(m)" y1="242" :x2="X(m)" y2="250" class="axis" />
@@ -47,8 +47,8 @@ const dh = (m: number) => { const t = 11 * 60 + 25 + m; return `${Math.floor(t /
       <text :x="X(7.5)" y="292" class="wl">[11:30, 11:35)</text>
       <circle :cx="X(4.85)" cy="246" r="5" class="ev" />
       <circle :cx="X(5.15)" cy="246" r="5" class="ev" />
-      <text :x="X(4.8)" y="234" class="evl l">11:29:59.9 → cửa sổ trước</text>
-      <text :x="X(5.2)" y="234" class="evl r">11:30:00.0 → cửa sổ sau</text>
+      <text :x="X(4.8)" y="234" class="evl l">11:29:59.9 → window trước</text>
+      <text :x="X(5.2)" y="234" class="evl r">11:30:00.0 → window sau</text>
     </g>
   </svg>
 </template>

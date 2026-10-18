@@ -11,15 +11,15 @@ const H = 44
 
 interface B { id: string, x: number, y: number, c: string, t: string, s: string, n?: number }
 const boxes: B[] = [
-  { id: 'etw', x: 0, y: 0, c: 'prep', t: 'SilkETW', s: 'log nhân: tiến trình, tệp, mạng' },
+  { id: 'etw', x: 0, y: 0, c: 'prep', t: 'SilkETW', s: 'kernel log: process, file, network' },
   { id: 'alloy', x: 0, y: -1.8, c: 'prep', t: 'Grafana Alloy', s: 'gửi nguyên văn từng dòng' },
   { id: 'loki', x: 3.6, y: 0, c: 'prep', t: 'Loki', s: 'kho log (nhãn: run, provider)' },
-  { id: 's1', x: 7.0, y: 0, c: 'prep', t: 'Đồ thị + cửa sổ 5 phút', s: 'lược đồ NODLINK W10', n: 1 },
-  { id: 's2', x: 10.4, y: 0, c: 'prep', t: '15 đặc trưng hành vi', s: 'thang đo của tập train', n: 2 },
-  { id: 's3', x: 10.4, y: -1.8, c: 'det', t: 'OCRGCN theo loại nút', s: 'chấm điểm từng nút', n: 3 },
-  { id: 's4', x: 7.0, y: -1.8, c: 'det', t: 'Alg. 1 + lọc điểm', s: 'đồ thị con ≥ 30?', n: 4 },
+  { id: 's1', x: 7.0, y: 0, c: 'prep', t: 'Graph + window 5 phút', s: 'lược đồ NODLINK W10', n: 1 },
+  { id: 's2', x: 10.4, y: 0, c: 'prep', t: '15 behavior feature', s: 'thang đo của tập train', n: 2 },
+  { id: 's3', x: 10.4, y: -1.8, c: 'det', t: 'OCRGCN theo loại node', s: 'chấm điểm từng node', n: 3 },
+  { id: 's4', x: 7.0, y: -1.8, c: 'det', t: 'Alg. 1 + lọc điểm', s: 'subgraph ≥ 30?', n: 4 },
   { id: 's5', x: 3.6, y: -1.8, c: 'inv', t: 'LLM: phân loại + báo cáo', s: '(tuỳ chọn)', n: 5 },
-  { id: 'ui', x: 7.0, y: -3.6, c: 'out', t: 'Giao diện web', s: 'cửa sổ xanh / đỏ' },
+  { id: 'ui', x: 7.0, y: -3.6, c: 'out', t: 'Giao diện web', s: 'window xanh / đỏ' },
 ]
 const at = Object.fromEntries(boxes.map(b => [b.id, b]))
 const cx = (id: string) => X(at[id].x)
