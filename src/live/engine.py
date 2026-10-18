@@ -142,7 +142,7 @@ class Engine:
         self.lateness_ms = int(lateness_s * 1000)
         self.origin_ms = int(origin_ms)
         self.top_k = top_k
-        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate; [REPO] min_nodes 3;
+        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate; [AUTHOR CODE] min_nodes 3;
         # [OURS] Moderate from sg_score 30 (DEVIATIONS D8)
         self.sg = {"n_seed": n_seed, "min_nodes": min_nodes, "max_edges": max_edges,
                    "min_level": sg_min_level, "min_score": sg_min_score, "moderate_from": sg_moderate_from}

@@ -34,14 +34,14 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   by a short-lived `updater` process (0 `updater` processes in training; the DLLs themselves are in
   training). Identical score 0.3220 vs τ_file 0.2297 (train max 0.2312), so prob = 1 each (clamped).
 - Alg. 1 + SG-Det (code + selftest, verified on real data 2026-10-12): `src/pipeline/alg1.py` (in memory,
-  [REPO] score = Σ clamped min-max prob, keep ≥ Moderate), used by `engine.py`; flags in
+  [AUTHOR CODE] score = Σ clamped min-max prob, keep ≥ Moderate), used by `engine.py`; flags in
   `live_server.py`; UI shows level/score and greys subgraphs below the cut-off. The saved exp01 models
   reproduce `train_scores.csv` (max |diff| 1.3e-5), so the prob range is valid. Replay of
   `live-20261011T112141Z` through the live server: 11 scored windows, 5 with nodes above τ → 1 red
   (11:25 `updater`, 18 DLLs, score 18.0, Moderate). Other windows ≤ Minor (max 5.83). `alg1.py
   --session-dir` re-judges saved sessions without the VM.
 - [OURS] live level scale (2026-10-13, DEVIATIONS D8): Moderate from sg_score 30 (`--sg-moderate-from`,
-  [REPO] > 10). Re-judged replay: 11:25 `updater` = Minor → 0 red windows of 10.
+  [AUTHOR CODE] > 10). Re-judged replay: 11:25 `updater` = Minor → 0 red windows of 10.
 - VM crash 2026-10-11 18:02 diagnosed (verified in `journalctl -k`, `VBox.log.1`): not OOM, a VirtualBox
   VMSVGA segfault in `libnvidia-glcore.so.595.84` (3D acceleration). Fixed: `accelerate3d off` on
   `w10-etw` and in `src/Vagrantfile`.

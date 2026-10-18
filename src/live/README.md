@@ -95,7 +95,7 @@ that window.
 
 ### Alert rule (Alg. 1 + SG-Det, `src/pipeline/alg1.py`, DEVIATIONS D8)
 - Subgraph score = Σ prob over its anomalous nodes; prob = (score − train min) / (train max − train min), clamped to [0, 1].
-- Window is red only if ≥ 1 subgraph is ≥ Moderate = score ≥ 30 (our live scale; [REPO] is > 10).
+- Window is red only if ≥ 1 subgraph is ≥ Moderate = score ≥ 30 (our live scale; [AUTHOR CODE] is > 10).
   Subgraphs below the cut-off are still listed (dashed buttons in the UI).
 - Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate --sg-moderate-from 30 [--sg-min-score X]`.
 - Try another cut-off on a saved session without the VM: `./rejudge.sh <id> "" --sg-moderate-from 10.0001`

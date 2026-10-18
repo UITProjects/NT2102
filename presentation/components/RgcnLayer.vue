@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One RGCN layer for rundll32, one click per step (same toy numbers as the "Vì sao RGCN" slide).
-// [REPO] OCR-APT/src/pygod/nn/rgcn_conv.py: aggr='mean' inside each edge type, results summed across
+// [AUTHOR CODE] OCR-APT/src/pygod/nn/rgcn_conv.py: aggr='mean' inside each edge type, results summed across
 // types, plus the node's own term (root = W0), then ReLU (pygod/nn/ocrgcn.py l.139).
 import { computed } from 'vue'
 import { useSlideContext } from '@slidev/client'

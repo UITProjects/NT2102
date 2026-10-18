@@ -12,7 +12,7 @@ which one reflects the intent.
 2. Before answering about the pipeline, read the relevant code. Cite file + line when relying on it.
 3. The paper PDF in the repo (`OCR-APT/OCR_APT_paper_preprint_extended_version.pdf`) is the source
    for [PAPER] claims; the upstream repo (github.com/CoDS-GCS/OCR-APT, submodule `OCR-APT/`) is the
-   source for [REPO] claims. Cite section / table / algorithm line.
+   source for [AUTHOR CODE] claims. Cite section / table / algorithm line.
 4. Never mark something done because it is listed here. Progress counts only when the user says so
    or it is verified in code/data.
 
@@ -59,7 +59,8 @@ either side.
 - Do not ask check questions unprompted (user, 2026-10-13). Quizzing happens only in QUIZ mode.
 - Tag statements:
   - [PAPER] what the paper states
-  - [REPO] what upstream code does (only if verified in files)
+  - [AUTHOR CODE] what the authors' upstream code (github.com/CoDS-GCS/OCR-APT) does (only if
+    verified in files). Never write [REPO]: it reads as this project's own repo.
   - [OURS] what this project does differently
   - [INFERENCE] interpretation or guess. Never present a guess as fact.
 
@@ -213,8 +214,8 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
   window-based validation split, patience-based early stop, deterministic seeds.
 - Labels: indicator + time oracle from injected attacks, not analyst ground truth.
 - Live inference: clock-aligned tumbling windows, partial windows not scored, shipper PID excluded,
-  no cross-window dedup. Alg. 1 runs in memory per window with the [REPO] subgraph score (Σ clamped
-  min-max prob, not the paper text's "sum of scores"), [OURS] level scale (Moderate from score 30, [REPO] > 10), no top-k fallback.
+  no cross-window dedup. Alg. 1 runs in memory per window with the [AUTHOR CODE] subgraph score (Σ clamped
+  min-max prob, not the paper text's "sum of scores"), [OURS] level scale (Moderate from score 30, [AUTHOR CODE] > 10), no top-k fallback.
 - LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
   Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
 

@@ -41,8 +41,8 @@ Học kì 2026–2027
 
 **Thành viên**<br/>
 Ngô Vũ Minh Đạt – 26848033@grad.uit.edu.vn<br/>
-Nguyễn Long Vũ – 250202060@ms.uit.edu.vn<br/>
-Trần Quang Kiệt – 26848108@ms.uit.edu.vn
+Nguyễn Long Vũ – 250202060@grad.uit.edu.vn<br/>
+Trần Quang Kiệt – 26848108@grad.uit.edu.vn
 
 </div>
 </div>
@@ -74,7 +74,8 @@ Trần Quang Kiệt – 26848108@ms.uit.edu.vn
 
 <div class="tiny muted mt-10">
 
-Nhãn nguồn dùng xuyên suốt: <span class="tag paper">PAPER</span> bài báo · <span class="tag repo">REPO</span> mã nguồn gốc · <span class="tag ours">OURS</span> nhóm làm khác · <span class="tag inf">INFERENCE</span> suy luận chưa kiểm chứng
+Nhãn nguồn dùng xuyên suốt: <span class="tag paper">PAPER</span> bài báo OCR-APT · <span class="tag ours">OURS</span> đồ án làm khác (mã của nhóm, <code>src/</code>) · <span class="tag inf">INFERENCE</span> suy luận chưa kiểm chứng<br>
+<span class="tag repo">AUTHOR CODE</span> mã nguồn công khai của nhóm tác giả, <code>github.com/CoDS-GCS/OCR-APT</code> (gọi tắt "mã gốc")
 
 </div>
 
@@ -116,55 +117,48 @@ Khai thác vulnerability (CVE: Common Vulnerabilities and Exposures, mã lỗ h�
 </div>
 
 ---
+clicks: 4
+---
 
 # Kiến thức nền: Graph Neural Network (GNN) là gì?
 
-<div class="grid gap-6 mt-1" style="grid-template-columns: 1fr 1.15fr">
+<div class="grid gap-6 mt-1" style="grid-template-columns: 0.75fr 1.6fr">
 <div class="small">
 
 ### Dữ liệu là đồ thị
-- **Node** (thực thể) có một vectơ feature, **edge** nối các node
+- **Node** (thực thể) có một **vectơ** $h$: một dãy số mô tả node
+- **Edge** nối các node
 - Mô hình ML thường coi mỗi hàng **độc lập**: không biết hàng nào nối với hàng nào
 - Đồ thị thì mỗi node có **số neighbor khác nhau**, không có thứ tự cố định
-
-```mermaid {scale: 0.7}
-flowchart LR
-  B((B: 4)) --- A((A: 2))
-  C((C: 0)) --- A
-  A --- D((D: 1))
-  classDef me fill:#dbe4fb,stroke:#1e3a8a,stroke-width:2px
-  class A me
-```
 
 </div>
 <div class="small">
 
 ### Ý tưởng cốt lõi: message passing (truyền thông điệp)
-Mỗi lớp GNN, **mọi node** cập nhật vectơ của mình từ chính nó + trung bình các neighbor:
+Mỗi lớp GNN, **mọi node** cập nhật vectơ của mình từ chính nó + các neighbor:
 
-$$h_A' = \text{ReLU}\big(\,w_{self}\cdot h_A + w_{nb}\cdot \text{mean}(h_{\text{neighbor}})\,\big)$$
-
-<div class="tiny muted text-center">"Cập nhật" = <b>cộng</b> hai phần (chính nó + trung bình neighbor), mỗi phần nhân trọng số riêng · ReLU (Rectified Linear Unit): giữ số dương, số âm thành 0</div>
-
-<v-clicks>
-
-- Ví dụ: $w_{self}=0.5$, $w_{nb}=1$; A có $h=2$, neighbor B, C, D = 4, 0, 1 → mean $=5/3\approx1.67$ → $h_A' = 1 + 1.67 =$ **2.67**
-- Nếu neighbor là $-6, -2, -1$ → mean $=-3$ → $1 - 3 = -2$ → ReLU → **0**: cùng node A, khác neighbor → khác vectơ
-
-</v-clicks>
+<MessagePassing />
 
 </div>
 </div>
 
-<div v-click class="cmp small mt-3">
+---
+clicks: 4
+---
+
+# Xếp nhiều lớp GNN: hidden layer là gì?
+
+<StackedLayers />
+
+<div v-click="4" class="cmp small mt-1">
 <div class="card det">
 
-**Xếp $L$ lớp = nhìn xa $L$ bước.** Trọng số $w$ dùng **chung cho mọi node** và được học từ dữ liệu, giống trọng số của mạng nơ-ron thường.
+**Hidden layer** = vectơ của node **sau mỗi lớp**: do mô hình tự tính, không có trong log. Xếp $L$ lớp = nhìn xa $L$ bước; OCR-APT dùng **3 lớp** <span class="tag paper">PAPER §7.2.1</span>.
 
 </div>
 <div class="card ours">
 
-**Đầu ra:** mỗi node một vectơ **embedding** (biểu diễn dạng số) mô tả cả node lẫn vùng xung quanh nó → dùng để phân loại hoặc **phát hiện bất thường** (cách OCR-APT dùng ở ③).
+**Đầu ra:** hidden layer cuối = **embedding**, mô tả node + vùng xung quanh (A mang cả màu của E) → dùng để **phát hiện bất thường** (③).
 
 </div>
 </div>
@@ -206,7 +200,7 @@ clicks: 4
 <div class="cmp small">
 <div>
 
-- Node có đúng một loại: `PROCESS`, `FILE`, `NET` <span class="tag repo">REPO</span>
+- Node có đúng một loại: `PROCESS`, `FILE`, `NET` <span class="tag repo">AUTHOR CODE</span>
 - Edge có loại + thời gian: `Start` `Load` `Read` `Write` `Send` `Recv`; chủ thể luôn là process
 
 </div>
@@ -344,7 +338,7 @@ clicks: 5
 
 <div class="small mt-2 text-center">
 
-1 lớp = nhìn xa thêm **1 bước** trên đồ thị · <span class="tiny muted">bài báo chỉ nói "aggregate"; mean/sum theo mã gốc <code>rgcn_conv.py</code></span> <span class="tag repo">REPO</span>
+1 lớp = nhìn xa thêm **1 bước** trên đồ thị · <span class="tiny muted">bài báo chỉ nói "aggregate"; mean/sum theo mã gốc <code>rgcn_conv.py</code></span> <span class="tag repo">AUTHOR CODE</span>
 
 </div>
 
@@ -368,7 +362,7 @@ $$\mathbf{h}_i^{(l+1)} = {\color{#a51d1d}\sigma}\Big( {\color{#1e40af}W_0^{(l)} 
 
 <div class="small mt-2 text-center">
 
-Trong một loại edge: **mean**. Giữa các loại edge và phần của chính nó: **sum**. Cuối cùng: ReLU (trừ lớp cuối) <span class="tag repo">REPO</span>
+Trong một loại edge: **mean**. Giữa các loại edge và phần của chính nó: **sum**. Cuối cùng: ReLU (trừ lớp cuối) <span class="tag repo">AUTHOR CODE</span>
 
 </div>
 
@@ -456,7 +450,7 @@ $$s_i = \|\mathbf{z}_i - \mathbf{c}\|_2^2 - R^2$$
 | 100 – 1 000 | Significant | Có |
 | > 1 000 | Critical | Có |
 
-<div class="tiny muted">Thang của bài báo §7.2.1. Đồ án dùng Moderate từ 30 (slide 19).</div>
+<div class="tiny muted">Thang của bài báo §7.2.1. Đồ án dùng Moderate từ 30 (slide 20).</div>
 
 </div>
 </div>
@@ -483,7 +477,7 @@ $$s_i = \|\mathbf{z}_i - \mathbf{c}\|_2^2 - R^2$$
 <div v-click class="card inv">
 
 - Bộ điều tra **luôn giả định** subgraph là tấn công; **không phân loại** tấn công / benign
-- Đồ án dùng **bước 1–5** và thêm một bước phân loại trước (slide 20)
+- Đồ án dùng **bước 1–5** và thêm một bước phân loại trước (slide 21)
 
 </div>
 </div>
@@ -555,7 +549,7 @@ Ký hiệu $[t, t+5)$: gồm $t$, **không** gồm $t+5$ <span class="tag ours">
 <div class="cmp small">
 <div>
 
-Điểm thô $s_i$ khác thang giữa các loại node (NET có thể âm), nên văn bản bài báo ("tổng điểm") không cộng thẳng được. Mã gốc cộng **xác suất min-max**; đồ án làm theo <span class="tag repo">REPO</span>:
+Điểm thô $s_i$ khác thang giữa các loại node (NET có thể âm), nên văn bản bài báo ("tổng điểm") không cộng thẳng được. Mã gốc cộng **xác suất min-max**; đồ án làm theo <span class="tag repo">AUTHOR CODE</span>:
 
 $$p_i = \operatorname{clamp}\!\left(\frac{s_i - s^{train}_{\min,\tau}}{s^{train}_{\max,\tau} - s^{train}_{\min,\tau}},\,0,\,1\right),\qquad score(sg)=\sum_{i\ \text{bất thường}} p_i$$
 

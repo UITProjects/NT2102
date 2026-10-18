@@ -129,12 +129,12 @@ def main():
                    help="no new line for this long -> the clock follows host time (default 2 x lateness)")
     g = ap.add_argument_group("Alg. 1 / SG-Det (src/pipeline/alg1.py)")
     g.add_argument("--n-seed", type=int, default=15, help="[PAPER] seed nodes per node type")
-    g.add_argument("--min-nodes", type=int, default=3, help="[REPO] smallest subgraph kept by construction")
+    g.add_argument("--min-nodes", type=int, default=3, help="[AUTHOR CODE] smallest subgraph kept by construction")
     g.add_argument("--max-edges", type=int, default=5000, help="[PAPER] max_e; larger subgraphs are split (0 = no cap)")
     g.add_argument("--sg-min-level", default="Moderate", choices=["Negligible", "Minor", "Moderate", "Significant", "Critical"],
                    help="window alerts only if a subgraph reaches this level (Moderate = score >= --sg-moderate-from)")
     g.add_argument("--sg-moderate-from", type=float, default=30.0,
-                   help="[OURS] Moderate starts at this subgraph score (default 30; [REPO] scale: 10.0001)")
+                   help="[OURS] Moderate starts at this subgraph score (default 30; [AUTHOR CODE] scale: 10.0001)")
     g.add_argument("--sg-min-score", type=float, default=None,
                    help="[OURS] numeric cut-off instead of the level (alert if sg_score > X); calibrate on BENIGN sessions")
     g = ap.add_argument_group("LLM triage + attack report after SG-Det (src/pipeline/alg2.py)")

@@ -45,7 +45,7 @@
 .muted { color: #6b7280; }
 .atk { color: var(--c-atk); }
 
-/* Source tags, as in the report: PAPER / REPO / OURS / INFERENCE. */
+/* Source tags, as in the report: PAPER / AUTHOR CODE / OURS / INFERENCE. */
 .tag {
   display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; font-weight: 700;
   padding: 0 0.3rem; border-radius: 3px; vertical-align: 0.12em; letter-spacing: 0.02em;

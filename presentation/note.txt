@@ -38,5 +38,31 @@ Q3. Vì sao có 12 quan hệ, không phải 6?
 Thông điệp chỉ chạy theo chiều edge (source -> destination). Edge "rundll32 Load stage.dll" chỉ đưa
 thông tin từ rundll32 sang stage.dll; quan hệ ngược inv_load cho chiều kia, nên rundll32 cũng nhận
 được thông tin từ stage.dll mà nó nạp.
-[REPO: mã gốc thêm "inv_<rel>" cho mỗi bộ ba; đồ án giữ nguyên, src/pipeline/train_gnn_models.py
+[AUTHOR CODE: mã gốc thêm "inv_<rel>" cho mỗi bộ ba; đồ án giữ nguyên, src/pipeline/train_gnn_models.py
  lưu quan hệ ngược dạng "dst|inv_rel|src"]
+
+
+Q4. Nhãn AUTHOR CODE là mã của ai?
+----------------------------------
+Mã nguồn công khai của nhóm tác giả bài báo: https://github.com/CoDS-GCS/OCR-APT (trong slide gọi
+tắt "mã gốc"). Không phải mã của nhóm: mã của đồ án nằm trong thư mục src/ và được gắn nhãn OURS khi
+làm khác. Dùng AUTHOR CODE khi bài báo không nói rõ chi tiết (ví dụ phép mean/sum trong RGCN, cách
+tính điểm subgraph) và nhóm đã đọc trực tiếp file của tác giả.
+
+
+Q5. Cho ví dụ có số của message passing (slide "GNN là gì?")
+-------------------------------------------------------------
+Mỗi node 1 số cho dễ tính; w_self = 0.5, w_nb = 1.
+A có h_A = 2, neighbor B, C, D = 4, 0, 1 -> mean = 5/3 ≈ 1.67
+  h'_A = ReLU(0.5·2 + 1·1.67) = ReLU(2.67) = 2.67
+Nếu neighbor là -6, -2, -1 -> mean = -3
+  h'_A = ReLU(1 - 3) = ReLU(-2) = 0
+Cùng node A, khác neighbor -> khác vectơ mới. Ví dụ đầy đủ với loại edge: slide rundll32 (RgcnLayer).
+
+
+Q6. Vì sao không xếp 10 lớp cho nhìn xa hơn?
+---------------------------------------------
+Mỗi lớp lấy trung bình với neighbor. Xếp quá nhiều lớp thì vectơ của mọi node bị trộn đến mức gần
+giống nhau (over-smoothing: trên slide "Xếp nhiều lớp", các màu sẽ thành cùng một màu xám), nên
+không còn phân biệt được node bất thường. OCR-APT dùng 3 lớp [PAPER §7.2.1]: đủ thấy chuỗi
+process -> file -> process -> mạng.

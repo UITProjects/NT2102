@@ -2,16 +2,16 @@
 """
 alg2.py - LLM step after SG-Det: [OURS] attack / false-positive triage, then OCR-APT Algorithm 2 l.3-15
 (attack reports) for subgraphs judged an attack. ONE scored window, in memory.
-[REPO] l.N = upstream ocrapt_llm_investigator.py; prompts from llm_prompt.py.
+[AUTHOR CODE] l.N = upstream ocrapt_llm_investigator.py; prompts from llm_prompt.py.
 
     kept subgraphs (alg1.construct, kept = True) + the window's edges
-      -> serialize    one log document per subgraph                    Alg. 2 l.3     [REPO] l.245-280
+      -> serialize    one log document per subgraph                    Alg. 2 l.3     [AUTHOR CODE] l.245-280
       -> triage       [OURS] neutral prompt -> JSON verdict attack | benign | uncertain, ATT&CK tactics,
                       evidence lines (each must appear verbatim in the document, else dropped)
       -> if attack:   extract IOCs -> drop IOCs not in the document -> attack report
-                                                                       Alg. 2 l.5-10  [REPO] l.456-517
+                                                                       Alg. 2 l.5-10  [AUTHOR CODE] l.456-517
       -> if >= 2 attack subgraphs: IOCs per APT stage -> comprehensive report
-                                                                       Alg. 2 l.12-15 [REPO] l.396-430
+                                                                       Alg. 2 l.12-15 [AUTHOR CODE] l.396-430
       -> window verdict: attack if any subgraph is attack; else uncertain if any is uncertain / error;
                          else false_positive. uncertain and error keep the window red.
 
@@ -54,7 +54,7 @@ def display_time(iso_utc: str) -> str:
         return str(iso_utc)
     return dt.astimezone(DISPLAY_TZ).strftime("%Y-%m-%d %H:%M")
 
-# --------------------------------------------------------------------------- [REPO] prompts, verbatim
+# --------------------------------------------------------------------------- [AUTHOR CODE] prompts, verbatim
 # OCR-APT/src/llm_prompt.py (= paper App. B). Kept byte-for-byte so the report step gets the paper's input.
 APT_STAGES = ["Initial Compromise", "Internal Reconnaissance", "Command and Control", "Privilege Escalation",
               "Lateral Movement", "Maintain Persistence", "Data Exfiltration", "Covering Tracks"]
@@ -159,7 +159,7 @@ def rule_mock_responder(system, messages):
 
 class OpenAICompatible:
     """OpenAI chat completions; also Ollama through its OpenAI-compatible /v1 endpoint.
-    temperature 0 + fixed seed as [PAPER] §7.5 / [REPO] l.135."""
+    temperature 0 + fixed seed as [PAPER] §7.5 / [AUTHOR CODE] l.135."""
 
     def __init__(self, model, base_url=None, api_key=None):
         try:
@@ -255,10 +255,10 @@ def display_attr(attr, ntype: str) -> str:
 
 
 def serialize(sg: dict, edges: pd.DataFrame, max_lines: int = 400) -> dict:
-    """One subgraph -> log document in the [REPO] format (prepare_document l.266-280):
+    """One subgraph -> log document in the [AUTHOR CODE] format (prepare_document l.266-280):
 
         "<subject> <ACTION> the <object type> : <object> on YYYY-MM-DD HH:MM. \\n", with " (N times)" before
-        " on" when the action repeats in that minute. N counts distinct SECONDS ([REPO] drops duplicates
+        " on" when the action repeats in that minute. N counts distinct SECONDS ([AUTHOR CODE] drops duplicates
         within one second first, l.259-262, then counts per minute).
 
     sg: alg1 subgraph dict (nodes with id/type/attr/role); edges: normalised window edges (one row per event).
@@ -299,7 +299,7 @@ def serialize(sg: dict, edges: pd.DataFrame, max_lines: int = 400) -> dict:
 
 # --------------------------------------------------------------------------- validation helpers
 def extract_ioc_list(text: str) -> list:
-    """[REPO] extract_IOC_list l.519: first [...] in the answer, parsed as a Python literal."""
+    """[AUTHOR CODE] extract_IOC_list l.519: first [...] in the answer, parsed as a Python literal."""
     m = re.search(r"\[.*\]", text or "", re.S)
     if not m:
         return []
@@ -311,7 +311,7 @@ def extract_ioc_list(text: str) -> list:
 
 
 def filter_hallucinations(iocs: list, doc_text: str) -> tuple[list, list]:
-    """[REPO] detect_and_filter_hallucination l.505: keep an IOC only if it occurs (case-insensitive
+    """[AUTHOR CODE] detect_and_filter_hallucination l.505: keep an IOC only if it occurs (case-insensitive
     substring) in the document. Returns (kept, dropped); duplicates removed, order kept."""
     low = doc_text.lower()
     kept, dropped = [], []

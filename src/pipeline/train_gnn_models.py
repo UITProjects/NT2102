@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 train_gnn_models.py - train one OCRGCN per node type on benign data (simplified from upstream
-OCR-APT/src/train_gnn_models.py; [REPO] l.N refers to that file).
+OCR-APT/src/train_gnn_models.py; [AUTHOR CODE] l.N refers to that file).
 
     benign edges CSV (NODLINK schema) + features_model.csv (from encode_to_features.py)
     -> one heterogeneous graph with inverse relations
@@ -48,7 +48,7 @@ def normalise_edges(df: pd.DataFrame) -> pd.DataFrame:
     df["destination-id"] = df["destination-id"].astype(str)
     df["source-type"] = df["source-type"].astype(str).str.strip().str.lower()
     df["destination-type"] = df["destination-type"].astype(str).str.strip().str.lower()
-    # [REPO] transform_to_RDF.py l.90 keeps text after the last "/"; encode_to_PyG strips EVENT_ and lower-cases
+    # [AUTHOR CODE] transform_to_RDF.py l.90 keeps text after the last "/"; encode_to_PyG strips EVENT_ and lower-cases
     df["edge-type"] = (df["edge-type"].astype(str).str.split("/").str[-1]
                        .str.replace("EVENT_", "", regex=False).str.lower())
     return df
@@ -86,7 +86,7 @@ def build_graph(edges: pd.DataFrame, relations: list[str] | None = None):
     nodes = nodes.sort_values(["node_type", "node_uuid"]).reset_index(drop=True)  # deterministic order
     idx = pd.Series(np.arange(len(nodes)), index=nodes["node_uuid"])
 
-    # [REPO] relations are keyed by (src_type, edge_type, dst_type) triples (encode_to_PyG.py l.463),
+    # [AUTHOR CODE] relations are keyed by (src_type, edge_type, dst_type) triples (encode_to_PyG.py l.463),
     # and train_gnn_models.py l.519-522 adds an inverse relation "inv_<rel>" for every triple.
     # Multi-edges are kept (one edge per event), as in encode_to_PyG.py l.463-470 (no dedup there).
     key = edges["source-type"] + "|" + edges["edge-type"] + "|" + edges["destination-type"]
@@ -129,7 +129,7 @@ def load_features(path: str, nodes: pd.DataFrame, scaler_path: str | None):
 def make_split(nodes: pd.DataFrame, a) -> np.ndarray:
     """Per node: 'train' | 'val' | 'purged'.
 
-    [REPO] encode_to_PyG.py l.102 (--training-valid): random 15 % of training nodes -> validation.
+    [AUTHOR CODE] encode_to_PyG.py l.102 (--training-valid): random 15 % of training nodes -> validation.
     [OURS] default is a split by window: nodes are window-prefixed, so a window is its own
     connected component and message passing never crosses windows. Holding out whole windows
     avoids leakage through shared neighbours; purging the windows that overlap the held-out one
@@ -212,9 +212,9 @@ def train_one_type(x, edge_index, edge_type, num_rel, train_idx, val_idx, a, see
 
     [PAPER] §5.1.2 each model is trained on one node type but aggregates from all neighbour types:
     the encoder runs on the FULL graph, the loss uses only this type's training nodes.
-    [REPO] same pattern: split_per_node_type() sets masks for the target type only (l.222-235).
+    [AUTHOR CODE] same pattern: split_per_node_type() sets masks for the target type only (l.222-235).
     """
-    seed_everything(seed)                                       # [REPO] l.632, once per node type
+    seed_everything(seed)                                       # [AUTHOR CODE] l.632, once per node type
     model = OCRGCN(x.size(1), a.hidden, a.layers, num_rel, a.dropout, a.beta)
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)         # [INFERENCE] PyGOD default: Adam, wd=0
     q = 1.0 - a.contamination
@@ -228,7 +228,7 @@ def train_one_type(x, edge_index, edge_type, num_rel, train_idx, val_idx, a, see
         loss = model.loss(emb[train_idx])                       # scalar
         loss.backward()
         opt.step()
-        if epoch < a.warmup:                                    # [REPO] --warmup 2 (l.45)
+        if epoch < a.warmup:                                    # [AUTHOR CODE] --warmup 2 (l.45)
             model.update_center_radius(emb.detach()[train_idx])
             continue                                            # c moving -> no validation yet
 
@@ -278,7 +278,7 @@ def sha256(path):
 
 
 def run(a):
-    torch.use_deterministic_algorithms(True, warn_only=True)    # [REPO] l.22 (warn_only: [OURS])
+    torch.use_deterministic_algorithms(True, warn_only=True)    # [AUTHOR CODE] l.22 (warn_only: [OURS])
     edges = normalise_edges(pd.read_csv(a.edges, dtype={"source-id": str, "destination-id": str}))
     nodes, edge_index, edge_type, relations = build_graph(edges)
     x, feat_cols = load_features(a.features, nodes, a.scaler)
@@ -304,7 +304,7 @@ def run(a):
             rows.append({"run": r, "seed": seed, "node_type": ntype, "n_train": len(tr), "n_val": len(va), **st})
             print(f"  {ntype:<10} n_train={len(tr):<6} n_val={len(va):<6} best_ep={st['best_epoch']:<3} "
                   f"thr={st['threshold']:.5f} val_fpr={st['val_fpr']:.4f} emb_std={st['emb_std']:.4f}")
-            if r == 0:                                          # [REPO] models saved from run 0 only (l.666)
+            if r == 0:                                          # [AUTHOR CODE] models saved from run 0 only (l.666)
                 torch.save({"state_dict": model.state_dict(), "threshold": st["threshold"],
                             "in_dim": x.size(1), "hid_dim": a.hidden, "num_layers": a.layers,
                             "num_relations": R, "beta": a.beta, "contamination": a.contamination},
@@ -389,7 +389,7 @@ def parse_args(argv=None):
     p.add_argument("--val-windows", type=int, default=1)
     p.add_argument("--purge-windows", type=int, default=2, help="ceil(window/stride) - 1")
     p.add_argument("--val-frac", type=float, default=0.15, help="only for --val-split random")
-    # model: [PAPER] §7.2.1 3 RGCN layers, 32-d, lr 0.005, beta 0.5; [REPO] warmup 2, epochs 100, dropout 0
+    # model: [PAPER] §7.2.1 3 RGCN layers, 32-d, lr 0.005, beta 0.5; [AUTHOR CODE] warmup 2, epochs 100, dropout 0
     p.add_argument("--layers", type=int, default=3)
     p.add_argument("--hidden", type=int, default=32)
     p.add_argument("--lr", type=float, default=0.005)
@@ -400,7 +400,7 @@ def parse_args(argv=None):
     p.add_argument("--contamination", type=float, default=0.001, help="[PAPER] Min_con when no labels")
     p.add_argument("--patience", type=int, default=5)
     p.add_argument("--runs", type=int, default=3)
-    p.add_argument("--seed", type=int, default=360, help="[REPO] l.728")
+    p.add_argument("--seed", type=int, default=360, help="[AUTHOR CODE] l.728")
     p.add_argument("--verbose", action="store_true")
     a = p.parse_args(argv)
     if not a.selftest and not (a.edges and a.features):

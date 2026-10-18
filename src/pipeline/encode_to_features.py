@@ -25,13 +25,13 @@ import sys
 import numpy as np
 import pandas as pd
 
-# [REPO] database_config.py l.85-86 + l.91-94: action vocabulary for SimulatedW10, in this order,
+# [AUTHOR CODE] database_config.py l.85-86 + l.91-94: action vocabulary for SimulatedW10, in this order,
 # each expanded to out_<a>, in_<a>. Order matters: it is the column order of the feature tensor.
 ACTIONS = ["write", "read", "send", "recv", "start", "load"]
 ACTION_COLS = [f"{d}_{a}" for a in ACTIONS for d in ("out", "in")]          # 12 columns
-# [REPO] encode_to_PyG.py l.178-180: idle columns are inserted in this order (avg, max, min).
+# [AUTHOR CODE] encode_to_PyG.py l.178-180: idle columns are inserted in this order (avg, max, min).
 IDLE_COLS = ["avg_idle_time", "max_idle_time", "min_idle_time"]             # 3 columns
-# [REPO] l.167-168: SimulatedW10 gaps are divided by 1000 -> the repo assumes epoch MILLISECONDS.
+# [AUTHOR CODE] l.167-168: SimulatedW10 gaps are divided by 1000 -> the repo assumes epoch MILLISECONDS.
 TS_DIVISOR_TO_SECONDS = {"ns": 1e9, "us": 1e6, "ms": 1e3, "s": 1.0}
 REQUIRED = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
 WINDOW_RE = re.compile(r"^(w\d+)_")                                          # etwwindow prefix "w0007_"
@@ -47,7 +47,7 @@ def load_edges(path: str) -> pd.DataFrame:
 
 def normalise_edges(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=REQUIRED).copy()
-    # [REPO] transform_to_RDF.py l.89-90 keeps the part after the last "/" for SimulatedW10,
+    # [AUTHOR CODE] transform_to_RDF.py l.89-90 keeps the part after the last "/" for SimulatedW10,
     # then encode_to_PyG.py l.142 strips "EVENT_" and lower-cases.
     df["edge-type"] = (df["edge-type"].astype(str).str.split("/").str[-1]
                        .str.replace("EVENT_", "", regex=False).str.lower())
@@ -56,7 +56,7 @@ def normalise_edges(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def check_vocabulary(edges: pd.DataFrame) -> None:
-    # [REPO] an unknown edge type raises KeyError at l.147 (dict has no such key). We fail loudly too,
+    # [AUTHOR CODE] an unknown edge type raises KeyError at l.147 (dict has no such key). We fail loudly too,
     # but with a readable list, because silently dropping edges would bias every count.
     unknown = edges.loc[~edges["edge-type"].isin(ACTIONS), "edge-type"].value_counts()
     if len(unknown):
@@ -77,7 +77,7 @@ def node_table(edges: pd.DataFrame) -> pd.DataFrame:
 
 
 def action_counts(edges: pd.DataFrame, index: pd.Index) -> pd.DataFrame:
-    """[REPO] l.147-148: each edge adds +1 to out_<type> of its source and +1 to in_<type> of its
+    """[AUTHOR CODE] l.147-148: each edge adds +1 to out_<type> of its source and +1 to in_<type> of its
     destination. Vectorised here with groupby instead of the repo's row loop. Shape (N, 12), ints."""
     out = edges.groupby(["source-id", "edge-type"]).size().unstack(fill_value=0).add_prefix("out_")
     inn = edges.groupby(["destination-id", "edge-type"]).size().unstack(fill_value=0).add_prefix("in_")
@@ -87,7 +87,7 @@ def action_counts(edges: pd.DataFrame, index: pd.Index) -> pd.DataFrame:
 
 
 def idle_stats(edges: pd.DataFrame, index: pd.Index, ts_unit: str) -> pd.DataFrame:
-    """[REPO] l.150-157 + l.159-201 with --get-idle-time and WITHOUT --get-cumulative-active-time
+    """[AUTHOR CODE] l.150-157 + l.159-201 with --get-idle-time and WITHOUT --get-cumulative-active-time
     (so EVERY gap counts as idle, l.175). [PAPER] §5.1.2: min/max/avg duration between a node's actions.
     Returns float seconds, shape (N, 5): avg/max/min idle + n_events + active_span_s."""
     # every edge timestamp belongs to BOTH endpoints (a self-loop therefore contributes a 0 s gap, as in the repo)
@@ -105,13 +105,13 @@ def idle_stats(edges: pd.DataFrame, index: pd.Index, ts_unit: str) -> pd.DataFra
         # EDA helper, NOT a model feature: first-to-last event of this node
         "active_span_s": (g["ts"].max() - g["ts"].min()) / TS_DIVISOR_TO_SECONDS[ts_unit],
     })
-    # [REPO] l.192-196: nodes with a single event get 0 for all three (no gap exists).
+    # [AUTHOR CODE] l.192-196: nodes with a single event get 0 for all three (no gap exists).
     # Note: this makes "seen once" look identical to "always busy" - worth checking in EDA via n_events.
     return stats.reindex(index).fillna({c: 0.0 for c in IDLE_COLS})
 
 
 def l2_normalise(counts: pd.DataFrame) -> pd.DataFrame:
-    """[PAPER] §5.1.2 / [REPO] l.233 sklearn normalize(norm='l2', axis=1):
+    """[PAPER] §5.1.2 / [AUTHOR CODE] l.233 sklearn normalize(norm='l2', axis=1):
     x_i <- x_i / sqrt(sum_j x_j^2), per node (row). Every node has >=1 edge, so the norm is never 0."""
     norm = np.sqrt((counts.astype(float) ** 2).sum(axis=1))             # (N,)
     return counts.div(norm.replace(0, 1.0), axis=0)                      # (N, 12), each row has L2 norm 1
@@ -122,7 +122,7 @@ def fit_minmax(idle: pd.DataFrame) -> dict:
 
 
 def apply_minmax(idle: pd.DataFrame, params: dict) -> pd.DataFrame:
-    """[REPO] l.236-237 MinMaxScaler: (x - min) / (max - min). Zero range -> 0, like sklearn.
+    """[AUTHOR CODE] l.236-237 MinMaxScaler: (x - min) / (max - min). Zero range -> 0, like sklearn.
     Values outside the fitted range (test/live data) fall outside [0, 1]; that is expected."""
     out = pd.DataFrame(index=idle.index)
     for c in IDLE_COLS:
@@ -140,7 +140,7 @@ def build_features(edges, ts_unit="ms", repo_rounding=True, scaler=None):
     raw = nodes.join(counts).join(idle)                                  # (N, 2+12+5)
 
     idle_for_model = idle[IDLE_COLS].copy()
-    if repo_rounding:  # [REPO] l.178-180 int(round(...)): sub-second gaps collapse to 0 s
+    if repo_rounding:  # [AUTHOR CODE] l.178-180 int(round(...)): sub-second gaps collapse to 0 s
         idle_for_model = idle_for_model.round().astype("int64")
     scaler = scaler or fit_minmax(idle_for_model)
     model = nodes.join(l2_normalise(counts)).join(apply_minmax(idle_for_model, scaler))
@@ -164,7 +164,7 @@ def summarise(edges, raw, ts_unit):
     print(f"[INFO] timestamp span = {span:,.1f} s (if --ts-unit is right, this should match your capture length)")
     print(f"[INFO] nodes per type:\n{raw['node_type'].value_counts().to_string()}")
     zero_cols = [c for c in ACTION_COLS if raw[c].sum() == 0]
-    if zero_cols:  # [REPO] l.204 would DROP these columns -> feature dimension would depend on the data
+    if zero_cols:  # [AUTHOR CODE] l.204 would DROP these columns -> feature dimension would depend on the data
         print(f"[INFO] all-zero action columns (kept here, dropped by the repo): {zero_cols}")
     single = (raw["n_events"] == 1).mean()
     print(f"[INFO] {single:.1%} of nodes have a single event -> idle stats forced to 0")
