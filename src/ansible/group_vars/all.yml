@@ -38,6 +38,8 @@ vulnlab_repo: "https://github.com/digininja/DVWA.git"
 vulnlab_dir: 'C:\lab\DVWA'   # served at the Apache DocumentRoot, so the exploit path is /vulnerabilities/exec/
 xampp_package: "xampp-81"    # Chocolatey package: Apache + PHP 8.1 + MariaDB bundle
 dvwa_db_name: "dvwa"         # DVWA schema; created at provision time (DVWA builds tables via setup.php)
+dvwa_db_user: "dvwa"         # DVWA on MariaDB needs a dedicated app user (its README); NOT root
+dvwa_db_password: "p@ssw0rd" # lab-only DB password on a host-only network; DVWA's documented default
 # The Kali attacker (exploit + RCE kill chain) is a local-only Vagrant box, NOT managed by Ansible: it
 # gets the attack pack via a synced-folder mount (src/Vagrantfile). No attacker vars here.
 

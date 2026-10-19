@@ -5,11 +5,14 @@
   gather_facts: true
   # Credentials: local mode reads win_user/win_password from inventory.local.ini (public box defaults).
   # Cloud mode supplies them from the vault: add `-e @group_vars/vault.yml --ask-vault-pass`.
+  # Each role carries a tag so a single stage can be run alone, e.g.
+  #   ansible-playbook windows.yml --tags vulnlab -e vulnlab_enabled=true     # only DVWA
+  #   ansible-playbook windows.yml --tags collector,alloy                     # only those two
+  # Running with no --tags still does everything (unchanged default).
   roles:
-    - win_base        # OS config: network profile, UTC+7 clock, no-sleep, RDP, folders, Defender
-    - win_collector   # SilkETW/SilkService + embeddable Python + converter + etwctl + etwship
-    - win_alloy       # Grafana Alloy (native): raw SilkETW lines -> Loki on the trainer
-    - win_shipper     # start-live.ps1: start/stop a live (test) capture; Alloy ships it
-    - win_benign      # scripted benign workload generator (green windows for the demo)
-    - role: win_vulnlab   # XAMPP + DVWA on {{ vulnlab_port }}; optional: -e vulnlab_enabled=true
-      when: vulnlab_enabled | bool
+    - { role: win_base,      tags: [base] }       # OS config: network profile, UTC+7 clock, no-sleep, RDP, folders, Defender
+    - { role: win_collector, tags: [collector] }  # SilkETW/SilkService + embeddable Python + converter + etwctl + etwship
+    - { role: win_alloy,     tags: [alloy] }       # Grafana Alloy (native): raw SilkETW lines -> Loki on the trainer
+    - { role: win_shipper,   tags: [shipper] }     # start-live.ps1: start/stop a live (test) capture; Alloy ships it
+    - { role: win_benign,    tags: [benign] }      # scripted benign workload generator (green windows for the demo)
+    - { role: win_vulnlab,   tags: [vulnlab], when: vulnlab_enabled | bool }   # XAMPP + DVWA on {{ vulnlab_port }}; -e vulnlab_enabled=true

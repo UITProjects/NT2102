@@ -54,18 +54,24 @@
 - name: Restart now if the config changed (so the check below sees the new pipeline)
   ansible.builtin.meta: flush_handlers
 
+# Loki is Alloy's push target but NOT required to provision the collector — this is a soft check only
+# (failed_when: false). Keep it FAST: a short per-request timeout + few retries so an off/aborted trainer
+# (or one still replaying its WAL right after boot) degrades to a quick warning in ~15s, not ~4 minutes of
+# win_uri connection timeouts. Logs still ship once the trainer is up; this task does not gate anything.
 - name: Loki reachable from this VM (Alloy's push target)
   ansible.windows.win_uri:
     url: "{{ loki_url }}/ready"
     return_content: true
+    timeout: 4          # cap each attempt; an unreachable host otherwise hangs on the default 30s
   register: loki_from_vm
   until: loki_from_vm.status_code == 200
-  retries: 10
-  delay: 3
+  retries: 3            # brief tolerance for a just-booted Loki; not a hard wait (it is only a warning)
+  delay: 2
   failed_when: false
 
 - name: Report Loki reachability
   ansible.builtin.debug:
     msg: >-
       {{ 'Loki ready at ' ~ loki_url if (loki_from_vm.status_code | default(0)) == 200 else
-         'WARNING: Loki not reachable at ' ~ loki_url ~ ' - provision the Ubuntu side first (site.yml --limit ubuntu)' }}
+         'WARNING: Loki not reachable at ' ~ loki_url ~ ' - the Ubuntu trainer is likely off; start it with '
+         ~ '`vagrant up ubuntu-trainer` (or provision it: site.yml --limit ubuntu). Collector still installs fine.' }}

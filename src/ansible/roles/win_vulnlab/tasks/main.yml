@@ -11,10 +11,20 @@
     name: git
     state: present
 
+# XAMPP's Bitnami unattended installer HANGS when C:\xampp already exists: it re-launches, runs ~20 min
+# with almost no CPU, then stalls. So skip the choco install whenever XAMPP is already on disk — this is
+# idempotent and cloud-safe (a baked/snapshotted image keeps its XAMPP, and choco still has the package
+# recorded). The guard only bypasses the slow installer, nothing else.
+- name: Check whether XAMPP is already installed
+  ansible.windows.win_stat:
+    path: 'C:\xampp\apache\bin\httpd.exe'
+  register: xampp_httpd
+
 - name: Install XAMPP (Apache + PHP + MariaDB)
   chocolatey.chocolatey.win_chocolatey:
     name: "{{ xampp_package }}"
     state: present
+  when: not xampp_httpd.stat.exists
   register: xampp_install
 
 - name: Defender exclusions for XAMPP and the DVWA dir
@@ -35,29 +45,34 @@
         $Ansible.Changed = $false
       }
 
-# DVWA ships config.inc.php.dist; copy it to the live config once, then set the DB + security level.
-- name: Seed DVWA config from the template (once)
+# Render DVWA's config.inc.php from a COMPLETE template instead of line-editing config.inc.php.dist.
+# The upstream .dist now writes each value as `getenv('X') ?: 'default'`, and surgical win_lineinfile
+# edits (esp. with backrefs) corrupt those lines. win_copy compares content, so this is idempotent AND
+# self-heals a previously corrupted config. `define('MYSQL',...)` must precede the SQLI_DB line (as in
+# the .dist). Lab creds only; host-only network. DVWA on MariaDB needs a dedicated user (see schema task).
+- name: Render DVWA config.inc.php
   ansible.windows.win_copy:
-    src: "{{ vulnlab_dir }}\\config\\config.inc.php.dist"
     dest: "{{ vulnlab_dir }}\\config\\config.inc.php"
-    remote_src: true
-    force: false   # never clobber an edited config -> idempotent
-
-# XAMPP MariaDB root has no password by default; DVWA talks to it as root over 127.0.0.1.
-- name: Configure DVWA (DB creds, low default security, blank reCAPTCHA)
-  community.windows.win_lineinfile:
-    path: "{{ vulnlab_dir }}\\config\\config.inc.php"
-    regexp: "{{ item.regexp }}"
-    line: "{{ item.line }}"
-    backrefs: true   # only rewrite the existing line -> idempotent
-  loop:
-    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_server'\\s*\\]", line: "$_DVWA[ 'db_server' ]   = '127.0.0.1';" }
-    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_database'\\s*\\]", line: "$_DVWA[ 'db_database' ] = '{{ dvwa_db_name }}';" }
-    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_user'\\s*\\]", line: "$_DVWA[ 'db_user' ]     = 'root';" }
-    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_password'\\s*\\]", line: "$_DVWA[ 'db_password' ] = '';" }
-    - { regexp: "^\\s*\\$_DVWA\\[\\s*'default_security_level'\\s*\\]", line: "$_DVWA[ 'default_security_level' ] = 'low';" }
-    - { regexp: "^\\s*\\$_DVWA\\[\\s*'recaptcha_public_key'\\s*\\]", line: "$_DVWA[ 'recaptcha_public_key' ]  = '';" }
-    - { regexp: "^\\s*\\$_DVWA\\[\\s*'recaptcha_private_key'\\s*\\]", line: "$_DVWA[ 'recaptcha_private_key' ] = '';" }
+    content: |
+      <?php
+      # Rendered by Ansible (win_vulnlab) for the local, host-only detection lab.
+      # $DBMS is required (dvwaPage.inc.php reads it); without it setup.php never runs the create path.
+      $DBMS = 'MySQL';
+      $_DVWA = array();
+      $_DVWA[ 'db_server' ]   = '127.0.0.1';
+      $_DVWA[ 'db_database' ] = '{{ dvwa_db_name }}';
+      $_DVWA[ 'db_user' ]     = '{{ dvwa_db_user }}';
+      $_DVWA[ 'db_password' ] = '{{ dvwa_db_password }}';
+      $_DVWA[ 'db_port']      = '3306';
+      $_DVWA[ 'recaptcha_public_key' ]  = '';
+      $_DVWA[ 'recaptcha_private_key' ] = '';
+      $_DVWA[ 'default_security_level' ] = 'low';
+      $_DVWA[ 'default_locale' ] = 'en';
+      $_DVWA[ 'disable_authentication' ] = false;
+      define( 'MYSQL', 'mysql' );
+      define( 'SQLITE', 'sqlite' );
+      $_DVWA[ 'SQLI_DB' ] = MYSQL;
+      ?>
 
 # Serve DVWA at the Apache DocumentRoot so the exploit path stays /vulnerabilities/exec/ (no /DVWA
 # prefix), and move Apache off 80 onto {{ vulnlab_port }}. backrefs -> acts only on the stock lines.
@@ -67,10 +82,14 @@
     regexp: "{{ item.regexp }}"
     line: "{{ item.line }}"
     backrefs: true
+  # Apache on Windows normalises paths to forward slashes, and this XAMPP writes the htdocs block as
+  # "/xampp/htdocs" (drive-relative, no "C:"). So match that exact form and write the DVWA path with
+  # forward slashes — otherwise the <Directory> block is never repointed, the DVWA dir inherits the
+  # default <Directory /> "Require all denied", and every request is 403 (AH01630).
   loop:
     - { regexp: '^\s*Listen\s+\d+\s*$', line: "Listen {{ vulnlab_port }}" }
-    - { regexp: '^\s*DocumentRoot\s+".*"', line: "DocumentRoot \"{{ vulnlab_dir }}\"" }
-    - { regexp: '^\s*<Directory\s+"C:/xampp/htdocs">', line: "<Directory \"{{ vulnlab_dir }}\">" }
+    - { regexp: '^\s*DocumentRoot\s+".*"', line: 'DocumentRoot "{{ vulnlab_dir | replace(''\\'', ''/'') }}"' }
+    - { regexp: '^\s*<Directory\s+"(?:C:)?/xampp/htdocs">', line: '<Directory "{{ vulnlab_dir | replace(''\\'', ''/'') }}">' }
   register: httpd_conf
 
 # Install Apache + MariaDB as Windows services so both come up on boot (replaces a scheduled task).
@@ -110,7 +129,16 @@
       $exists = (& $mysql -uroot -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ dvwa_db_name }}' AND table_name='users';") 2>$null
       if ("$exists".Trim() -eq '1') { $Ansible.Changed = $false; return }
 
-      & $mysql -uroot -e "CREATE DATABASE IF NOT EXISTS {{ dvwa_db_name }};" | Out-Null
+      # DVWA on MariaDB cannot use root (its README): create the db + a dedicated '{{ dvwa_db_user }}'
+      # user that config.inc.php connects as, so setup.php can build the schema. Done as root via the CLI.
+      # One -e with ;-separated statements (a PowerShell here-string would break under YAML indentation).
+      $ddl = "CREATE DATABASE IF NOT EXISTS {{ dvwa_db_name }}; " +
+             "CREATE USER IF NOT EXISTS '{{ dvwa_db_user }}'@'localhost' IDENTIFIED BY '{{ dvwa_db_password }}'; " +
+             "CREATE USER IF NOT EXISTS '{{ dvwa_db_user }}'@'127.0.0.1' IDENTIFIED BY '{{ dvwa_db_password }}'; " +
+             "GRANT ALL PRIVILEGES ON {{ dvwa_db_name }}.* TO '{{ dvwa_db_user }}'@'localhost'; " +
+             "GRANT ALL PRIVILEGES ON {{ dvwa_db_name }}.* TO '{{ dvwa_db_user }}'@'127.0.0.1'; FLUSH PRIVILEGES;"
+      & $mysql -uroot -e $ddl
+      if ($LASTEXITCODE -ne 0) { throw "MariaDB db/user setup failed (rc=$LASTEXITCODE)" }
 
       $base = "http://127.0.0.1:{{ vulnlab_port }}"
       $s = $null
