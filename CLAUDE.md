@@ -118,6 +118,15 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   2026-10-13): target demo = exploit of a lab service (DVWA OS command injection) → RCE → ATT&CK
   techniques; OCR-APT supplies the method. The repo is a live demo of the paper's core concept, not a 100% reproduction. No publishing-style evaluation, metrics
   or NODLINK baseline are required; the section 6 metrics rules apply only if numbers are ever reported.
+- IN PROGRESS — react2shell → DVWA swap (user, 2026-10-19): the attack target was changed from
+  react2shell to DVWA on XAMPP (react2shell's real CVE — RSC-Flight deserialization — has no usable
+  PoC; DVWA's OS-command-injection page is a real, documented sink). The code change is complete across
+  the lab, attack pack and deliverables (commit `cee70be`, branch `ansible-two-vm-provisioning`), BUT it
+  is NOT verified end to end: the `win_vulnlab` role (XAMPP + DVWA + `setup.php` schema build) has not
+  had a clean provisioning run confirmed on `ws-etw`, DVWA-installed/serving-on-:3000 is unconfirmed, and
+  the firewall state was not checked. Treat DVWA as the intended target, not a working one, until a
+  provisioning run + `verify-windows.yml -e vulnlab_enabled=true` pass. The `setup.php` schema step is
+  the known risk.
 
 When direction or progress changes, update `docs/PROGRESS.md` (replace status lines in place; no
 history of earlier progress) and, if relevant, this section.
