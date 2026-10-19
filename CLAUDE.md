@@ -115,8 +115,8 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   host names.
 - End goal (user, 2026-10-11): demonstrate the paper's core concept live: a real attack run during the
   demo raises a true alert while benign windows stay green. The attack is general, not APT-specific (user,
-  2026-10-13): target demo = CVE exploit in a lab service → RCE → ATT&CK techniques; OCR-APT supplies the
-  method. The repo is a live demo of the paper's core concept, not a 100% reproduction. No publishing-style evaluation, metrics
+  2026-10-13): target demo = exploit of a lab service (DVWA OS command injection) → RCE → ATT&CK
+  techniques; OCR-APT supplies the method. The repo is a live demo of the paper's core concept, not a 100% reproduction. No publishing-style evaluation, metrics
   or NODLINK baseline are required; the section 6 metrics rules apply only if numbers are ever reported.
 
 When direction or progress changes, update `docs/PROGRESS.md` (replace status lines in place; no
@@ -136,8 +136,8 @@ history of earlier progress) and, if relevant, this section.
   (`etwship.py`) remains for replay only.
 - Collection lab: three VMs provisioned by Ansible (`src/ansible/`, cloud-portable via inventory): Windows
   Server 2022 `ws-etw` (SilkETW/SilkService on Kernel-Process, Kernel-File, Kernel-Network + Alloy + the
-  react2shell vulnlab, no training), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
-  Kali `kali` (attacker: exploits react2shell + delivers the RCE kill chain, same host-only subnet;
+  DVWA vulnlab on XAMPP, no training), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
+  Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, same host-only subnet;
   LOCAL LAB ONLY and NOT Ansible-managed — it mounts `src/atomic-attack-pack` via a Vagrant synced
   folder). The Vagrantfile only
   builds the bare VMs.
@@ -170,14 +170,14 @@ history of earlier progress) and, if relevant, this section.
 - VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (SilkETW, `etwctl`,
   copies `src/pipeline/etw2nodlink.py` / `etwwindow.py` / `src/live/etwship.py`), `win_alloy`
   (Alloy → Loki), `win_shipper` (`start-live.ps1`), `win_benign` (`src/scripts/06-benign-workload`,
-  `07-build-train-dataset`), `win_vulnlab`.
+  `07-build-train-dataset`), `win_vulnlab` (XAMPP + DVWA).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
   `live_server.py`, `serve.sh`, `rejudge.sh` and `ocr-live` read.
 - Attack side: `src/atomic-attack-pack/` — one RCE kill chain (`scenarios/rce-killchain.ps1`) delivered
   from the Kali VM by `tools/launch_exploit.py` (pack mounted at `/opt/attack-pack` by Vagrant, not
-  Ansible); exploits react2shell then runs Discovery→T1105→T1053.005. `LABELING.md`, `tools/build_node_labels.py`.
+  Ansible); exploits DVWA (OS command injection) then runs Discovery→T1105→T1053.005. `LABELING.md`, `tools/build_node_labels.py`.
 - Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py`
   (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
 - Host side: `src/pipeline/encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →

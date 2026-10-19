@@ -122,7 +122,7 @@ Provenance graph $G = (V, E)$ là đồ thị có hướng, không đồng nhấ
   ben/.style={-{Stealth[length=2mm]}, gray},
   lab/.style={font=\scriptsize, midway, fill=white, inner sep=1pt},
   t/.style={circle, fill=catk, text=white, font=\tiny\bfseries, inner sep=1pt}]
-  \node[proc] (svc) at (0,0) {node.exe};
+  \node[proc] (svc) at (0,0) {httpd.exe};
   \node[proc] (cmd) at (3.6,0) {cmd.exe};
   \node[proc] (ps)  at (7.2,0) {powershell.exe};
   \node[net]  (c2)  at (11,0.9) {10.0.0.5:443};
@@ -135,7 +135,7 @@ Provenance graph $G = (V, E)$ là đồ thị có hướng, không đồng nhấ
   \draw[atk] (ps) -- node[lab, sloped]{Write} node[t, below=4pt]{4} (pay);
   \draw[ben] (cmd) -- node[lab]{Load} (dll);
 \end{tikzpicture}
-\caption{\textbf{Một cuộc tấn công nhìn dưới dạng đồ thị.} Đọc theo số đỏ: \textcolor{catk}{1} dịch vụ web \texttt{node.exe} bị khai thác RCE và sinh ra \texttt{cmd.exe} (một ``cha bất thường''); \textcolor{catk}{2} \texttt{cmd.exe} mở \texttt{powershell.exe}; \textcolor{catk}{3} PowerShell kết nối tới máy chủ C2; \textcolor{catk}{4} PowerShell thả file \texttt{payload.exe}. Edge xám là hoạt động bình thường mà process nào cũng có. Đồ thị minh hoạ của nhóm theo lược đồ Windows 10 của NODLINK.}
+\caption{\textbf{Một cuộc tấn công nhìn dưới dạng đồ thị.} Đọc theo số đỏ: \textcolor{catk}{1} dịch vụ web \texttt{httpd.exe} bị khai thác RCE và sinh ra \texttt{cmd.exe} (một ``cha bất thường''); \textcolor{catk}{2} \texttt{cmd.exe} mở \texttt{powershell.exe}; \textcolor{catk}{3} PowerShell kết nối tới máy chủ C2; \textcolor{catk}{4} PowerShell thả file \texttt{payload.exe}. Edge xám là hoạt động bình thường mà process nào cũng có. Đồ thị minh hoạ của nhóm theo lược đồ Windows 10 của NODLINK.}
 \figlegend{\textbf{Chú giải:}
   \tikz[baseline=-0.6ex]\node[draw, rounded corners, minimum width=0.6cm, minimum height=0.3cm]{};~process (\texttt{PROCESS})\quad
   \tikz[baseline=-0.6ex]\node[draw, ellipse, minimum width=0.6cm, minimum height=0.3cm]{};~file (\texttt{FILE})\quad
@@ -636,9 +636,9 @@ LLM & Alg.~2 đầy đủ & Thêm bước phân loại (tấn công / benign / c
 
 \tagpaper{} OCR-APT được đánh giá trên các cuộc tấn công APT nhiều giai đoạn, kéo dài nhiều ngày, trong các bộ dữ liệu công khai. \tagours{} Đồ án nhắm tới một tấn công phổ biến trên một máy Windows, chạy trọn trong buổi demo:
 \begin{itemize}
-    \item \textbf{Mục tiêu:} một ứng dụng web Next.js cố ý để chưa vá (\texttt{react2shell}), chạy trên \texttt{ws-etw}, chỉ truy cập được trong mạng lab. Vulnerability: \todoval[mã CVE].
-    \item \textbf{Chuỗi tấn công:} khai thác ứng dụng hướng ra mạng $\rightarrow$ thực thi lệnh qua shell $\rightarrow$ các kỹ thuật tiếp theo: discovery, persistence, credential access, kênh C2, exfiltration. \todoval[Mã kỹ thuật ATT\&CK cụ thể của kịch bản cuối cùng.]
-    \item \textbf{Hiện trạng:} hiện mới có các kịch bản Atomic Red Team \cite{atomic_red_team} và script ATT\&CK tự viết; kịch bản CVE $\rightarrow$ RCE đang được lên kế hoạch.
+    \item \textbf{Mục tiêu:} một ứng dụng web PHP cố ý để lỗi (\texttt{DVWA} --- Damn Vulnerable Web Application), chạy trên \texttt{ws-etw} qua XAMPP, chỉ truy cập được trong mạng lab. Vulnerability: OS command injection (CWE-78).
+    \item \textbf{Chuỗi tấn công:} khai thác ứng dụng hướng ra mạng $\rightarrow$ thực thi lệnh qua shell $\rightarrow$ các kỹ thuật tiếp theo: discovery, ingress tool transfer, persistence. \todoval[Mã kỹ thuật ATT\&CK cụ thể của kịch bản cuối cùng.]
+    \item \textbf{Hiện trạng:} đã có chuỗi RCE kill chain khai thác \texttt{DVWA} (command injection) $\rightarrow$ RCE, chạy từ máy Kali (\texttt{tools/launch\_exploit.py}); kiểm thử đầu--cuối đang tiến hành.
 \end{itemize}
 \textbf{Giới hạn:} chỉ một loại tấn công trên một host, nên đồ án không khẳng định gì về khả năng phát hiện APT, tấn công nhiều host, hay tấn công trải dài nhiều ngày.
 
@@ -826,7 +826,7 @@ Trả lời RQ1. Với hoạt động benign (workload có seed và hoạt độ
 Trả lời RQ2. Window chứa tấn công có ít nhất một subgraph đạt Moderate, và subgraph đó chứa các thực thể của tấn công (ví dụ dịch vụ web sinh ra shell, file được thả, kết nối ra ngoài).
 
 \paragraph{Thiết lập.}
-Kịch bản (Mục~\ref{sec:dev-attack}): khai thác vulnerability \todoval[mã CVE] trên ứng dụng web chưa vá trong lab (\texttt{react2shell}) $\rightarrow$ remote code execution $\rightarrow$ discovery, persistence, credential access, kênh C2, exfiltration \todoval[mã kỹ thuật ATT\&CK và thời điểm từng bước]. Tấn công chạy song song với benign workload và tự ghi nhãn (Mục~\ref{sec:dev-labels}). Mốc Moderate giữ nguyên 30 như đã đặt trên dữ liệu benign; \emph{không} chỉnh mốc theo window tấn công, vì như vậy là khớp threshold theo dữ liệu kiểm thử.
+Kịch bản (Mục~\ref{sec:dev-attack}): khai thác lỗ hổng OS command injection trên ứng dụng web có lỗi trong lab (\texttt{DVWA}) $\rightarrow$ remote code execution $\rightarrow$ discovery, persistence, credential access, kênh C2, exfiltration \todoval[mã kỹ thuật ATT\&CK và thời điểm từng bước]. Tấn công chạy song song với benign workload và tự ghi nhãn (Mục~\ref{sec:dev-labels}). Mốc Moderate giữ nguyên 30 như đã đặt trên dữ liệu benign; \emph{không} chỉnh mốc theo window tấn công, vì như vậy là khớp threshold theo dữ liệu kiểm thử.
 
 \begin{table}[H]
 \centering

@@ -1,5 +1,5 @@
 ---
-# Read-only verification that every collector tool is installed on ws-etw (incl. react2shell).
+# Read-only verification that every collector tool is installed on ws-etw (incl. DVWA).
 # Safe + idempotent (no changes): run on demand, NOT part of site.yml.
 #   ansible-playbook -i inventory.local.ini verify-windows.yml -e vulnlab_enabled=true
 # Each assert names the tool and the role that installs it, so a failure points straight at the fix.
@@ -73,42 +73,46 @@
         fail_msg: "A script is missing — run roles win_shipper / win_benign"
         success_msg: "start-live.ps1 + benign workload (06/07) present"
 
-    # ---------- win_vulnlab / react2shell (only when enabled) ----------
-    - name: react2shell checks (win_vulnlab)
+    # ---------- win_vulnlab / DVWA (only when enabled) ----------
+    - name: DVWA checks (win_vulnlab)
       when: vulnlab_enabled | bool
       block:
-        - name: Node version (want v22.x, Next 15 compatible)
-          ansible.windows.win_command: node --version
-          register: node_ver
-          changed_when: false
+        - name: Apache + MariaDB services running
+          ansible.windows.win_service_info:
+            name: "{{ item }}"
+          loop:
+            - Apache2.4
+            - mysql
+          register: dvwa_svcs
 
-        - name: react2shell build output + scheduled task present
+        - name: DVWA cloned + configured
           ansible.windows.win_stat:
             path: "{{ item }}"
           loop:
-            - "{{ vulnlab_dir }}\\.next\\prerender-manifest.json"
-            - 'C:\scripts\start-vulnlab.cmd'
-          register: r2s_files
+            - "{{ vulnlab_dir }}\\vulnerabilities\\exec\\index.php"
+            - "{{ vulnlab_dir }}\\config\\config.inc.php"
+          register: dvwa_files
 
-        - name: react2shell serving on {{ vulnlab_port }}
+        - name: DVWA login page serving on {{ vulnlab_port }}
           ansible.windows.win_uri:
-            url: "http://localhost:{{ vulnlab_port }}"
+            url: "http://localhost:{{ vulnlab_port }}/login.php"
             method: GET
-            status_code: [200, 301, 302, 307, 308]
-          register: r2s_http
+            status_code: [200, 302]
+          register: dvwa_http
           failed_when: false
 
         - ansible.builtin.assert:
             that:
-              - node_ver.stdout | trim is match('^v22\\.')
-              - r2s_files.results | map(attribute='stat.exists') | min
-              - (r2s_http.status_code | default(0)) in [200, 301, 302, 307, 308]
+              # flatten the per-service results into one list, then count the ones in state 'started'
+              - (dvwa_svcs.results | map(attribute='services') | sum(start=[]) | selectattr('state', 'equalto', 'started') | list | length) == 2
+              - dvwa_files.results | map(attribute='stat.exists') | min
+              - (dvwa_http.status_code | default(0)) in [200, 302]
             fail_msg: >-
-              react2shell not fully up — node={{ node_ver.stdout | default('?') | trim }},
-              build/manifest+task present={{ r2s_files.results | map(attribute='stat.exists') | list }},
-              http={{ r2s_http.status_code | default('no response') }}. Run role win_vulnlab (-e vulnlab_enabled=true).
-            success_msg: "react2shell built (Node {{ node_ver.stdout | trim }}) and serving on {{ vulnlab_port }}"
+              DVWA not fully up — services started={{ dvwa_svcs.results | map(attribute='services') | sum(start=[]) | selectattr('state', 'equalto', 'started') | list | length }}/2,
+              files present={{ dvwa_files.results | map(attribute='stat.exists') | list }},
+              http={{ dvwa_http.status_code | default('no response') }}. Run role win_vulnlab (-e vulnlab_enabled=true).
+            success_msg: "DVWA served by XAMPP on {{ vulnlab_port }} (Apache + MariaDB up, login page reachable)"
 
     - name: Verification summary
       ansible.builtin.debug:
-        msg: "ALL TOOLS VERIFIED on {{ inventory_hostname }} (react2shell checked = {{ vulnlab_enabled | bool }})"
+        msg: "ALL TOOLS VERIFIED on {{ inventory_hostname }} (DVWA checked = {{ vulnlab_enabled | bool }})"

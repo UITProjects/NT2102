@@ -1,9 +1,9 @@
 <#
   rce-killchain.ps1 — the demo's ONE attack (replaces the old 01..10 scenarios).
 
-  Runs ON the Windows target as a child of the RCE shell (node.exe -> powershell -> this script),
-  which is exactly the anomalous provenance OCR-APT should flag. It does NOT exploit anything itself:
-  the Kali attacker (tools/launch_exploit.py) exploits react2shell and delivers this script as the
+  Runs ON the Windows target as a child of the RCE shell (httpd.exe -> cmd.exe -> powershell -> this
+  script), which is exactly the anomalous provenance OCR-APT should flag. It does NOT exploit anything
+  itself: the Kali attacker (tools/launch_exploit.py) exploits DVWA and delivers this script as the
   stage. See SCENARIOS.md for the phase/ATT&CK table and README.md for the run recipe.
 
   Compact chain (user decision 2026-10-18):
@@ -56,12 +56,13 @@ $taskName  = "UpdaterSync"   # the persistence artefact; cleanup-all.ps1 deletes
 Write-Host "[rce] killchain starting; stage/C2 = $stageBase" -ForegroundColor Magenta
 
 # --- the RCE itself (marker only; the real exec is the delivery that launched this script) ----------
-# process_indicators: the shell the launcher used. node.exe is react2shell; powershell.exe is the child.
+# process_indicators: the exploited chain. httpd.exe is DVWA's Apache; cmd.exe runs the injected
+# command (DVWA shell_exec at security=low); powershell.exe is the staged child.
 Write-AttackLabel -Technique "T1190" -Tactic "initial-access" `
     -Start ([DateTime]::UtcNow) -End ([DateTime]::UtcNow) `
-    -ProcessIndicators @("node.exe","powershell.exe") `
+    -ProcessIndicators @("httpd.exe","cmd.exe","powershell.exe") `
     -NetworkIndicators @("$($Attacker):$StagePort") `
-    -Note "Exploit public-facing app (react2shell) -> RCE; T1059.001 PowerShell stage" -Source "custom"
+    -Note "Exploit public-facing app (DVWA, OS command injection) -> RCE; T1059.001 PowerShell stage" -Source "custom"
 
 # --- Phase 1: Discovery (several short-lived processes, all children of this shell) -----------------
 Invoke-LabeledStep -Technique "T1033" -Tactic "discovery" `

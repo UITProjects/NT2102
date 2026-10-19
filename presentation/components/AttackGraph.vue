@@ -13,7 +13,7 @@ const X = (x: number) => 70 + x * 62
 const Y = (y: number) => 120 - y * 62
 
 const proc = [
-  { x: 0, t: 'node.exe', w: 92 },
+  { x: 0, t: 'httpd.exe', w: 92 },
   { x: 3.6, t: 'cmd.exe', w: 92 },
   { x: 7.2, t: 'powershell.exe', w: 124 },
 ]

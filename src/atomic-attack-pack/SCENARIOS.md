@@ -9,13 +9,13 @@ observable by SilkETW Kernel-Process/File/Network and self-labelled into
 
 ```
 Kali attacker (10.21.2.30)                 ws-etw target (10.21.2.10)
-  tools/launch_exploit.py  --target 3000-->  react2shell (node.exe, SYSTEM)  --exploit-->
+  tools/launch_exploit.py  --target 3000-->  DVWA (httpd.exe -> cmd.exe)  --cmd injection-->
        serves :8080  <---- fetch stage ----  powershell (RCE child)  --runs--> killchain.ps1
                      <---- T1105 GET  :8080-  Invoke-WebRequest tool.bin
 ```
 
-The exploit comes from Kali; the kill chain runs on the target as `node.exe -> powershell ->
-killchain.ps1`. A separate C2 subnet is deliberately NOT used: the detector sees only `ip:port` hashes
+The exploit comes from Kali; the kill chain runs on the target as `httpd.exe -> cmd.exe -> powershell
+-> killchain.ps1`. A separate C2 subnet is deliberately NOT used: the detector sees only `ip:port` hashes
 and per-node features, so a subnet buys no signal (DEVIATIONS D8). One Kali box doubles as exploit
 source and stage/C2 endpoint; phases are separated by port (exploit → :3000, stage/download → :8080).
 
@@ -23,7 +23,7 @@ source and stage/C2 endpoint; phases are separated by port (exploit → :3000, s
 
 | Phase | Tactic | ATT&CK | Observable as |
 |-------|--------|--------|---------------|
-| Delivery | Initial access / Execution | T1190, T1059.001 | `node.exe` spawns `powershell.exe`; NET to Kali |
+| Delivery | Initial access / Execution | T1190, T1059.001 | `httpd.exe` -> `cmd.exe` spawns `powershell.exe`; NET to Kali |
 | Discovery | Discovery | T1033, T1082, T1057, T1016 | `whoami`/`systeminfo`/`hostname`/`tasklist`/`ipconfig`/`netstat`/`net` under the RCE shell |
 | Ingress transfer | Command & Control | T1105 | `powershell` writes `C:\Users\Public\downloaded_tool.bin`; NET to `<kali>:8080` |
 | Persistence | Persistence | T1053.005 | `schtasks.exe` creates task `UpdaterSync` running the tool |

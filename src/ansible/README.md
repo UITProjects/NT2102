@@ -4,7 +4,7 @@ Provisions the lab the Vagrantfile builds (or any two cloud VMs in one subnet):
 
 | host (group) | address | role |
 |---|---|---|
-| `ws-etw` (`windows`) | 10.21.2.10 | SilkETW collector, **Grafana Alloy** (ships raw ETW to Loki), benign workload, react2shell vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
+| `ws-etw` (`windows`) | 10.21.2.10 | SilkETW collector, **Grafana Alloy** (ships raw ETW to Loki), benign workload, DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
 | `ubuntu-trainer` (`ubuntu`) | 10.21.2.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
 
 > The lab also has a **Kali attacker VM** (`10.21.2.30`), but it is **not provisioned by Ansible** — it
@@ -37,10 +37,10 @@ sum by (provider) (count_over_time({job="silketw", run="live-20261017T040000Z"}[
 {job="etw-meta"}                                                 # dos map of each run
 ```
 
-> The react2shell app is a deliberately unpatched Next.js lab target, installed for **defensive
-> detection practice** in an isolated network. `win_vulnlab` installs and serves it (Node pinned to a
-> supported LTS so `next build` no longer OOMs); the local Kali box drives the exploit during the demo,
-> running the launcher from the mounted pack:
+> DVWA (Damn Vulnerable Web Application) is a deliberately vulnerable PHP lab target, installed for
+> **defensive detection practice** in an isolated network. `win_vulnlab` installs XAMPP (Apache + PHP +
+> MariaDB) via Chocolatey and serves DVWA on `vulnlab_port`; the local Kali box drives the exploit during
+> the demo, running the launcher from the mounted pack:
 >
 > ```bash
 > # on Kali (pack mounted at /opt/attack-pack by Vagrant):
@@ -48,8 +48,8 @@ sum by (provider) (count_over_time({job="silketw", run="live-20261017T040000Z"}[
 > python3 -I /opt/attack-pack/tools/launch_exploit.py --selftest                        # serve+fetch, no target
 > ```
 >
-> Confirm react2shell's real injection vector from `C:\lab\react2shell` and pass
-> `--exploit-path`/`--exploit-field`; the launcher warns while the placeholders are in use.
+> The launcher targets DVWA's command-injection sink (`/vulnerabilities/exec/`, field `ip`, security=low)
+> by default, logging in as admin/password; pass `--exploit-path`/`--exploit-field` only to override.
 
 > **Ports stay inside the subnet.** ufw enforces this on the trainer:
 > - Loki 3100: only from the Windows host.
@@ -180,8 +180,10 @@ C:\scripts\start-live.ps1                              # window 1: capture test/
 C:\scripts\06-benign-workload.ps1 -DurationMinutes 20  # window 2: benign activity (green windows)
 ```
 
-The vulnlab serves on `http://<windows>:3000/` from boot (scheduled task `react2shell-vulnlab`). Watch
-the live UI at `http://<ubuntu>:8000/`, and the raw lines in Grafana at `http://<ubuntu>:3000/`. Benign
+The vulnlab (DVWA) serves on `http://<windows>:3000/` from boot (XAMPP's Apache + MariaDB Windows
+services). Watch the live UI at `http://<ubuntu>:8000/`, and the raw lines in Grafana at
+`http://<ubuntu>:3000/` (Grafana is :3000 on the trainer; DVWA is :3000 on the Windows host — different
+machines). Benign
 windows stay green; the teammate's attack turns its window red.
 
 ## Checks
@@ -210,7 +212,7 @@ windows stay green; the teammate's attack turns its window red.
    lists `alloy` under excluded edges, not as process nodes.
 6. `start-live.ps1` + `06`: the live UI shows `session live-<UTC> (loki, ws-etw)` and windows close.
    `converter_check: match` appears once `experiment.json` comes from a capture built with this converter.
-7. react2shell's `package.json` `engines` matches the installed Node (the role prints both).
+7. DVWA's login page answers on `http://<windows>:3000/login.php` (Apache + MariaDB services up).
 
 ## Layout
 
@@ -224,8 +226,7 @@ roles/
   win_alloy       Grafana Alloy (native installer, service) + config.alloy -> Loki
   win_shipper     start-live.ps1 (start/stop a live test capture)
   win_benign      06-benign-workload.ps1 + 07-build-train-dataset.ps1
-  win_vulnlab     Node LTS + react2shell + build + serve on vulnlab_port (opt-in: vulnlab_enabled;
-                  `next build` currently runs out of heap on Node 24, unresolved)
+  win_vulnlab     XAMPP (Apache + PHP + MariaDB) + DVWA, served on vulnlab_port (opt-in: vulnlab_enabled)
   ubuntu_base     UTC+7 + timesyncd, apt deps + uv + ufw rule for the live server
   ubuntu_loki     Docker + Loki + Grafana (compose, host network) + ufw (Loki from Windows, Grafana from admin_cidr)
   ubuntu_project  git clone + uv sync + ocr-live systemd unit (--loki-url)

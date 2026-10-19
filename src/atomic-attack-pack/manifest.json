@@ -1,6 +1,6 @@
 {
   "pack": "ocr-apt-attack-pack",
-  "purpose": "The OCR-APT (NT2102) demo attack: exploit react2shell (RCE) from a Kali VM, then run a compact MITRE ATT&CK chain on the target, observable via SilkETW Kernel-Process/File/Network and self-labelled.",
+  "purpose": "The OCR-APT (NT2102) demo attack: exploit DVWA (OS command injection -> RCE) from a Kali VM, then run a compact MITRE ATT&CK chain on the target, observable via SilkETW Kernel-Process/File/Network and self-labelled.",
   "host": "SimulatedW10",
   "label_file": "C:\\lab-labels\\attack-labels.jsonl",
   "attacker": {
@@ -8,7 +8,7 @@
     "launcher": "tools/launch_exploit.py",
     "input": "the vulnerable web URL (e.g. http://10.21.2.10:3000); the pack is mounted on Kali at /opt/attack-pack (Vagrant)",
     "stage_endpoints": ["/attack-lib.ps1", "/killchain.ps1", "/tool.bin"],
-    "note": "react2shell's exact injection path/field is confirmed from C:\\lab\\react2shell at run time (launcher --exploit-path/--exploit-field), not baked in."
+    "note": "DVWA's command-injection page (/vulnerabilities/exec/, field 'ip', security=low) is a documented, intentional OS-command sink; the launcher logs in (admin/password), sets security low, and injects '127.0.0.1 & <cradle>'. Override with --exploit-path/--exploit-field if needed."
   },
   "note": "One scenario, custom steps only (no Atomic Red Team dependency). Whether its window reaches the SG-Det cut-off (one subgraph of ~>=30 anomalous nodes, DEVIATIONS D8) is confirmed on a capture, not tuned to the attack.",
   "scenarios": [
@@ -16,9 +16,9 @@
      "tactics": ["initial-access","execution","discovery","command-and-control","persistence"],
      "techniques": ["T1190","T1059.001","T1033","T1082","T1057","T1016","T1105","T1053.005"],
      "source": "custom", "node_types": ["process","file","network"], "admin": false,
-     "delivery": "Kali exploits react2shell; the RCE shell (node.exe -> powershell) fetches + runs this script",
+     "delivery": "Kali exploits DVWA; the RCE shell (httpd.exe -> cmd.exe -> powershell) fetches + runs this script",
      "indicators": {
-        "process": ["node.exe","powershell.exe","whoami.exe","systeminfo.exe","hostname.exe","tasklist.exe","ipconfig.exe","netstat.exe","net.exe","schtasks.exe"],
+        "process": ["httpd.exe","cmd.exe","powershell.exe","whoami.exe","systeminfo.exe","hostname.exe","tasklist.exe","ipconfig.exe","netstat.exe","net.exe","schtasks.exe"],
         "file": ["C:\\Users\\Public\\downloaded_tool.bin","C:\\Windows\\System32\\Tasks\\UpdaterSync"],
         "network": ["<attacker>:8080"]
      }}

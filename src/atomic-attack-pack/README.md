@@ -1,16 +1,16 @@
 # Attack pack — the RCE kill chain
 
 The demo's ONE attack (CLAUDE §8 end goal): a Kali VM exploits the lab's vulnerable service
-(`react2shell`, RCE) and delivers a compact MITRE ATT&CK chain that runs on the Windows target as a
-child of the RCE shell. Everything is visible to the SilkETW Kernel-Process/File/Network collector and
+(`DVWA`, OS command injection → RCE) and delivers a compact MITRE ATT&CK chain that runs on the Windows
+target as a child of the RCE shell. Everything is visible to the SilkETW Kernel-Process/File/Network collector and
 self-labelled into `C:\lab-labels\attack-labels.jsonl`. Phase/ATT&CK table: `SCENARIOS.md`. Labels and
 their limits: `LABELING.md`.
 
 ## Safety
 
 - Lab only. The target (`ws-etw`) is isolated during the run: `LAB_ISOLATED=1 vagrant reload ws-etw`
-  (NAT unplugged, host-only network only). Defender is off there. `react2shell` is opt-in
-  (`vulnlab_enabled=true`) and firewalled to the private profile.
+  (NAT unplugged, host-only network only). Defender is off there. `DVWA` is opt-in
+  (`vulnlab_enabled=true`) and firewalled to the lab subnet only.
 - **Snapshot before running**; `vagrant snapshot restore ws-etw clean-baseline` is the clean reset.
   `cleanup-all.ps1` is best effort.
 - Kali keeps its NAT (for apt) but attacks the target only over the host-only subnet.
@@ -19,7 +19,7 @@ their limits: `LABELING.md`.
 
 ```
 scenarios/rce-killchain.ps1   the ONE attack: runs on the target (RCE child); custom steps + labels
-tools/launch_exploit.py       Kali side: serves the stage + fires the react2shell exploit
+tools/launch_exploit.py       Kali side: serves the stage + fires the DVWA command-injection exploit
 lib/attack-lib.ps1            Initialize-AttackLab, Write-AttackLabel, Invoke-LabeledStep/Atomic
 cleanup-all.ps1               undo the task + downloaded tool + RCE shells (snapshot restore is better)
 manifest.json                 machine-readable technique/indicator map
@@ -41,8 +41,8 @@ The launcher + scripts are mounted into the Kali VM at `/opt/attack-pack` by Vag
 2. **Kali attacker** (pack mounted at `/opt/attack-pack`), the only required input is the vulnerable web URL:
    ```bash
    python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000
-   # confirm react2shell's real injection vector from C:\lab\react2shell, then add:
-   #   --exploit-path /<path> --exploit-field <field>
+   # DVWA's command-injection sink (/vulnerabilities/exec/, field 'ip', security=low) is the default;
+   # override only if you changed it: --exploit-path /<path> --exploit-field <field>
    ```
 3. Watch that window in the live UI (trainer `ocr-live`): the RCE subtree should push the window to
    **red (≥ Moderate, sg_score ≥ 30)** while benign windows stay green; `--llm-provider` adds a verdict.

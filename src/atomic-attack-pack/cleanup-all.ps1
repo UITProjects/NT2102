@@ -14,12 +14,19 @@ schtasks /delete /tn $taskName /f 2>$null
 # Ingress-transfer artefact (T1105)
 Remove-Item $toolPath -Force -ErrorAction SilentlyContinue
 
-# Kill any shell still running under the exploited service (node.exe -> powershell), best effort.
-Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
-    Where-Object {
-        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.ParentProcessId)" -ErrorAction SilentlyContinue
-        $p -and $p.Name -eq 'node.exe'
-    } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+# Kill any shell still running under the exploited service (httpd.exe -> cmd.exe -> powershell), best
+# effort. Match on the cmd.exe injected by DVWA (parent httpd.exe) and the powershell it spawned, so we
+# do not touch Apache itself or unrelated cmd/powershell.
+$injectedCmd = Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | Where-Object {
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.ParentProcessId)" -ErrorAction SilentlyContinue
+    $p -and $p.Name -eq 'httpd.exe'
+}
+$injectedCmd | ForEach-Object {
+    $cmdId = $_.ProcessId
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe' AND ParentProcessId=$cmdId" |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Stop-Process -Id $cmdId -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host "cleanup complete ($taskName removed, $toolPath removed, RCE shells killed)." -ForegroundColor Green
 Write-Host "Snapshot restore is still the cleanest reset." -ForegroundColor DarkGray

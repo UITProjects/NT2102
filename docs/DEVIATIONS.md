@@ -52,11 +52,13 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   attack self-logs a JSONL; a node is malicious if it matches an indicator AND is active in the
   attack time range.
 - [OURS] the injected attack is now ONE RCE kill chain (`scenarios/rce-killchain.ps1`), delivered from a
-  Kali attacker VM (`tools/launch_exploit.py`): Kali exploits react2shell (T1190/T1059.001), then the RCE
-  shell runs Discovery (T1033/T1082/T1057/T1016) → ingress transfer (T1105) → persistence (T1053.005). The
-  external origin means the attack subtree is rooted at the vuln service (`node.exe → powershell → …`),
-  which is itself the anomalous signal; indicators are the tool image names, the downloaded file, the
-  `UpdaterSync` task, and `<attacker>:8080`. (Earlier: 10 Atomic/custom scenarios run on the VM.)
+  Kali attacker VM (`tools/launch_exploit.py`): Kali exploits DVWA via its documented OS-command-injection
+  page (T1190/T1059.001), then the RCE shell runs Discovery (T1033/T1082/T1057/T1016) → ingress transfer
+  (T1105) → persistence (T1053.005). The external origin means the attack subtree is rooted at the vuln
+  service (`httpd.exe → cmd.exe → powershell → …`), which is itself the anomalous signal; indicators are
+  the tool image names, the downloaded file, the `UpdaterSync` task, and `<attacker>:8080`. DVWA's
+  command-injection page (`/vulnerabilities/exec/`, security=low) is a real, documented and intentional
+  OS-command sink, so the exploited RCE is faithful. (Earlier: 10 Atomic/custom scenarios run on the VM.)
 - Why: exact knowledge of what was run, no external ground truth available.
 - Impact: weak oracle; benign processes with the same image name inside an attack window can be
   over-labelled.

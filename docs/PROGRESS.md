@@ -52,18 +52,18 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   `llm/` files written. No real LLM run yet (provider not chosen).
 - Attack pack is now ONE attack: the RCE kill chain (`src/atomic-attack-pack/scenarios/rce-killchain.ps1`),
   delivered from a Kali attacker VM (`tools/launch_exploit.py`; local-only Vagrant box, pack mounted at
-  `/opt/attack-pack`, not Ansible-managed). Kali exploits react2shell and the RCE shell runs Discovery
-  (T1033/T1082/T1057/T1016) → T1105 → T1053.005,
+  `/opt/attack-pack`, not Ansible-managed). Kali exploits DVWA (OS command injection) and the RCE shell
+  runs Discovery (T1033/T1082/T1057/T1016) → T1105 → T1053.005,
   self-logging labels (`LABELING.md`, D6). Launcher `--selftest` passes on the host; the old 01–10
   scenarios + orchestrator + local sink are removed.
 - Windows collector provisioned + verified on `ws-etw` via Ansible (2026-10-18): `ansible-playbook
   windows.yml -e vulnlab_enabled=true` installs every tool — SilkETW/Python/converter/etwctl, Alloy,
-  `start-live.ps1`, benign `06`/`07`, and react2shell. New `src/ansible/verify-windows.yml` asserts all
-  present and react2shell serving HTTP 200 on :3000 (Node v22.11.0). **Idempotent: a 2nd run is
-  `changed=0`** (downloads now `force: no` + SilkETW/Python checksums pinned; Node is uninstall-then-install
-  guarded by installed version). react2shell build fix (`win_vulnlab`): uninstall the drifted Node v24 then
-  pin 22.11.0 (MSI blocks an in-place downgrade), `NODE_OPTIONS=4096`, and disable Next `output:'standalone'`
-  whose @vercel/nft trace step OOMs on Windows (we serve with `next start`, which doesn't need it).
+  `start-live.ps1`, benign `06`/`07`, and DVWA. New `src/ansible/verify-windows.yml` asserts all
+  present and DVWA serving on :3000. **Idempotent: a 2nd run is
+  `changed=0`** (downloads now `force: no` + SilkETW/Python checksums pinned). DVWA (`win_vulnlab`):
+  XAMPP (Apache + PHP + MariaDB) via Chocolatey, DVWA cloned to `C:\lab\DVWA` at the Apache DocumentRoot
+  on :3000, Apache + MariaDB installed as services, and the schema built once via `setup.php`
+  (admin/password, security=low).
 - Alloy → Loki data path verified end to end on `ws-etw` → `ubuntu-trainer` (2026-10-18): a 37 s test
   capture shipped **losslessly** — Loki's per-provider counts equal the raw files (kproc 3372 / knet 223 /
   kfile 28224), with labels job/host/split/run/provider correct and line JSON intact. (The provisioning-time
@@ -91,10 +91,10 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 - New benign train capture (07) pulled from Loki, retrain, and a new run replacing `exp01`. (The
   Alloy→Loki path itself is now verified end to end — see Done, 2026-10-18.)
 
-- Run the RCE kill chain end to end: react2shell now builds + serves on :3000 (verified 2026-10-18).
-  Remaining: `vagrant up kali` (mounts the pack at `/opt/attack-pack`); confirm react2shell's real
-  injection vector from `C:\lab\react2shell` for the launcher's `--exploit-path/--exploit-field`; then
-  `python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000` during a live
+- Run the RCE kill chain end to end against DVWA. Remaining: provision DVWA with
+  `ansible-playbook -i inventory.local.ini windows.yml -e vulnlab_enabled=true` and confirm it serves on
+  :3000 (login admin/password, security low); `vagrant up kali` (mounts the pack at `/opt/attack-pack`);
+  then `python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000` during a live
   session and check the window reaches ≥ Moderate (sg_score ≥ 30) while benign stays green.
 - Concepts 2 (rest) to 9. Phase 0 toy exercises; Phase 1 one-page paper summary + hyperparameter list.
 - LLM container; hardware recorded.

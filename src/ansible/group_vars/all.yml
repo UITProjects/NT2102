@@ -31,11 +31,13 @@ loki_stack_dir: "/opt/lokistack"
 tz_windows: "SE Asia Standard Time"   # Windows ID: (UTC+07:00) Bangkok, Hanoi, Jakarta
 tz_linux: "Asia/Ho_Chi_Minh"          # IANA name, UTC+7, no DST
 
-# ---- react2shell vulnlab (manual Node install, defensive detection target) ------------------------
+# ---- DVWA vulnlab (XAMPP + Damn Vulnerable Web Application, defensive detection target) ------------
 vulnlab_enabled: false       # optional demo target; it may already run elsewhere (e.g. a teammate's cloud VM)
-vulnlab_port: 3000
-vulnlab_repo: "https://github.com/hidden-investigations/react2shell-vulnlab.git"
-vulnlab_dir: 'C:\lab\react2shell'
+vulnlab_port: 3000           # XAMPP Apache listens here (same port on a different host from Grafana's 3000)
+vulnlab_repo: "https://github.com/digininja/DVWA.git"
+vulnlab_dir: 'C:\lab\DVWA'   # served at the Apache DocumentRoot, so the exploit path is /vulnerabilities/exec/
+xampp_package: "xampp-81"    # Chocolatey package: Apache + PHP 8.1 + MariaDB bundle
+dvwa_db_name: "dvwa"         # DVWA schema; created at provision time (DVWA builds tables via setup.php)
 # The Kali attacker (exploit + RCE kill chain) is a local-only Vagrant box, NOT managed by Ansible: it
 # gets the attack pack via a synced-folder mount (src/Vagrantfile). No attacker vars here.
 
@@ -52,9 +54,6 @@ python_embed_sha256: "sha256:0d57bb6cb078b74d23dbfe91f77d6780d45bed328911609f1f7
 alloy_version: "1.20.1"
 alloy_url: "https://github.com/grafana/alloy/releases/download/v{{ alloy_version }}/alloy-installer-windows-amd64.exe"
 alloy_sha256: "sha256:23fcfe3755f02e8a6a83f27149851322ab2b66d584e76d239d9c031f50d3a8f0"   # release SHA256SUMS
-
-node_version: "22.11.0"      # pinned Node 22 LTS (Next 15.0.3 supports 18.18+/20/22; "lts" drifted to v24,
-                             # whose build worker OOM'd — see win_vulnlab). Set "" to track the latest LTS.
 
 # ---- Windows lab paths ----------------------------------------------------------------------------
 graph_name: "SimulatedW10"   # the repo asserts the host name against a fixed list; keep this name

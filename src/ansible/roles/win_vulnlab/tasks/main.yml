@@ -1,48 +1,31 @@
 ---
-# react2shell vulnlab: a deliberately-unpatched Next.js app, installed MANUALLY with Node (no Docker),
-# served on {{ vulnlab_port }}. It is the demo's attack target — a teammate drives the CVE->RCE against
-# it while the collector captures the provenance graph. This role installs and serves it; it contains
-# no exploit steps. Keep it OFF the public internet (subnet/host-only only).
+# DVWA (Damn Vulnerable Web Application): a deliberately-vulnerable PHP app, served by XAMPP
+# (Apache + PHP + MariaDB) on {{ vulnlab_port }}. It is the demo's attack target — the Kali attacker
+# drives DVWA's documented OS-command-injection page (/vulnerabilities/exec/, security=low) to RCE
+# while the collector captures the provenance graph (httpd.exe -> cmd.exe -> powershell). This role
+# installs and serves it; it contains no exploit steps. Keep it OFF the public internet
+# (subnet/host-only only). admin/password are DVWA's stock demo credentials.
 
 - name: Install git
   chocolatey.chocolatey.win_chocolatey:
     name: git
     state: present
 
-# Pin Node to a version Next 15.0.3 supports. The bare "nodejs-lts" package drifted to Node v24, whose
-# build worker OOM'd. An MSI *downgrade* over a newer Node fails (1603), so when a different version is
-# installed we uninstall first, then install the pin. Idempotent: once at the pin, both steps no-op.
-# node_version="" falls back to the latest LTS (no uninstall).
-- name: Check the installed Node version
+- name: Install XAMPP (Apache + PHP + MariaDB)
+  chocolatey.chocolatey.win_chocolatey:
+    name: "{{ xampp_package }}"
+    state: present
+  register: xampp_install
+
+- name: Defender exclusions for XAMPP and the DVWA dir
   ansible.windows.win_powershell:
     script: |
-      try { $v = (& node --version 2>$null) } catch { $v = '' }
-      $Ansible.Result = @{ version = ($v | Out-String).Trim() }
-      $Ansible.Changed = $false
-  register: node_now
-  changed_when: false
-
-- name: Remove the non-pinned Node (the MSI blocks a direct downgrade)
-  chocolatey.chocolatey.win_chocolatey:
-    name: nodejs-lts
-    state: absent
-  when:
-    - (node_version | default('', true)) | length > 0
-    - (node_now.result.version | default('')) != ('v' ~ node_version)
-
-- name: Install Node.js {{ node_version | default('(latest LTS)', true) }}
-  chocolatey.chocolatey.win_chocolatey:
-    name: nodejs-lts
-    version: "{{ node_version | default(omit, true) }}"
-    state: "{{ 'present' if (node_version | default('', true)) else 'latest' }}"
-
-- name: Defender exclusion for the vulnlab dir
-  ansible.windows.win_powershell:
-    script: "Add-MpPreference -ExclusionPath '{{ vulnlab_dir }}'"
+      Add-MpPreference -ExclusionPath 'C:\xampp'
+      Add-MpPreference -ExclusionPath '{{ vulnlab_dir }}'
   changed_when: false
   failed_when: false
 
-- name: Clone react2shell-vulnlab
+- name: Clone DVWA
   ansible.windows.win_powershell:
     script: |
       if (-not (Test-Path '{{ vulnlab_dir }}\.git')) {
@@ -52,79 +35,106 @@
         $Ansible.Changed = $false
       }
 
-- name: Check the app's required Node version (engines) — informational
+# DVWA ships config.inc.php.dist; copy it to the live config once, then set the DB + security level.
+- name: Seed DVWA config from the template (once)
+  ansible.windows.win_copy:
+    src: "{{ vulnlab_dir }}\\config\\config.inc.php.dist"
+    dest: "{{ vulnlab_dir }}\\config\\config.inc.php"
+    remote_src: true
+    force: false   # never clobber an edited config -> idempotent
+
+# XAMPP MariaDB root has no password by default; DVWA talks to it as root over 127.0.0.1.
+- name: Configure DVWA (DB creds, low default security, blank reCAPTCHA)
+  community.windows.win_lineinfile:
+    path: "{{ vulnlab_dir }}\\config\\config.inc.php"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: true   # only rewrite the existing line -> idempotent
+  loop:
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_server'\\s*\\]", line: "$_DVWA[ 'db_server' ]   = '127.0.0.1';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_database'\\s*\\]", line: "$_DVWA[ 'db_database' ] = '{{ dvwa_db_name }}';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_user'\\s*\\]", line: "$_DVWA[ 'db_user' ]     = 'root';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_password'\\s*\\]", line: "$_DVWA[ 'db_password' ] = '';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'default_security_level'\\s*\\]", line: "$_DVWA[ 'default_security_level' ] = 'low';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'recaptcha_public_key'\\s*\\]", line: "$_DVWA[ 'recaptcha_public_key' ]  = '';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'recaptcha_private_key'\\s*\\]", line: "$_DVWA[ 'recaptcha_private_key' ] = '';" }
+
+# Serve DVWA at the Apache DocumentRoot so the exploit path stays /vulnerabilities/exec/ (no /DVWA
+# prefix), and move Apache off 80 onto {{ vulnlab_port }}. backrefs -> acts only on the stock lines.
+- name: Point Apache at DVWA and onto {{ vulnlab_port }}
+  community.windows.win_lineinfile:
+    path: 'C:\xampp\apache\conf\httpd.conf'
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: true
+  loop:
+    - { regexp: '^\s*Listen\s+\d+\s*$', line: "Listen {{ vulnlab_port }}" }
+    - { regexp: '^\s*DocumentRoot\s+".*"', line: "DocumentRoot \"{{ vulnlab_dir }}\"" }
+    - { regexp: '^\s*<Directory\s+"C:/xampp/htdocs">', line: "<Directory \"{{ vulnlab_dir }}\">" }
+  register: httpd_conf
+
+# Install Apache + MariaDB as Windows services so both come up on boot (replaces a scheduled task).
+# The XAMPP service installers are idempotent-ish but noisy; guard on Get-Service so a 2nd run no-ops.
+- name: Install Apache + MariaDB as services
   ansible.windows.win_powershell:
     script: |
-      $pkg = Get-Content '{{ vulnlab_dir }}\package.json' -Raw | ConvertFrom-Json
-      $Ansible.Result = @{ engines = $pkg.engines; node = (node --version) }
-  register: vulnlab_engines
-  changed_when: false
-  failed_when: false
+      $changed = $false
+      if (-not (Get-Service 'Apache2.4' -ErrorAction SilentlyContinue)) {
+        & 'C:\xampp\apache\bin\httpd.exe' -k install | Out-Null
+        $changed = $true
+      }
+      if (-not (Get-Service 'mysql' -ErrorAction SilentlyContinue)) {
+        & 'C:\xampp\mysql\bin\mysqld.exe' --install mysql | Out-Null
+        $changed = $true
+      }
+      $Ansible.Changed = $changed
+  register: svc_install
 
-- name: Report Node vs required engines
-  ansible.builtin.debug:
-    msg: "Installed Node {{ vulnlab_engines.result.node | default('?') }}; app engines: {{ vulnlab_engines.result.engines | default('(none declared)') }}"
+- name: Start + enable Apache and MariaDB
+  ansible.windows.win_service:
+    name: "{{ item }}"
+    state: "{{ 'restarted' if (httpd_conf is changed or svc_install is changed) else 'started' }}"
+    start_mode: auto
+  loop:
+    - mysql
+    - Apache2.4
 
-- name: Neutralize Next 'standalone' output (its build-trace step OOMs on Windows; we serve with `next start`)
-  # `output: 'standalone'` triggers @vercel/nft file tracing, which runs the whole node_modules through a
-  # worker that exhausts V8 heap on this VM ("Fatal process out of memory: Zone" at "Collecting build
-  # traces"). start-vulnlab.cmd serves via `npm start` = `next start`, which uses .next/ directly and does
-  # NOT need standalone output, so disabling it removes the OOM with no change to how the app serves.
-  community.windows.win_lineinfile:
-    path: "{{ vulnlab_dir }}\\next.config.js"
-    regexp: "^\\s*output:\\s*'standalone',"
-    line: "  // output: 'standalone', // disabled by Ansible: standalone build-trace collection OOMs on Windows; served via `next start`"
-    backrefs: true   # only act when the active line matches; never append -> idempotent once commented
+# DVWA has no SQL dump — it builds its tables (incl. the users table admin/password logs into) only
+# when setup.php is POSTed. Do it once: create the schema, then drive setup.php with its CSRF token.
+# Idempotent: skip entirely once the users table exists.
+- name: Create the DVWA schema + run setup.php (once)
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $mysql = 'C:\xampp\mysql\bin\mysql.exe'
+      $exists = (& $mysql -uroot -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ dvwa_db_name }}' AND table_name='users';") 2>$null
+      if ("$exists".Trim() -eq '1') { $Ansible.Changed = $false; return }
 
-- name: npm install (--legacy-peer-deps, required by the app's intentional version pinning)
-  ansible.windows.win_command: npm.cmd install --legacy-peer-deps
-  args:
-    chdir: "{{ vulnlab_dir }}"
-    creates: "{{ vulnlab_dir }}\\node_modules"
-  environment:
-    PATH: 'C:\Program Files\nodejs;{{ ansible_facts.env.PATH | default("") }}'
+      & $mysql -uroot -e "CREATE DATABASE IF NOT EXISTS {{ dvwa_db_name }};" | Out-Null
 
-- name: npm run build
-  # The earlier "JavaScript heap out of memory" (Next 15.0.3 on Node v24) had two causes, both fixed:
-  # Node is now pinned to {{ node_version }} (a supported LTS), and NODE_OPTIONS lifts the V8 old-space
-  # cap for the build worker. The VM has 8 GB, so 4 GB of heap is safe.
-  ansible.windows.win_command: npm.cmd run build
-  args:
-    chdir: "{{ vulnlab_dir }}"
-    creates: "{{ vulnlab_dir }}\\.next\\prerender-manifest.json"   # written last; a crashed build leaves .next and BUILD_ID behind
-  environment:
-    PATH: 'C:\Program Files\nodejs;{{ ansible_facts.env.PATH | default("") }}'
-    NODE_OPTIONS: "--max-old-space-size=4096"
+      $base = "http://127.0.0.1:{{ vulnlab_port }}"
+      $s = $null
+      # setup.php's create button carries a CSRF user_token; scrape it, then POST with the session cookie.
+      $page = Invoke-WebRequest "$base/setup.php" -UseBasicParsing -SessionVariable s
+      $m = [regex]::Match($page.Content, "name='user_token'\s+value='([0-9a-f]+)'")
+      $token = if ($m.Success) { $m.Groups[1].Value } else { '' }
+      Invoke-WebRequest "$base/setup.php" -UseBasicParsing -WebSession $s -Method POST `
+        -Body @{ create_db = 'Create / Reset Database'; user_token = $token } | Out-Null
 
-- name: Deploy the vulnlab start script
-  ansible.windows.win_copy:
-    content: |
-      @echo off
-      cd /d "{{ vulnlab_dir }}"
-      set PORT={{ vulnlab_port }}
-      "C:\Program Files\nodejs\npm.cmd" start
-    dest: 'C:\scripts\start-vulnlab.cmd'
+      $exists = (& $mysql -uroot -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ dvwa_db_name }}' AND table_name='users';") 2>$null
+      if ("$exists".Trim() -ne '1') { throw "DVWA setup.php did not create the users table" }
+      $Ansible.Changed = $true
 
 - name: Allow the vulnlab port through the firewall (subnet/host-only only)
   community.windows.win_firewall_rule:
-    name: "react2shell-vulnlab {{ vulnlab_port }}"
+    name: "dvwa {{ vulnlab_port }}"
     localport: "{{ vulnlab_port }}"
     action: allow
     direction: in
     protocol: tcp
-    profiles: [private]
-    state: present
-    enabled: true
-
-- name: Serve the vulnlab on boot (scheduled task) so the teammate just opens the URL
-  community.windows.win_scheduled_task:
-    name: react2shell-vulnlab
-    description: "Serve the react2shell lab on port {{ vulnlab_port }}"
-    actions:
-      - path: 'C:\scripts\start-vulnlab.cmd'
-    triggers:
-      - type: boot
-    username: SYSTEM
-    run_level: highest
+    # Host-only networks have no gateway/DNS, so Windows classifies the NIC as Public, not Private.
+    # Open both profiles so reachability does not depend on that classification; the lab stays
+    # host-only via the subnet, so this does not widen exposure.
+    profiles: [private, public]
     state: present
     enabled: true

@@ -3,11 +3,11 @@
 #
 # Two-machine ETW lab — OCR-APT reproduction (NT2102). Provisioned by Ansible, not Vagrant.
 #
-#   ws-etw          Windows Server 2022   10.21.2.10   collector + shipper + benign workload + react2shell
+#   ws-etw          Windows Server 2022   10.21.2.10   collector + shipper + benign workload + DVWA
 #                                                      vulnlab. Pushes raw ETW only; runs no training.
 #   ubuntu-trainer  Ubuntu 24.04          10.21.2.20   clones the repo, uv sync, runs live_server.py.
 #                                                      Receives the pushed data; holds training + demo.
-#   kali            Kali Rolling          10.21.2.30   attacker: exploits react2shell + delivers the RCE
+#   kali            Kali Rolling          10.21.2.30   attacker: exploits DVWA + delivers the RCE
 #                                                      kill chain (src/atomic-attack-pack). Same subnet.
 #
 # Both VMs sit on one host-only network (10.21.2.0/24, host side = 10.21.2.1). The Windows shipper posts
