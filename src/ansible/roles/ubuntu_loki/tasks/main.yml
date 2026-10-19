@@ -93,14 +93,14 @@
     rule: allow
     name: OpenSSH
 
-- name: ufw allows Loki from the Windows collector (Alloy push)
+- name: ufw allows Loki from the collectors (Windows ws-etw + the Linux target, Alloy push)
   community.general.ufw:
     rule: allow
     port: "{{ loki_port }}"
     proto: tcp
     from_ip: "{{ hostvars[item].private_ip }}"
     comment: "Alloy on {{ item }} -> Loki"
-  loop: "{{ groups['windows'] }}"
+  loop: "{{ groups['windows'] + (groups['target'] | default([])) }}"
 
 - name: ufw allows Grafana from the admin network
   community.general.ufw:

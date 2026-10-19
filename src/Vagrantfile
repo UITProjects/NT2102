@@ -7,6 +7,9 @@
 #                                                      vulnlab. Pushes raw ETW only; runs no training.
 #   ubuntu-trainer  Ubuntu 24.04          10.21.2.20   clones the repo, uv sync, runs live_server.py.
 #                                                      Receives the pushed data; holds training + demo.
+#   ubuntu-target   Ubuntu 22.04          10.21.2.40   LINUX detection target (migration in progress):
+#                                                      DVWA on native LAMP + Sysmon-for-Linux + Alloy.
+#                                                      Ships Sysmon to Loki; gated by linux_target_enabled.
 #   kali            Kali Rolling          10.21.2.30   attacker: exploits DVWA + delivers the RCE
 #                                                      kill chain (src/atomic-attack-pack). Same subnet.
 #
@@ -32,8 +35,10 @@ LAB_SUBNET  = "10.21.2"
 WIN_IP      = "#{LAB_SUBNET}.10"
 UBUNTU_IP   = "#{LAB_SUBNET}.20"
 KALI_IP     = "#{LAB_SUBNET}.30"
+TARGET_IP   = "#{LAB_SUBNET}.40"
 WIN_NAME    = "ws-etw"           # Windows hostnames: max 15 chars
 UBUNTU_NAME = "ubuntu-trainer"
+TARGET_NAME = "ubuntu-target"
 KALI_NAME   = "kali"
 # Only the Windows VM's NAT is cut in isolated mode (it runs the attack tooling). Ubuntu is the trainer
 # and keeps its NAT so it can still pull packages; it never runs attacks.
@@ -108,9 +113,31 @@ Vagrant.configure("2") do |config|
     end
   end
 
+  # ------------------------------------------------------------------ Ubuntu 22.04 detection target VM
+  # Linux attack target (migration in progress): DVWA on native LAMP + Sysmon-for-Linux + Alloy. Ansible-
+  # managed (roles ubuntu_vulnlab, ubuntu_collector, gated by linux_target_enabled). Its NAT is cut in
+  # LAB_ISOLATED like ws-etw's (it is the attacked host); Ansible/SSH reach it over the host-only IP.
+  config.vm.define TARGET_NAME do |tgt|
+    tgt.vm.box          = "bento/ubuntu-22.04"
+    tgt.vm.hostname     = TARGET_NAME
+    tgt.vm.boot_timeout = 600
+
+    tgt.vm.network "private_network", ip: TARGET_IP, netmask: "255.255.255.0"
+
+    tgt.vm.provider "virtualbox" do |vb|
+      vb.name   = TARGET_NAME
+      vb.gui    = false
+      vb.memory = 2048     # DVWA (Apache/PHP/MariaDB) + Sysmon + Alloy; no training here
+      vb.cpus   = 2
+      # NAT unplugged during an attack run (LAB_ISOLATED), like ws-etw. Ansible connects over the
+      # host-only IP (inventory ansible_host = private_ip), so provisioning is unaffected either way.
+      vb.customize ["modifyvm", :id, "--cableconnected1", ISOLATED ? "off" : "on"]
+    end
+  end
+
   # ------------------------------------------------------------------ Kali attacker VM
   # Keeps its NAT (like Ubuntu) so apt works; attacks the target only over the host-only subnet. Only
-  # the Windows TARGET's NAT is cut in LAB_ISOLATED, so leave Kali's cable connected.
+  # the TARGET's NAT is cut in LAB_ISOLATED, so leave Kali's cable connected.
   config.vm.define KALI_NAME do |kali|
     kali.vm.box          = "kalilinux/rolling"
     kali.vm.hostname     = KALI_NAME

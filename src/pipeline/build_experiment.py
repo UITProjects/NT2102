@@ -29,7 +29,8 @@ import tempfile
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CONVERTER = os.path.join(HERE, "etw2nodlink.py")
+CONVERTER = os.path.join(HERE, "etw2nodlink.py")            # Windows SilkETW capture
+SYSMON_CONVERTER = os.path.join(HERE, "sysmon2nodlink.py")  # Linux Sysmon-for-Linux capture (--source sysmon)
 WINDOWER = os.path.join(HERE, "etwwindow.py")
 CHECKER = os.path.join(HERE, "check_rdf_input.py")
 
@@ -65,22 +66,26 @@ def dos_map_file(exp, split, work):
     return path, next(iter(maps.values()))
 
 
-def build(exp, split="train", graph="SimulatedW10", window_min=5, stride_min=2, max_gap_s=120):
+def build(exp, split="train", graph="SimulatedW10", window_min=5, stride_min=2, max_gap_s=120, source="etw"):
     exp = os.path.abspath(exp)
-    if not glob.glob(os.path.join(exp, "raw", split, "*", "*.json")):
-        sys.exit(f"[build] no raw/{split}/<run>/*.json under {exp}")
+    # Windows ships *.json (SilkETW); Linux ships *.log (Sysmon-for-Linux). Accept whichever is present.
+    raw_glob = "*.json" if source == "etw" else "*"
+    if not glob.glob(os.path.join(exp, "raw", split, "*", raw_glob)):
+        sys.exit(f"[build] no raw/{split}/<run>/ capture files under {exp}")
+    converter = SYSMON_CONVERTER if source == "sysmon" else CONVERTER
     rec_path = os.path.join(exp, "experiment.json")
     rec = json.load(open(rec_path, encoding="utf-8-sig")) if os.path.exists(rec_path) else {}
     pull_path = os.path.join(exp, "pull.json")
     pull = json.load(open(pull_path, encoding="utf-8")) if os.path.exists(pull_path) else None
 
     with tempfile.TemporaryDirectory() as work:
-        dmap_path, dmap = dos_map_file(exp, split, work)
-        if dmap_path is None:
+        # The dos map is a Windows concept (\Device\HarddiskVolumeN -> C:); Linux paths are already POSIX.
+        dmap_path, dmap = (dos_map_file(exp, split, work) if source == "etw" else (None, {}))
+        if source == "etw" and dmap_path is None:
             print("[build] WARNING: no dosmap.meta: paths stay \\device\\harddiskvolumeN\\... (off-Windows map is empty)")
         conv = os.path.join(exp, "converted")
-        run([CONVERTER, "--raw-root", os.path.join(exp, "raw"), "--split", split, "--graph", graph, "--out", conv,
-             *(["--dos-map", dmap_path] if dmap_path else [])])
+        run([converter, "--raw-root", os.path.join(exp, "raw"), "--split", split, "--graph", graph, "--out", conv,
+             *(["--dos-map", dmap_path] if (source == "etw" and dmap_path) else [])])
 
         # etwwindow swaps its whole --out folder in atomically: give it a private folder, never <exp> itself
         stage = os.path.join(exp, "_windowing")
@@ -99,7 +104,7 @@ def build(exp, split="train", graph="SimulatedW10", window_min=5, stride_min=2, 
     t = json.load(open(os.path.join(exp, "manifest.json"), encoding="utf-8"))["totals"]
     rec.setdefault("id", os.path.basename(exp))
     rec.update({
-        "graph": graph, "split": split,
+        "graph": graph, "split": split, "event_source": source,
         "source": "loki" if pull else rec.get("source", "local raw"),
         "label_source": rec.get("label_source", "benign by construction: scripted workload (07/06), no attack "
                                                 "executed; includes background OS activity"
@@ -108,7 +113,7 @@ def build(exp, split="train", graph="SimulatedW10", window_min=5, stride_min=2, 
         "windowing": {"window_min": window_min, "stride_min": stride_min, "max_gap_s": max_gap_s},
         "results": {k: t.get(k) for k in ("windows", "edges_in", "edges_out", "edges_in_no_window",
                                           "nodes_unique", "node_window_copies")} | {"contract_ok": rc == 0},
-        "tools": {"converter": sha(CONVERTER), "etwwindow": sha(WINDOWER), "checker": sha(CHECKER),
+        "tools": {"converter": sha(converter), "etwwindow": sha(WINDOWER), "checker": sha(CHECKER),
                   "builder": sha(os.path.abspath(__file__))},
         "pull": pull,
         "postprocessed_utc": datetime.now(timezone.utc).isoformat(),
@@ -158,6 +163,8 @@ def main(argv=None):
     ap.add_argument("--exp", help="experiment folder (with raw/<split>/<run>/)")
     ap.add_argument("--split", default="train", choices=["train", "test"])
     ap.add_argument("--graph", default="SimulatedW10")
+    ap.add_argument("--source", default="etw", choices=["etw", "sysmon"],
+                    help="etw = Windows SilkETW (default); sysmon = Linux Sysmon-for-Linux (use --graph SimulatedU22)")
     ap.add_argument("--window-min", type=int, default=5)
     ap.add_argument("--stride-min", type=int, default=2)
     ap.add_argument("--max-gap-s", type=int, default=120)
@@ -167,7 +174,7 @@ def main(argv=None):
         return selftest()
     if not a.exp:
         ap.error("--exp is required")
-    build(a.exp, a.split, a.graph, a.window_min, a.stride_min, a.max_gap_s)
+    build(a.exp, a.split, a.graph, a.window_min, a.stride_min, a.max_gap_s, a.source)
     return 0
 
 

@@ -1,0 +1,183 @@
+---
+# Linux collection stack: Sysmon-for-Linux (events) -> rsyslog (per-run files) -> Alloy -> Loki on the
+# trainer. The Linux counterpart of win_collector (SilkETW) + win_alloy (Alloy). The converter the
+# trainer runs on these lines is src/pipeline/sysmon2nodlink.py (loki_pull.py --job sysmon,
+# build_experiment.py --source sysmon). [INFERENCE] the exact Sysmon syslog line/field shape is confirmed
+# on first provisioning (journalctl -t sysmon); sysmon2nodlink.py and config.alloy.j2 assume Sysmon event
+# XML, one event per line.
+
+# ---------- 1. Sysmon-for-Linux (Microsoft apt repo) ----------
+- name: Prerequisites (apt over https, gpg, rsyslog)
+  ansible.builtin.apt:
+    name: [apt-transport-https, ca-certificates, curl, gnupg, rsyslog]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Microsoft package repo (for sysmonforlinux)
+  ansible.builtin.apt:
+    deb: https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
+  register: ms_repo
+
+- name: Install Sysmon-for-Linux
+  ansible.builtin.apt:
+    name: sysmonforlinux
+    state: present
+    update_cache: "{{ ms_repo is changed }}"
+
+- name: Capture-run root ({{ linux_raw_root }}) - owned by syslog (rsyslog writes here)
+  ansible.builtin.file:
+    path: "{{ linux_raw_root }}"
+    state: directory
+    owner: syslog
+    group: syslog
+    mode: "2775"          # setgid: labctl-created run dirs inherit the syslog group
+
+- name: Sysmon config
+  ansible.builtin.template:
+    src: sysmon-config.xml.j2
+    dest: /etc/sysmon-config.xml
+    mode: "0644"
+  notify: Reconfigure sysmon
+
+- name: Is the Sysmon service already installed?
+  ansible.builtin.command: systemctl is-active sysmon
+  register: sysmon_active
+  changed_when: false
+  failed_when: false
+
+- name: Install + start Sysmon with the config (first run only; -i fails if already installed)
+  ansible.builtin.command: sysmon -accepteula -i /etc/sysmon-config.xml
+  when: sysmon_active.stdout.strip() not in ['active', 'activating']
+  changed_when: true
+
+# ---------- 2. rsyslog: route Sysmon events into the current capture run ----------
+- name: Seed an idle capture run so rsyslog has a file to open before the first `labctl start`
+  ansible.builtin.file:
+    path: "{{ linux_raw_root }}/train/_idle"
+    state: directory
+    owner: syslog
+    group: syslog
+    mode: "2775"
+
+- name: Does the current-run symlink already exist?
+  ansible.builtin.stat:
+    path: "{{ linux_raw_root }}/current"
+  register: current_link
+
+- name: current -> idle run (seed only; labctl repoints it on `labctl start`, a re-run must not clobber an active capture)
+  ansible.builtin.file:
+    src: train/_idle
+    dest: "{{ linux_raw_root }}/current"
+    state: link
+  when: not current_link.stat.exists
+
+- name: journald drop-in dir
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: journald forwards to syslog (Sysmon logs journal-native; rsyslog/Alloy need the forward)
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/forward.conf
+    content: "[Journal]\nForwardToSyslog=yes\n"
+    mode: "0644"
+  notify: Restart journald
+
+- name: Apply journald forwarding now (before the capture must flow)
+  ansible.builtin.meta: flush_handlers
+
+- name: rsyslog rule for Sysmon
+  ansible.builtin.template:
+    src: sysmon-rsyslog.conf.j2
+    dest: /etc/rsyslog.d/49-sysmon.conf
+    mode: "0644"
+  notify: Restart rsyslog
+
+- name: rsyslog enabled and running
+  ansible.builtin.systemd:
+    name: rsyslog
+    enabled: true
+    state: started
+
+# ---------- 3. labctl (capture control, the Linux etwctl) ----------
+- name: Install labctl
+  ansible.builtin.copy:
+    src: labctl
+    dest: /usr/local/bin/labctl
+    mode: "0755"
+
+- name: Point labctl + shells at the raw root
+  ansible.builtin.copy:
+    dest: /etc/profile.d/etwlab.sh
+    content: "export LAB_RAW_ROOT={{ linux_raw_root }}\nexport LAB_TZ={{ tz_linux }}\n"
+    mode: "0644"
+
+# ---------- 4. Grafana Alloy (apt repo) -> ships raw Sysmon lines to Loki ----------
+- name: Keyring dir
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Grafana apt signing key
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /etc/apt/keyrings/grafana.key
+    mode: "0644"
+    force: false
+
+- name: Dearmor the Grafana key
+  ansible.builtin.command: gpg --dearmor -o /etc/apt/keyrings/grafana.gpg /etc/apt/keyrings/grafana.key
+  args:
+    creates: /etc/apt/keyrings/grafana.gpg
+
+- name: Grafana apt repo
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/grafana.list
+    content: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main\n"
+    mode: "0644"
+  register: grafana_repo
+
+- name: Install Alloy
+  ansible.builtin.apt:
+    name: alloy
+    state: present
+    update_cache: "{{ grafana_repo is changed }}"
+
+- name: Alloy config (Sysmon per-run files -> Loki)
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: /etc/alloy/config.alloy
+    mode: "0644"
+  notify: Restart alloy
+
+- name: Validate the Alloy config with Alloy itself
+  ansible.builtin.command: alloy fmt /etc/alloy/config.alloy
+  changed_when: false
+
+- name: Alloy enabled and running
+  ansible.builtin.systemd:
+    name: alloy
+    enabled: true
+    state: started
+
+- name: Restart now if the config changed (so the check below sees the new pipeline)
+  ansible.builtin.meta: flush_handlers
+
+- name: Loki reachable from the target (Alloy's push endpoint)
+  ansible.builtin.uri:
+    url: "{{ loki_url }}/ready"
+    return_content: true
+  register: loki_from_target
+  until: loki_from_target.status == 200
+  retries: 10
+  delay: 3
+  failed_when: false
+
+- name: Report Loki reachability
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Loki ready at ' ~ loki_url if (loki_from_target.status | default(0)) == 200 else
+         'WARNING: Loki not reachable at ' ~ loki_url ~ ' - provision the trainer first (site.yml --limit ubuntu)' }}

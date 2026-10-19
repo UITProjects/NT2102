@@ -1,0 +1,150 @@
+---
+# DVWA (Damn Vulnerable Web Application) on a native LAMP stack: apt-managed Apache + PHP + MariaDB,
+# systemd-supervised. The Linux port of win_vulnlab (which used XAMPP on Windows); it is far more stable
+# than XAMPP-on-Windows-Server, which is why the target is moving here. The Kali attacker drives DVWA's
+# documented OS-command-injection page (/vulnerabilities/exec/, security=low) to RCE while Sysmon-for-Linux
+# captures the provenance graph (apache2 -> sh -> bash). This role installs and serves it; it contains no
+# exploit steps. Keep it OFF the public internet (subnet/host-only only).
+#
+# Difference from the Windows role: on Ubuntu the MariaDB root account uses unix_socket auth (no TCP
+# password), so instead of DVWA talking to root/blank (the XAMPP default) we create a dedicated 'dvwa'
+# DB user for PHP's 127.0.0.1 connection. admin/password stay DVWA's stock demo LOGIN credentials.
+
+- name: Install the LAMP stack + git for DVWA
+  ansible.builtin.apt:
+    name:
+      - apache2
+      - mariadb-server
+      - php
+      - libapache2-mod-php
+      - php-mysqli
+      - php-gd
+      - php-cli
+      - git
+      - curl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Apache + MariaDB enabled and running
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - apache2
+    - mariadb
+
+- name: Clone DVWA to the DocumentRoot
+  become: true
+  ansible.builtin.git:
+    repo: "{{ vulnlab_repo }}"
+    dest: "{{ linux_vulnlab_dir }}"
+    version: master
+    update: false          # a deliberately-vulnerable app: pin to the clone, do not auto-update it
+  register: dvwa_clone
+
+- name: DVWA owned by the web server user
+  ansible.builtin.file:
+    path: "{{ linux_vulnlab_dir }}"
+    owner: www-data
+    group: www-data
+    recurse: true
+  when: dvwa_clone is changed
+
+# DVWA ships config/config.inc.php.dist; copy it to the live config once, then set the DB + security level.
+- name: Seed DVWA config from the template (once)
+  ansible.builtin.copy:
+    src: "{{ linux_vulnlab_dir }}/config/config.inc.php.dist"
+    dest: "{{ linux_vulnlab_dir }}/config/config.inc.php"
+    remote_src: true
+    owner: www-data
+    group: www-data
+    force: false           # never clobber an edited config -> idempotent
+
+- name: Configure DVWA (dedicated DB user, low default security, blank reCAPTCHA)
+  ansible.builtin.lineinfile:
+    path: "{{ linux_vulnlab_dir }}/config/config.inc.php"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: true         # only rewrite the existing line -> idempotent
+  loop:
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_server'\\s*\\]", line: "$_DVWA[ 'db_server' ]   = '127.0.0.1';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_database'\\s*\\]", line: "$_DVWA[ 'db_database' ] = '{{ dvwa_db_name }}';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_user'\\s*\\]", line: "$_DVWA[ 'db_user' ]     = '{{ dvwa_db_name }}';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'db_password'\\s*\\]", line: "$_DVWA[ 'db_password' ] = '{{ dvwa_db_name }}';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'default_security_level'\\s*\\]", line: "$_DVWA[ 'default_security_level' ] = 'low';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'recaptcha_public_key'\\s*\\]", line: "$_DVWA[ 'recaptcha_public_key' ]  = '';" }
+    - { regexp: "^\\s*\\$_DVWA\\[\\s*'recaptcha_private_key'\\s*\\]", line: "$_DVWA[ 'recaptcha_private_key' ] = '';" }
+
+# ---- Apache: add the vulnlab port and serve DVWA at the DocumentRoot (exploit path /vulnerabilities/exec/)
+- name: Apache listens on {{ vulnlab_port }}
+  ansible.builtin.lineinfile:
+    path: /etc/apache2/ports.conf
+    line: "Listen {{ vulnlab_port }}"
+    regexp: "^\\s*Listen\\s+{{ vulnlab_port }}\\s*$"
+  notify: Restart apache2
+
+- name: DVWA vhost on {{ vulnlab_port }}
+  ansible.builtin.template:
+    src: dvwa-vhost.conf.j2
+    dest: /etc/apache2/sites-available/dvwa.conf
+    mode: "0644"
+  notify: Restart apache2
+
+- name: Enable the DVWA site
+  ansible.builtin.command: a2ensite dvwa
+  args:
+    creates: /etc/apache2/sites-enabled/dvwa.conf
+  notify: Restart apache2
+
+- name: Flush the apache restart handler now (DVWA must serve before the setup.php step below)
+  ansible.builtin.meta: flush_handlers
+
+# ---- MariaDB: DVWA's db + a dedicated user (root is unix_socket-only on Ubuntu; run mysql as root here).
+- name: Create the DVWA database and user (idempotent)
+  become: true
+  ansible.builtin.command:
+    cmd: >-
+      mysql -N -e
+      "CREATE DATABASE IF NOT EXISTS {{ dvwa_db_name }};
+       CREATE USER IF NOT EXISTS '{{ dvwa_db_name }}'@'127.0.0.1' IDENTIFIED BY '{{ dvwa_db_name }}';
+       GRANT ALL PRIVILEGES ON {{ dvwa_db_name }}.* TO '{{ dvwa_db_name }}'@'127.0.0.1';
+       FLUSH PRIVILEGES;"
+  changed_when: false      # CREATE ... IF NOT EXISTS is a no-op on re-run; keep output quiet
+
+# DVWA has no SQL dump — it builds its tables (incl. the users table admin/password logs into) only when
+# setup.php is POSTed. Do it once: scrape setup.php's CSRF user_token, POST create_db, verify the table.
+# Idempotent: skip entirely once the users table exists. (Linux port of the win_vulnlab PowerShell step.)
+- name: Create the DVWA schema via setup.php (once)
+  become: true
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      q="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ dvwa_db_name }}' AND table_name='users';"
+      if [ "$(mysql -N -e "$q")" = "1" ]; then echo UNCHANGED; exit 0; fi
+      jar="$(mktemp)"
+      base="http://127.0.0.1:{{ vulnlab_port }}"
+      token="$(curl -s -c "$jar" "$base/setup.php" | grep -oP "name='user_token'[[:space:]]+value='\K[0-9a-f]+" | head -n1)"
+      curl -s -b "$jar" -c "$jar" -X POST \
+        --data "create_db=Create+%2F+Reset+Database&user_token=${token}" "$base/setup.php" >/dev/null
+      [ "$(mysql -N -e "$q")" = "1" ] || { echo "setup.php did not create the users table" >&2; exit 1; }
+      echo CHANGED
+    executable: /bin/bash   # Ubuntu /bin/sh is dash: no `set -o pipefail`
+  register: dvwa_setup
+  changed_when: "dvwa_setup.stdout.strip() == 'CHANGED'"   # exact: avoid matching CHANGED in UNCHANGED
+
+- name: Allow the vulnlab port through ufw from the lab subnet only (SSH first so ufw never locks us out)
+  community.general.ufw:
+    rule: allow
+    name: OpenSSH
+- community.general.ufw:
+    rule: allow
+    port: "{{ vulnlab_port }}"
+    proto: tcp
+    from_ip: "{{ admin_cidr }}"
+    comment: "DVWA on {{ vulnlab_port }} (lab subnet only)"
+- community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming

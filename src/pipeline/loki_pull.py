@@ -60,16 +60,17 @@ def sha256_file(path):
 
 
 # --------------------------------------------------------------------------- discovery
-def discover(lk, lookback_ns, split=None, now_ns=None):
+def discover(lk, lookback_ns, split=None, now_ns=None, job="silketw"):
     """-> runs newest first: [{run, split, host, first_ns, last_ns, counts{provider: n}}].
-    Built from label values + query_range (see Loki.label_values for why not /series)."""
+    Built from label values + query_range (see Loki.label_values for why not /series).
+    job = "silketw" (Windows) or "sysmon" (Linux target); both share the split/run/provider scheme."""
     now_ns = now_ns or time.time_ns()
     start = now_ns - lookback_ns
     out = []
-    pairs = [(sp, run) for sp in ([split] if split else lk.label_values("split", start, now_ns, query=selector(job="silketw")))
-             for run in lk.label_values("run", start, now_ns, query=selector(job="silketw", split=sp))]
+    pairs = [(sp, run) for sp in ([split] if split else lk.label_values("split", start, now_ns, query=selector(job=job)))
+             for run in lk.label_values("run", start, now_ns, query=selector(job=job, split=sp))]
     for sp, run in pairs:                         # (split, run): the same run name may exist in both splits
-        sel = selector(job="silketw", split=sp, run=run)
+        sel = selector(job=job, split=sp, run=run)
         f = lk.query_range(sel, start, now_ns + 1, limit=1, direction="forward")
         if not f:
             continue
@@ -154,15 +155,15 @@ def pick_flags(a, runs):
 
 
 # --------------------------------------------------------------------------- pull
-def pull(lk, sel, out_dir, page=5000, log=print):
+def pull(lk, sel, out_dir, page=5000, log=print, job="silketw"):
     """Write the selection into out_dir (must not exist). -> pull record (also saved as pull.json)."""
     tmp = out_dir + ".partial"
     shutil.rmtree(tmp, ignore_errors=True)
     os.makedirs(tmp)
     if sel["mode"] == "run":
-        queries = [selector(job="silketw", split=sel["split"], run=sel["run"])]
+        queries = [selector(job=job, split=sel["split"], run=sel["run"])]
     else:
-        queries = [selector(job="silketw", split=sel["split"], provider=p) for p in sel["providers"]]
+        queries = [selector(job=job, split=sel["split"], provider=p) for p in sel["providers"]]
     handles, counts, dups = {}, {}, {}
     try:
         for q in queries:
@@ -194,39 +195,41 @@ def pull(lk, sel, out_dir, page=5000, log=print):
         shutil.rmtree(tmp)
         sys.exit("[loki_pull] nothing in that range/selection")
 
-    # dos map + ledger per run
-    runs = sorted({k[:2] for k in counts})
-    look0 = sel["start_ns"] - 7 * 86400 * NS
-    meta = {}
-    for sp, run in runs:
-        rows = lk.query_range(selector(job="etw-meta", run=run), look0, sel["end_ns"] + 86400 * NS,
-                              limit=1, direction="backward")
-        path = os.path.join(tmp, "raw", sp, run, "dosmap.meta")
-        if rows:
-            dmap, src = json.loads(rows[0][2]), "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
-        else:
-            sys.path.insert(0, os.path.join(SRC, "live"))
-            from etwship import infer_dos_map
-            files = [os.path.join(tmp, "raw", sp, run, p + ".json") for p in ("kproc", "kfile")
-                     if os.path.exists(os.path.join(tmp, "raw", sp, run, p + ".json"))]
-            dmap, src = infer_dos_map(files), "inferred from raw paths (no etw-meta line in Loki)"
-        with open(path, "w", encoding="utf-8", newline="\n") as fh:
-            json.dump(dmap, fh)
-        meta[run] = {"dos_map": dmap, "dos_map_source": src}
+    # dos map + ledger per run. Both are Windows (SilkETW) concepts: the dos map translates
+    # \Device\HarddiskVolumeN -> C: (Linux paths are POSIX), and the workload ledger rides job="etw-meta"/
+    # "workload-ledger" alongside SilkETW. A Linux (Sysmon) pull carries neither, so skip this block.
+    meta, ledger_lines = {}, 0
+    if job == "silketw":
+        runs = sorted({k[:2] for k in counts})
+        look0 = sel["start_ns"] - 7 * 86400 * NS
+        for sp, run in runs:
+            rows = lk.query_range(selector(job="etw-meta", run=run), look0, sel["end_ns"] + 86400 * NS,
+                                  limit=1, direction="backward")
+            path = os.path.join(tmp, "raw", sp, run, "dosmap.meta")
+            if rows:
+                dmap, src = json.loads(rows[0][2]), "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+            else:
+                sys.path.insert(0, os.path.join(SRC, "live"))
+                from etwship import infer_dos_map
+                files = [os.path.join(tmp, "raw", sp, run, p + ".json") for p in ("kproc", "kfile")
+                         if os.path.exists(os.path.join(tmp, "raw", sp, run, p + ".json"))]
+                dmap, src = infer_dos_map(files), "inferred from raw paths (no etw-meta line in Loki)"
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                json.dump(dmap, fh)
+            meta[run] = {"dos_map": dmap, "dos_map_source": src}
 
-    ledger_lines = 0
-    for sp, run in runs:
-        if not run.startswith("x-"):              # only 07's train runs carry a workload ledger
-            continue
-        rows = list(lk.query_all(selector(job="workload-ledger", exp=run[2:]), look0,
-                                 sel["end_ns"] + 86400 * NS, page=page))
-        if rows:
-            os.makedirs(os.path.join(tmp, "labels"), exist_ok=True)
-            head = [l for _, _, l in rows if l.startswith('"utc"')][:1]   # header carries no time: read time
-            body = [l for _, _, l in rows if not l.startswith('"utc"')]
-            with open(os.path.join(tmp, "labels", "ledger.csv"), "w", encoding="utf-8", newline="\n") as fh:
-                fh.writelines(l.rstrip("\r\n") + "\n" for l in head + body)
-            ledger_lines += len(body)
+        for sp, run in runs:
+            if not run.startswith("x-"):              # only 07's train runs carry a workload ledger
+                continue
+            rows = list(lk.query_all(selector(job="workload-ledger", exp=run[2:]), look0,
+                                     sel["end_ns"] + 86400 * NS, page=page))
+            if rows:
+                os.makedirs(os.path.join(tmp, "labels"), exist_ok=True)
+                head = [l for _, _, l in rows if l.startswith('"utc"')][:1]   # header carries no time: read time
+                body = [l for _, _, l in rows if not l.startswith('"utc"')]
+                with open(os.path.join(tmp, "labels", "ledger.csv"), "w", encoding="utf-8", newline="\n") as fh:
+                    fh.writelines(l.rstrip("\r\n") + "\n" for l in head + body)
+                ledger_lines += len(body)
 
     rec = {"source": "loki", "loki": lk.url, "pulled_utc": datetime.now(timezone.utc).isoformat(),
            "selection": {k: v for k, v in sel.items() if k not in ("start_ns", "end_ns")},
@@ -327,7 +330,9 @@ def main(argv=None):
     g.add_argument("--end", help="custom range end (default now)")
     g.add_argument("--since", help="custom range = [now - SINCE, now), e.g. 2h")
     ap.add_argument("--split", choices=["train", "test"], help="filter runs / the custom range")
-    ap.add_argument("--provider", nargs="+", choices=["kproc", "kfile", "knet"], help="custom range only")
+    ap.add_argument("--job", default="silketw", choices=["silketw", "sysmon"],
+                    help="which collector's streams to pull: silketw (Windows, default) or sysmon (Linux target)")
+    ap.add_argument("--provider", nargs="+", choices=["kproc", "kfile", "knet", "sysmon"], help="custom range only")
     ap.add_argument("--out-root", default=DEFAULT_OUT)
     ap.add_argument("--id", help="experiment folder name (default: run name, or range-<UTC start>)")
     ap.add_argument("--page", type=int, default=5000, help="lines per Loki request (server max_entries_limit)")
@@ -345,7 +350,7 @@ def main(argv=None):
         lk.ready()
     except OSError as e:
         sys.exit(f"[loki_pull] Loki not reachable at {a.loki} ({e}); set --loki or LOKI_URL")
-    runs = discover(lk, parse_time("now") - parse_time(a.lookback), split=None)
+    runs = discover(lk, parse_time("now") - parse_time(a.lookback), split=None, job=a.job)
     if a.list:
         for r in runs:
             print(describe(r, tz))
@@ -379,7 +384,7 @@ def main(argv=None):
     if os.path.exists(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(a.out_root, exist_ok=True)
-    rec = pull(lk, sel, out_dir, page=a.page)
+    rec = pull(lk, sel, out_dir, page=a.page, job=a.job)
     for s in rec["streams"]:
         print(f"[loki_pull]   {s['split']}/{s['run']}/{s['provider']}.json  {s['lines']:,} lines  sha256 {s['sha256'][:12]}"
               + (f"  ({s['duplicates_dropped']:,} duplicates dropped)" if s["duplicates_dropped"] else ""))
@@ -394,8 +399,13 @@ def main(argv=None):
         splits = sorted({s["split"] for s in rec["streams"]})
         if len(splits) != 1:
             sys.exit(f"[loki_pull] pulled several splits {splits}; run build_experiment.py --split ... yourself")
-        return build_experiment.main(["--exp", out_dir, "--split", splits[0]])
-    print(f"[loki_pull] next: uv run python src/pipeline/build_experiment.py --exp {out_dir}")
+        # Linux (sysmon) runs: tell the builder to use sysmon2nodlink.py and the Linux graph name.
+        extra = ["--source", "sysmon", "--graph", "SimulatedU22"] if a.job == "sysmon" else []
+        return build_experiment.main(["--exp", out_dir, "--split", splits[0], *extra])
+    nextcmd = f"uv run python src/pipeline/build_experiment.py --exp {out_dir}"
+    if a.job == "sysmon":
+        nextcmd += " --source sysmon --graph SimulatedU22"
+    print(f"[loki_pull] next: {nextcmd}")
     return 0
 
 

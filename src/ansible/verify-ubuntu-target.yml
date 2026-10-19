@@ -1,0 +1,73 @@
+---
+# Read-only verification that the Linux detection target is fully provisioned (DVWA + Sysmon + Alloy).
+# Safe + idempotent (no changes): run on demand, NOT part of site.yml.
+#   ansible-playbook -i inventory.local.ini verify-ubuntu-target.yml -e linux_target_enabled=true
+# Each assert names the thing and the role that installs it, so a failure points straight at the fix.
+- name: Verify the Linux detection target
+  hosts: target
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Nothing to verify unless the target is enabled
+      ansible.builtin.debug:
+        msg: "linux_target_enabled is false - the Linux target is a no-op; pass -e linux_target_enabled=true"
+      when: not (linux_target_enabled | bool)
+
+    - name: Target checks
+      when: linux_target_enabled | bool
+      block:
+        # ---------- ubuntu_vulnlab / DVWA ----------
+        - name: Services active (apache2, mariadb, sysmon, alloy, rsyslog)
+          ansible.builtin.command: "systemctl is-active {{ item }}"
+          loop: [apache2, mariadb, sysmon, alloy, rsyslog]
+          register: svc
+          changed_when: false
+          failed_when: false
+
+        - name: DVWA cloned + configured (ubuntu_vulnlab)
+          ansible.builtin.stat:
+            path: "{{ item }}"
+          loop:
+            - "{{ linux_vulnlab_dir }}/vulnerabilities/exec/index.php"
+            - "{{ linux_vulnlab_dir }}/config/config.inc.php"
+          register: dvwa_files
+
+        - name: DVWA login page serving on {{ vulnlab_port }} (ubuntu_vulnlab)
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ vulnlab_port }}/login.php"
+            method: GET
+            status_code: [200, 302]
+          register: dvwa_http
+          failed_when: false
+
+        # ---------- ubuntu_collector ----------
+        - name: Collector files present (ubuntu_collector)
+          ansible.builtin.stat:
+            path: "{{ item }}"
+          loop:
+            - /usr/local/bin/labctl
+            - /etc/sysmon-config.xml
+            - /etc/rsyslog.d/49-sysmon.conf
+            - /etc/alloy/config.alloy
+          register: coll_files
+
+        - name: Assert everything is up
+          ansible.builtin.assert:
+            that:
+              - svc.results | selectattr('stdout', 'equalto', 'active') | list | length == 5
+              - dvwa_files.results | map(attribute='stat.exists') | min
+              - (dvwa_http.status | default(0)) in [200, 302]
+              - coll_files.results | map(attribute='stat.exists') | min
+            fail_msg: >-
+              target not fully up - services active={{ svc.results | selectattr('stdout', 'equalto', 'active') | map(attribute='item') | list }},
+              DVWA files={{ dvwa_files.results | map(attribute='stat.exists') | list }},
+              http={{ dvwa_http.status | default('no response') }},
+              collector files={{ coll_files.results | map(attribute='stat.exists') | list }}.
+              Run site.yml -e linux_target_enabled=true (roles ubuntu_vulnlab, ubuntu_collector).
+            success_msg: >-
+              DVWA served on {{ vulnlab_port }} (apache2 + mariadb up), Sysmon + Alloy + rsyslog running,
+              labctl/sysmon/rsyslog/alloy configs present. Start a capture with: labctl start --split train
+
+        - name: Verification summary
+          ansible.builtin.debug:
+            msg: "LINUX TARGET VERIFIED on {{ inventory_hostname }}"

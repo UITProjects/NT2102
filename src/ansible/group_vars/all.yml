@@ -43,6 +43,17 @@ dvwa_db_password: "p@ssw0rd" # lab-only DB password on a host-only network; DVWA
 # The Kali attacker (exploit + RCE kill chain) is a local-only Vagrant box, NOT managed by Ansible: it
 # gets the attack pack via a synced-folder mount (src/Vagrantfile). No attacker vars here.
 
+# ---- Linux detection target (MIGRATION IN PROGRESS: DVWA on LAMP + Sysmon-for-Linux + Alloy) --------
+# Moving the vulnerable target + monitored host off Windows/XAMPP onto a native-LAMP Ubuntu 22.04 box
+# (ubuntu-target), monitored with Sysmon-for-Linux instead of SilkETW. Gated OFF by default so the
+# Windows path is untouched until this is verified end to end. See docs/DEVIATIONS.md (D10).
+linux_target_enabled: false      # gate for the ubuntu-target roles (ubuntu_vulnlab, ubuntu_collector)
+linux_graph_name: "SimulatedU22" # Linux capture graph name, kept distinct from SimulatedW10 (sparser graph)
+linux_vulnlab_dir: "/var/www/dvwa"      # Apache DocumentRoot, so the exploit path stays /vulnerabilities/exec/
+linux_raw_root: "/var/lib/etwlab/raw"   # Sysmon capture files: <raw_root>/<split>/<run>/sysmon.log (Alloy tails)
+sysmon_job: "sysmon"             # Loki job label for the Linux collector (Windows uses "silketw")
+# Reused from the DVWA section above (host-agnostic): vulnlab_port (3000), vulnlab_repo, dvwa_db_name.
+
 # ---- pinned tool versions -------------------------------------------------------------------------
 silketw_tag: "v0.8"
 # v0.8 release asset. Pin the sha256 after the first download (printed by the role) to make it immutable.

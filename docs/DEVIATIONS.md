@@ -164,3 +164,27 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   not fed back into training: log text (paths, process names) is attacker-controlled, so prompt injection
   is possible, and [PAPER] §3 assumes training logs free of attack traces. No claim about report quality
   vs the paper's Table 5.
+
+## D10. Linux detection target: Sysmon-for-Linux instead of Windows SilkETW (MIGRATION IN PROGRESS)
+- What: [OURS] the vulnerable target + monitored host are moving off Windows/XAMPP onto a native-LAMP
+  Ubuntu 22.04 VM (`ubuntu-target`), monitored with **Sysmon-for-Linux** instead of SilkETW. A new
+  converter `src/pipeline/sysmon2nodlink.py` emits the SAME node/edge CSV contract as `etw2nodlink.py`, so
+  everything downstream (windower, features, trainer, scorer) is unchanged; it is selected with
+  `build_experiment.py --source sysmon` and `loki_pull.py --job sysmon`. New Ansible roles
+  `ubuntu_vulnlab` (DVWA on apache2+php+mariadb) and `ubuntu_collector` (Sysmon + rsyslog per-run files +
+  Alloy → Loki), gated by `linux_target_enabled` (default false); the Windows path is untouched until
+  this is verified. Graph name `SimulatedU22` (distinct from `SimulatedW10`).
+- Why: DVWA on XAMPP/Windows was unstable; DVWA is natively a LAMP app and runs reliably apt-managed +
+  systemd-supervised. The attack's post-exploitation runs on the exploited host and never pivots back to
+  Windows, so moving the target to Linux moves the whole monitored host — hence a Linux collector +
+  converter, not just a relocated web app.
+- Event mapping (Sysmon-for-Linux is a subset of Windows Sysmon): ProcessCreate(1)→Start,
+  FileCreate(11)→Write, RawAccessRead(9)→Read, NetworkConnect(3)→Send; ProcessTerminate(5) drops the pid.
+- Impact / fidelity gaps: Sysmon-for-Linux has **no ImageLoad**, so **no `Load` edges**; **no distinct
+  recv**, so network is **Send-only**; file I/O is approximated from Create/RawAccessRead, not a
+  Read/Write stream. The Linux graph is therefore **sparser** than the Windows one.
+- Limits: do NOT compare Linux graph densities or anomaly scores to the Windows ones — different OS,
+  different sensor, different edge coverage, and a model retrained on Linux benign (the Windows
+  OCRGCN/scaler/relations are not transferable). The exact Sysmon syslog line/field shape is [INFERENCE]
+  until confirmed on the provisioned VM (`journalctl -t sysmon`); `sysmon2nodlink.py` and the Alloy config
+  assume one Sysmon event XML per line. Not yet verified end to end on a VM (see PROGRESS).

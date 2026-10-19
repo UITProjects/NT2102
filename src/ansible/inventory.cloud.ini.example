@@ -19,6 +19,15 @@ ubuntu-trainer ansible_host=CHANGE_ME_UBUNTU_PUBLIC_IP private_ip=CHANGE_ME_UBUN
 [ubuntu:vars]
 admin_cidr=CHANGE_ME_YOUR_ADMIN_IP/32
 
+# Linux detection target (migration in progress): DVWA on native LAMP + Sysmon-for-Linux + Alloy.
+# Only reached inside the subnet (DVWA from the attacker, Sysmon out to Loki). Gated by linux_target_enabled.
+[target]
+ubuntu-target ansible_host=CHANGE_ME_TARGET_PUBLIC_IP private_ip=CHANGE_ME_TARGET_SUBNET_IP ansible_user=ubuntu
+
+[target:vars]
+admin_cidr=CHANGE_ME_YOUR_ADMIN_IP/32
+
 [lab:children]
 windows
 ubuntu
+target

@@ -128,6 +128,19 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   provisioning run + `verify-windows.yml -e vulnlab_enabled=true` pass. The `setup.php` schema step is
   the known risk.
 
+- IN PROGRESS — Linux target migration (user, 2026-10-19): the vulnerable target + monitored host are
+  being moved off Windows/XAMPP onto a native-LAMP Ubuntu 22.04 VM (`ubuntu-target`, 10.21.2.40),
+  monitored with Sysmon-for-Linux instead of SilkETW, because DVWA on XAMPP/Windows was unstable. Scope
+  this phase = infra + converter only (Vagrant/Ansible + the Sysmon->NODLINK converter); keep the Windows
+  path as the source of truth until the Linux path is verified. DONE + verified offline on the host:
+  `src/pipeline/sysmon2nodlink.py` (same CSV contract as `etw2nodlink.py`), wired via
+  `build_experiment.py --source sysmon` and `loki_pull.py --job sysmon`, graph `SimulatedU22`. WRITTEN but
+  NOT verified on a VM: 4th Vagrant VM, `ansible/target.yml`, roles `ubuntu_vulnlab` + `ubuntu_collector`,
+  `verify-ubuntu-target.yml`, all gated by `linux_target_enabled` (default false). Known risk: the exact
+  Sysmon syslog line/field shape is [INFERENCE] until confirmed on the VM. Fidelity gaps (DEVIATIONS D10):
+  no Load edges, Send-only network, file I/O approximated — the Linux graph is sparser; no cross-OS score
+  comparison. Phase 2 (not built): Linux bash kill chain, Linux benign workload, retrain, live verify.
+
 When direction or progress changes, update `docs/PROGRESS.md` (replace status lines in place; no
 history of earlier progress) and, if relevant, this section.
 

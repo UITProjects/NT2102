@@ -77,6 +77,12 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 - Improve loop (code + selftest, 2026-10-17): `lab` CLI (`src/lab/cli.py`): status / pull / train / loop /
   promote; one run folder per model; current-model pointer read by the live server, `serve.sh`,
   `rejudge.sh` and `ocr-live`.
+- Linux target migration — converter + pipeline wiring (verified offline on the host, 2026-10-19,
+  DEVIATIONS D10): `src/pipeline/sysmon2nodlink.py` (Sysmon-for-Linux XML -> the same CSV contract as
+  `etw2nodlink.py`) passes `--selftest`; the full offline chain `build_experiment.py --source sysmon
+  --graph SimulatedU22` -> window -> check passes on a synthetic 12-min Sysmon capture (4 windows, 241
+  edges, `check.json` ok). `loki_pull.py --job sysmon` + `build_experiment.py --source sysmon` wired,
+  additive; the unchanged Windows selftests (`etw2nodlink`, `loki_pull`, `build_experiment`) still pass.
 - Concepts: provenance graphs; GNN message passing.
 
 ## Invalid / needs redo
@@ -96,6 +102,14 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   :3000 (login admin/password, security low); `vagrant up kali` (mounts the pack at `/opt/attack-pack`);
   then `python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000` during a live
   session and check the window reaches ≥ Moderate (sg_score ≥ 30) while benign stays green.
+- Linux detection target (migration in progress, DEVIATIONS D10): provision `ubuntu-target` (Ubuntu
+  22.04, 10.21.2.40) on a VM and verify end to end. Written but NOT yet run on a VM: Vagrant 4th VM,
+  inventory `[target]`, `ansible/target.yml`, roles `ubuntu_vulnlab` (DVWA on LAMP) + `ubuntu_collector`
+  (Sysmon-for-Linux + rsyslog per-run files + Alloy -> Loki), `verify-ubuntu-target.yml` (all pass
+  `--syntax-check`). Open: confirm the Sysmon syslog line/field shape (`journalctl -t sysmon`) matches
+  `sysmon2nodlink.py` + the Alloy config; a clean idempotent run (`changed=0` on re-run); then a benign
+  capture pulled with `--job sysmon` and converted. Phase 2 (not planned here): Linux bash kill chain,
+  Linux benign workload, retrain the OCRGCN on Linux benign, live benign-green/attack-red.
 - Concepts 2 (rest) to 9. Phase 0 toy exercises; Phase 1 one-page paper summary + hyperparameter list.
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
