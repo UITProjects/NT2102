@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Training on Windows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  box-sizing: border-box;
+  --bg: #EEF2F6;
+  --surface: #FFFFFF;
+  --ink: #17202B;
+  --muted: #566373;
+  --rule: #CDD5DE;
+  --mark: #FFE066;
+  --mark-ink: #3A2E00;
+  --code-bg: #F6F8FA;
+  --c-train: #1F63B5;
+  --c-val: #0E8A66;
+  --c-purge: #8A96A3;
+  --c-bad: #C0392B;
+  --c-hot: #B42358;
+  --c-net: #6A4CC2;
+  --c-file: #A86A00;
+  --t-repo: #1F63B5;
+  --t-paper: #0E8A66;
+  --t-inf: #A86A00;
+  --t-ours: #6A4CC2;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171E; --surface: #1A212B; --ink: #E3E8EE; --muted: #9AA7B6; --rule: #2E3946;
+    --mark: #6B5A12; --mark-ink: #FFF3C4; --code-bg: #151B23;
+    --c-train: #6FA8F0; --c-val: #4CC9A0; --c-purge: #6B7785; --c-bad: #F07A6C; --c-hot: #F06C9B;
+    --c-net: #A993F0; --c-file: #E3B04B;
+    --t-repo: #6FA8F0; --t-paper: #4CC9A0; --t-inf: #E3B04B; --t-ours: #A993F0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171E; --surface: #1A212B; --ink: #E3E8EE; --muted: #9AA7B6; --rule: #2E3946;
+  --mark: #6B5A12; --mark-ink: #FFF3C4; --code-bg: #151B23;
+  --c-train: #6FA8F0; --c-val: #4CC9A0; --c-purge: #6B7785; --c-bad: #F07A6C; --c-hot: #F06C9B;
+  --c-net: #A993F0; --c-file: #E3B04B;
+  --t-repo: #6FA8F0; --t-paper: #4CC9A0; --t-inf: #E3B04B; --t-ours: #A993F0;
+}
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--sans); font-size: 17px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.prose { max-width: 720px; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 16px; max-width: 18ch; }
+h2 { font-size: 1.55rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 12px; display: flex; gap: 14px; align-items: baseline; }
+h2 .n { font-family: var(--mono); font-weight: 500; font-size: 0.95rem; color: var(--muted); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 10px; flex: none; }
+h3 { font-size: 1.05rem; font-weight: 600; margin: 24px 0 8px; }
+p { margin: 0 0 14px; }
+a { color: var(--c-train); }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+p code, li code, td code { background: var(--code-bg); border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+section { padding: 44px 0; border-top: 1px solid var(--rule); }
+header.hero { padding: 56px 16px 40px; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 60ch; }
+.q { font-size: 0.92rem; color: var(--muted); font-style: italic; margin-bottom: 18px; }
+
+.tag { font-family: var(--mono); font-size: 0.72rem; font-weight: 500; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; vertical-align: 1px; white-space: nowrap; }
+.tag.repo { color: var(--t-repo); } .tag.paper { color: var(--t-paper); } .tag.inf { color: var(--t-inf); } .tag.ours { color: var(--t-ours); }
+
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px; min-width: 0; margin-top: 18px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 12px; }
+.controls label { font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+.controls input[type=range] { width: 140px; }
+.controls output, .val { font-family: var(--mono); font-weight: 500; min-width: 2.5ch; display: inline-block; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+button.btn { font: inherit; font-size: 0.88rem; font-weight: 500; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+button.btn.on, button.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--c-train); outline-offset: 2px; }
+input[type=text], input[type=number] { font: inherit; font-family: var(--mono); font-size: 0.88rem; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--code-bg); color: var(--ink); }
+input[type=number] { width: 5.5em; }
+input[type=text] { width: 100%; max-width: 520px; }
+.readout { font-family: var(--mono); font-size: 0.85rem; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; margin-top: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.readout .v { background: var(--mark); color: var(--mark-ink); padding: 0 3px; border-radius: 3px; }
+.readout .err { color: var(--c-bad); font-weight: 600; }
+svg { display: block; width: 100%; height: auto; }
+.scroll svg { min-width: 560px; }
+svg text { font-family: var(--mono); fill: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.82rem; color: var(--muted); margin-top: 8px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+.note { border-left: 3px solid var(--rule); padding: 4px 0 4px 14px; color: var(--muted); margin: 14px 0; }
+.warn { border-left: 3px solid var(--c-bad); padding: 6px 0 6px 14px; margin: 18px 0; }
+.big { font-family: var(--mono); font-size: 1.05rem; }
+.scroll { overflow-x: auto; max-width: 100%; }
+table { border-collapse: collapse; font-size: 0.85rem; }
+th, td { padding: 4px 10px; text-align: left; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font-weight: 600; }
+td.num, th.num { text-align: right; font-family: var(--mono); }
+tr.dim td { opacity: 0.4; }
+tr.hot td { background: color-mix(in srgb, var(--c-bad) 18%, transparent); }
+.cross { text-decoration: line-through; opacity: 0.5; }
+
+/* dataflow */
+.flow { display: grid; gap: 0; max-width: 720px; margin-top: 18px; }
+.flow .step { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: start; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; text-decoration: none; color: var(--ink); }
+.flow a.step:hover { border-color: var(--ink); }
+.flow .where { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); padding-top: 3px; }
+.flow .what { font-size: 0.95rem; }
+.flow .what small { display: block; color: var(--muted); font-size: 0.82rem; }
+.flow .arrow { text-align: center; color: var(--muted); line-height: 1.4; font-size: 0.9rem; }
+.flow .split3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.flow .split3 div { border-radius: 6px; padding: 6px 8px; font-size: 0.82rem; color: #fff; }
+@media (max-width: 560px) { .flow .step { grid-template-columns: 1fr; gap: 2px; } .flow .split3 { grid-template-columns: 1fr; } }
+
+/* islands */
+.isl .edge { stroke: var(--muted); stroke-width: 1.6; opacity: 0.55; }
+.isl .edge.lit { stroke: var(--c-hot); stroke-width: 3.2; opacity: 1; }
+.isl .box { fill: none; stroke-width: 1.6; stroke-dasharray: 5 4; }
+@media (prefers-reduced-motion: no-preference) { .isl .edge { transition: stroke 0.25s, stroke-width 0.25s, opacity 0.25s; } }
+
+table.types { margin-top: 10px; }
+table.types td, table.types th { font-size: 0.8rem; white-space: normal; vertical-align: top; }
+table.types td:first-child, table.types td:nth-child(2) { font-family: var(--mono); white-space: nowrap; }
+.losstab input { width: 5em; }
+.twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 760px) { .twocol { grid-template-columns: 1fr; } }
+footer { padding: 30px 16px 60px; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); }
+</style>
+</head>
+<body>
+
+<header class="hero wrap">
+  <h1>Twenty minutes of benign activity, cut into five-minute graphs</h1>
+  <p class="lede">How the OCRGCN trainer in this project uses the benign capture: why the 20-minute recording is sliced into overlapping 5-minute windows, why two of them are thrown away, how all windows end up in one graph without mixing, and why the idle-time features make the window length matter.</p>
+  <p class="prose" style="font-size:0.9rem;color:var(--muted)">Numbers come from the benign experiment <code>20261009T145632Z</code> and training run <code>exp01</code> (<code>docs/PROGRESS.md</code>). A wider recapture is under way, so the counts will change; the mechanism will not. Tags: <span class="tag paper">PAPER</span> stated in the OCR-APT paper. <span class="tag repo">AUTHOR CODE</span> verified in the authors' code (github.com/CoDS-GCS/OCR-APT). <span class="tag ours">OURS</span> what this project does differently. <span class="tag inf">INFERENCE</span> an interpretation, not verified.</p>
+</header>
+
+<!-- 1 ------------------------------------------------------------------ -->
+<section id="s1">
+  <div class="wrap">
+    <h2><span class="n">1</span>The whole training path</h2>
+    <div class="prose">
+      <p>Every box is one script that writes files you can open. Click a box to jump to the section that explains it.</p>
+    </div>
+    <div class="flow">
+      <div class="step"><span class="where">Windows VM</span><span class="what"><code>06-benign-workload.ps1 -DurationMinutes 20</code> while SilkETW records kernel events<small>Raw lines go through Alloy into Loki on the trainer.</small></span></div>
+      <div class="arrow">↓</div>
+      <a class="step" href="#s2"><span class="where">trainer</span><span class="what"><code>loki_pull.py</code> → <code>etw2nodlink.py</code><small>One 20-minute edge list: 37,294 edges.</small></span></a>
+      <div class="arrow">↓ window 5 min, stride 2 min</div>
+      <a class="step" href="#s2"><span class="where">etwwindow.py</span><span class="what">8 overlapping windows, every node ID prefixed <code>w000k_</code><small>68,319 windowed edges (events are copied into each window they fall in); 484 tail edges dropped.</small></span></a>
+      <div class="arrow">↓</div>
+      <a class="step" href="#s7"><span class="where">encode_to_features.py</span><span class="what">15 features per (node, window): 12 action mix + 3 idle stats<small>Scaler fitted here and reused for live windows.</small></span></a>
+      <div class="arrow">↓ split by window</div>
+      <a class="step" href="#s4"><span class="where">train_gnn_models.py</span><span class="what"><div class="split3"><div style="background:var(--c-train)">TRAIN w0000–w0004</div><div style="background:var(--c-purge)">PURGED w0005, w0006</div><div style="background:var(--c-val)">VAL w0007</div></div></span></a>
+      <div class="arrow">↓</div>
+      <a class="step" href="#s5"><span class="where">train_gnn_models.py</span><span class="what">One OCRGCN per node type (PROCESS, FILE, NET), one pass over all windows at once<small>Each epoch: loss on train nodes, threshold τ from train scores, check on val, stop after 5 epochs without improvement.</small></span></a>
+      <div class="arrow">↓</div>
+      <a class="step" href="#s6"><span class="where">runs/&lt;run&gt;/</span><span class="what">Saved: models, scaler, τ, relation list → <code>lab promote</code> → live server<small>Live: tumbling 5-min windows, each scored with the same scaler, models and τ.</small></span></a>
+    </div>
+  </div>
+</section>
+
+<!-- 2 ------------------------------------------------------------------ -->
+<section id="s2">
+  <div class="wrap">
+    <h2><span class="n">2</span>20 minutes is the raw material, 5 minutes is the sample</h2>
+    <p class="q">"So what about 20 minutes? Is it useless?"</p>
+    <div class="prose">
+      <p>The 20 minutes is how much benign activity you record. The 5 minutes is the size of each piece the model sees. The recording length decides how many pieces you get. 20 is simply the default of the workload script (<code>06-benign-workload.ps1:30</code>, <code>[int]$DurationMinutes = 20</code>), not a number from the paper.</p>
+      <p><span class="tag ours">OURS</span> The rule (<code>etwwindow.py:15-18</code>, <code>:70-78</code>): window <i>k</i> starts at <code>k × stride</code> and covers <code>[start, start + window)</code>, meaning from <i>start</i> up to but not including <i>start + window</i>. Only full windows are kept. Move the sliders.</p>
+    </div>
+    <div class="panel">
+      <div class="presets">
+        <button class="btn" data-sl="20,5,2">Our capture 20 / 5 / 2</button>
+        <button class="btn" data-sl="60,5,2">Longer: 60 / 5 / 2</button>
+        <button class="btn" data-sl="8,5,2">Too short: 8 / 5 / 2</button>
+        <button class="btn" data-sl="20,5,5">Tumbling: 20 / 5 / 5</button>
+      </div>
+      <div class="controls">
+        <label>capture <input type="range" id="slC" min="5" max="60" step="1" value="20"> <output id="oC">20</output> min</label>
+        <label>window <input type="range" id="slW" min="2" max="10" step="1" value="5"> <output id="oW">5</output> min</label>
+        <label>stride <input type="range" id="slS" min="1" max="5" step="1" value="2"> <output id="oS">2</output> min</label>
+      </div>
+      <div class="scroll"><svg id="slSvg" viewBox="0 0 640 200" role="img" aria-label="Windows cut from the capture"></svg></div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--c-train)"></span>train</span>
+        <span><span class="sw" style="background:var(--c-purge)"></span>purged</span>
+        <span><span class="sw" style="background:var(--c-val)"></span>validation</span>
+        <span><span class="sw" style="background:var(--c-bad);opacity:.35"></span>tail with no full window, dropped</span>
+      </div>
+      <div class="readout" id="slOut"></div>
+    </div>
+    <div class="prose">
+      <p class="note">In <code>exp01</code>: 8 windows, 37,294 edges in → 68,319 windowed edges, 484 edges outside any window, 6,810 node-window copies (995 PROCESS / 2,558 FILE / 3,257 NET). The tail is minute 19–20.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 ------------------------------------------------------------------ -->
+<section id="s3">
+  <div class="wrap">
+    <h2><span class="n">3</span>One event lands in several windows</h2>
+    <div class="prose">
+      <p>Windows overlap, so the windower copies each event into every window whose <code>[start, start + 5)</code> contains it (<code>window_ids_for</code>, <code>etwwindow.py:81</code>). With window 5 and stride 2, that is at most ⌈5 / 2⌉ = 3 windows (⌈x⌉ means round up). This is why 37,294 edges become 68,319. Drag the event along the capture.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label>event at minute <input type="range" id="evT" min="0" max="19.9" step="0.1" value="7.5"> <output id="oT">7.5</output></label>
+        <button class="btn" data-ev="7.5">7.5</button>
+        <button class="btn" data-ev="10.5">10.5</button>
+        <button class="btn" data-ev="0.5">0.5</button>
+        <button class="btn" data-ev="19.5">19.5</button>
+      </div>
+      <div class="scroll"><svg id="evSvg" viewBox="0 0 640 200" role="img" aria-label="Which windows contain the event"></svg></div>
+      <div class="readout" id="evOut"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 ------------------------------------------------------------------ -->
+<section id="s4">
+  <div class="wrap">
+    <h2><span class="n">4</span>Why two windows are purged</h2>
+    <p class="q">"Why are 2 purged and not used for training?"</p>
+    <div class="prose">
+      <p>Validation asks one question: does the model leave benign activity it has <em>never seen</em> unflagged? That check is only honest if the validation window shares no events with training. Overlapping windows do share events, so training on them would be like handing out the exam answers before the exam.</p>
+      <p><span class="tag ours">OURS</span> <code>make_split</code> (<code>train_gnn_models.py:130-157</code>) holds out the last window and purges the ⌈window / stride⌉ − 1 windows before it (<code>--purge-windows 2</code>, <code>:390</code>). The paper does not describe this, because it does not use sliding windows. Click any window to hold it out and see who overlaps it.</p>
+    </div>
+    <div class="panel">
+      <div class="scroll"><svg id="puSvg" viewBox="0 0 640 230" role="img" aria-label="Overlap between the held-out window and the others"></svg></div>
+      <div class="readout" id="puOut"></div>
+    </div>
+    <div class="prose">
+      <p>Why not move the two overlapping windows into validation instead? Because they overlap training on their other side: w0005 <code>[10, 15)</code> shares minutes 10–13 with w0004 <code>[8, 13)</code>. The leak would just move. Cutting them out is the clean break.</p>
+      <p><span class="tag inf">INFERENCE</span> Holding out the <em>last</em> window rather than a middle one means only one side needs purging (try clicking w0003 above: four neighbours overlap it). With 20 minutes you lose 2 of 8 windows (25 %); with 60 minutes, 2 of 28 (about 7 %).</p>
+    </div>
+  </div>
+</section>
+
+<!-- 5 ------------------------------------------------------------------ -->
+<section id="s5">
+  <div class="wrap">
+    <h2><span class="n">5</span>One graph, many islands</h2>
+    <p class="q">"How does it aggregate the results from each window?"</p>
+    <div class="prose">
+      <p>It doesn't, because there are no per-window results. Before training, all windows are loaded as one graph (<code>build_graph</code>, <code>train_gnn_models.py:55-104</code>). Because every node ID carries its window prefix, no edge links two windows: the graph is 8 separate islands stored in one tensor. One forward pass handles all of them, and messages never leave an island. This is the usual way to batch many small graphs in PyTorch Geometric.</p>
+      <p>The split is only a label per node, read from the prefix (<code>:146</code>). It doesn't change the graph; it decides which rows count for the loss (<code>tr</code>) and which for validation (<code>va</code>, <code>:286-288</code>). Both are <code>torch.Tensor</code> int64 lists of row numbers, built with <code>np.where(mask)[0]</code>. Purged nodes still go through the forward pass but are never selected.</p>
+    </div>
+    <div class="panel isl">
+      <div class="controls">
+        <button class="btn primary" id="msgBtn">Pass messages (one RGCN layer)</button>
+        <span id="msgOut" style="font-size:0.9rem;color:var(--muted)"></span>
+      </div>
+      <div class="scroll"><svg id="islSvg" viewBox="0 0 640 220" role="img" aria-label="Three window islands inside one graph"></svg></div>
+      <div class="legend">
+        <span>● process</span><span>■ file</span><span>◆ net</span>
+        <span><span class="sw" style="background:var(--c-train)"></span>train island</span>
+        <span><span class="sw" style="background:var(--c-purge)"></span>purged island</span>
+        <span><span class="sw" style="background:var(--c-val)"></span>validation island</span>
+      </div>
+      <div class="readout">x          : torch.Tensor float32 [N, 15]   features of every node, all windows
+edge_index : torch.Tensor int64   [2, 2E]   edges + their reversed copies (:101)
+edge_type  : torch.Tensor int64   [2E]      relation id of each edge
+tr         : torch.Tensor int64   [n_train] row numbers of train nodes of this type
+
+emb  = model(x, edge_index, edge_type)   # torch.Tensor [N, 32]  every node, all 8 windows
+loss = model.loss(emb[tr])               # torch.Tensor [] (0-dim: one number), train rows only (:228)</div>
+      <div class="scroll"><table class="types">
+        <thead><tr><th>expression</th><th>type</th><th>what to watch for</th></tr></thead>
+        <tbody>
+          <tr><td>model(...)</td><td>torch.Tensor [N, 32]</td><td>Calling the model object runs its <code>forward()</code> (PyTorch calls it for you), like invoking a functional interface.</td></tr>
+          <tr><td>emb[tr]</td><td>torch.Tensor [n_train, 32]</td><td><code>[]</code> with an int tensor inside picks those <strong>rows</strong> (fancy indexing), not one element. Like <code>tr.stream().map(i -&gt; emb[i])</code>.</td></tr>
+          <tr><td>loss</td><td>torch.Tensor, shape []</td><td>A 0-dimensional tensor: one number that still remembers how it was computed, so <code>loss.backward()</code> can compute gradients.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <h3>The only place windows "meet": one average in the loss</h3>
+    <div class="prose">
+      <p>The loss (<code>:204-207</code>) is <code>L = r² + (1/β) · mean(relu(score))</code> with <code>score = ‖emb − c‖² − r²</code>. In words: the squared distance of a node from the sphere centre <i>c</i>, minus the squared radius. <code>relu(v) = max(v, 0)</code>, so only nodes outside the sphere count. The <code>mean</code> runs over all training nodes, whatever window they came from. β = 0.5 (<span class="tag paper">PAPER</span> §7.2.1), so 1/β = 2. Edit the scores.</p>
+    </div>
+    <div class="panel">
+      <div class="presets">
+        <button class="btn" data-loss="-0.1,0.3,0,0.2,-0.4">Example 1: mostly inside</button>
+        <button class="btn" data-loss="-0.1,0.3,0.9,0.8,0.7">Example 2: w0001 behaves unusually</button>
+      </div>
+      <div class="scroll">
+        <table class="losstab">
+          <thead><tr><th>node</th><th>window</th><th>score</th><th class="num">relu(score)</th></tr></thead>
+          <tbody id="lossBody"></tbody>
+        </table>
+      </div>
+      <div class="controls" style="margin-top:12px"><label>radius r <input type="number" id="lossR" step="0.05" value="0.5"></label></div>
+      <div class="readout" id="lossOut"></div>
+    </div>
+    <div class="prose">
+      <p>The result is one model per node type, each with one centre <i>c</i>, one radius <i>r</i> and one threshold τ, learned from all training windows together (<code>:298-301</code>). τ is the (1 − contamination) quantile of the training scores (<code>:239</code>), with contamination 0.001 (<code>:399</code>, <span class="tag paper">PAPER</span> Min_con): 99.9 % of training nodes sit at or below it. With 575 training processes that leaves about 0.001 × 575 ≈ 0.6 nodes above, which is why <code>exp01</code> shows 1/575 flagged.</p>
+      <p class="note">The only real aggregation is across runs, not windows: <code>--runs 3</code> trains with seeds 360, 361, 362 and reports mean ± std (<code>:327-330</code>). Only run 0's model is saved (<code>:297</code>, <span class="tag repo">AUTHOR CODE</span> l.666). That is a stability check, not a merge.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 ------------------------------------------------------------------ -->
+<section id="s6">
+  <div class="wrap">
+    <h2><span class="n">6</span>Then why cut windows at all?</h2>
+    <p class="q">"If it trains like this, why break into 5-minute windows in the first place?"</p>
+    <div class="prose">
+      <p>Pooled windows are not the same as one 20-minute graph. Pooling keeps each window an island, so every node still only sees its own 5 minutes. The windows exist because <strong>live detection scores 5-minute windows</strong>, so the model must learn what normal looks like in 5-minute views. The rule: train on the same shape of data you detect on.</p>
+      <p><span class="tag paper">PAPER</span> OCR-APT trains on a whole benign log and predicts on a whole test log, both offline, so training and test already match. <span class="tag ours">OURS</span> We detect live in 5-minute windows, so we cut training the same way (<code>docs/DEVIATIONS.md</code>: windowed, near-live detection).</p>
+      <h3>Reason 1: idle-time features depend on the window length</h3>
+      <p>Below is <code>explorer.exe</code> with a few events (minutes, editable). Compare its max idle gap when the 20 minutes is one graph versus when it is cut into windows.</p>
+    </div>
+    <div class="panel">
+      <div class="controls">
+        <label style="flex:1 1 320px">explorer.exe events (minutes) <input type="text" id="mmEv" value="1, 1.5, 2.5, 17, 17.5, 18.5"></label>
+      </div>
+      <div class="presets">
+        <button class="btn on" data-mm="whole">One 20-min graph</button>
+        <button class="btn" data-mm="win">5-min windows (what we do)</button>
+      </div>
+      <div class="scroll"><svg id="mmSvg" viewBox="0 0 640 210" role="img" aria-label="Idle gaps per view"></svg></div>
+      <div class="readout" id="mmOut"></div>
+    </div>
+    <div class="prose">
+      <p>The scaler is fitted on training values and reused live (<code>encode_to_features.py:120-146</code>). Toy numbers: if training were one 20-minute graph, max idle might range 0–1,100 s. A live 5-minute window can never exceed 300 s, so every live value lands in 0–0.27 of the learned range, a part the model rarely saw for long-lived processes. Normal processes start to look unusual, which means false positives. Trained on windows, the range is about 0–300 s, the same range live windows produce.</p>
+      <h3>Reason 2: neighbourhoods change size</h3>
+      <p>RGCN averages over a node's neighbours (<code>RGCNConv</code> with mean aggregation, <code>train_gnn_models.py:183</code>). In one 20-minute graph, <code>chrome.exe</code> might link to 200 files; in a 5-minute window, maybe 50. Different neighbour averages give different embeddings, so a sphere fitted to 20-minute neighbourhoods does not describe 5-minute ones. The 12 action-count features are L2-normalised (<code>encode_to_features.py:113-117</code>): they keep the mix of actions but not the volume, so this effect is smaller there, but the mix still shifts when a window catches only a startup burst.</p>
+      <h3>Reason 3: more views, and a time-based validation split</h3>
+      <p>One 20-minute graph gives one row per process; 8 windows give up to 8 views of a long-running process at different moments. They are correlated, but they show the model more variety. Holding out a time slice for validation also needs time slices. With one graph you'd fall back to a random 15 % node split (<span class="tag repo">AUTHOR CODE</span> <code>encode_to_PyG.py</code> l.102, noted at <code>train_gnn_models.py:132</code>), where validation nodes share neighbours with training nodes.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 ------------------------------------------------------------------ -->
+<section id="s7">
+  <div class="wrap">
+    <h2><span class="n">7</span>The idle features, step by step</h2>
+    <div class="prose">
+      <p><span class="tag paper">PAPER</span> §5.1.2: min, max and average duration between a node's actions. <code>idle_stats</code> (<code>encode_to_features.py:89-110</code>) sorts each node's event times, takes the gaps between consecutive events, and keeps avg / max / min. Every edge's timestamp counts for both endpoints, so a file read by chrome adds an event to chrome and to the file. Then each value is min-max scaled with the training range: <code>(value − min) / (max − min)</code>. Here the toy scaler range is 0–300 s.</p>
+    </div>
+    <div class="panel">
+      <div class="presets">
+        <button class="btn" data-gap="10, 40, 50, 250">notepad.exe</button>
+        <button class="btn" data-gap="chrome">chrome.exe (every 2 s)</button>
+        <button class="btn" data-gap="42">seen once</button>
+      </div>
+      <div class="controls"><label style="flex:1 1 320px">event times inside one window (seconds) <input type="text" id="gapIn" value="10, 40, 50, 250"></label></div>
+      <div class="readout" id="gapOut"></div>
+    </div>
+    <div class="prose">
+      <p class="warn"><strong>Quirk.</strong> A node with one event has no gap, so all three features are set to 0 (<code>:108-110</code>, <span class="tag repo">AUTHOR CODE</span> l.192-196). "Seen once" then looks like "extremely busy" (gaps near 0 s). <code>n_events</code> tells them apart, but it is only in <code>features_raw.csv</code> for EDA, not a model feature.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 8 ------------------------------------------------------------------ -->
+<section id="s8">
+  <div class="wrap">
+    <h2><span class="n">8</span>Pooled, yet separate</h2>
+    <p class="q">"Gaps are measured inside one window, but you said everything is combined into one graph?"</p>
+    <div class="prose">
+      <p>Both are true. Combined means one file and one tensor, not merged nodes. In the windowed file the same process has a different ID in each window: <code>w0002_chrome</code> and <code>w0003_chrome</code> are different strings, so they are different nodes. The idle step groups by that full ID (<code>encode_to_features.py:97-99</code>: <code>ts</code> is a <code>pd.DataFrame</code> with one row per (node, timestamp); <code>ts.groupby("node_uuid")</code> makes one group per distinct ID <code>str</code>, like SQL <code>GROUP BY node_uuid</code>), so a gap between two windows is never computed.</p>
+      <p>A backend analogy: one MongoDB collection where the <code>$group</code> key is <code>(window, pid)</code>, not <code>pid</code>. All documents live in the same collection, but no group mixes windows. Below, chrome has four raw events; switch the grouping key.</p>
+    </div>
+    <div class="panel">
+      <div class="presets">
+        <button class="btn" data-gk="pid">key = pid (one 20-min graph)</button>
+        <button class="btn on" data-gk="win">key = window_pid (what we do)</button>
+      </div>
+      <div class="scroll"><table><thead><tr><th>node_uuid</th><th>events (m:ss)</th><th class="num">gaps (s)</th><th class="num">max idle</th></tr></thead><tbody id="gkBody"></tbody></table></div>
+      <div class="readout" id="gkOut"></div>
+    </div>
+    <div class="prose">
+      <p>Order of operations: the windower creates the windows and the prefixes; everything after that only ever groups by the prefixed ID. The features and the message passing both stay inside one 5-minute window, and nothing later undoes the windows.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 9 ------------------------------------------------------------------ -->
+<section id="s9">
+  <div class="wrap">
+    <h2><span class="n">9</span>What this setup limits</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Only 5 training windows.</strong> 20 minutes is not useless, it is small. The model has seen little normal behaviour.</li>
+        <li><strong>Correlated rows.</strong> A long-running process appears in up to 3 overlapping windows, so there are fewer independent samples than the 6,810 rows suggest (<code>docs/DEVIATIONS.md</code>).</li>
+        <li><strong>The first live false positive.</strong> 18 syswow64 DLLs (FILE nodes) loaded once by a short-lived <code>updater</code> process were flagged; training had 0 <code>updater</code> processes (<code>docs/PROGRESS.md</code>). Unseen benign behaviour is exactly what a thin capture misses.</li>
+        <li><strong>Next step.</strong> Record longer or several seeded captures, keep the 5-minute window so the features stay on the live scale, retrain and recalibrate.</li>
+      </ul>
+      <p class="note">No number on this page is a detection metric. The training numbers say "it runs and is consistent", not "it detects attacks".</p>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap">
+  Sources: <code>src/pipeline/etwwindow.py</code>, <code>src/pipeline/encode_to_features.py</code>, <code>src/pipeline/train_gnn_models.py</code>, <code>src/scripts/06-benign-workload.ps1</code>, <code>docs/PROGRESS.md</code>, <code>docs/DEVIATIONS.md</code>, OCR-APT paper §5.1, §7.2.1. Companion pages: <a href="edges-to-node-features.html">edges → node features</a>, <a href="live-windows.html">live windows</a>, <a href="inference.html">from score to node</a>.
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, text) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+  function $(id) { return document.getElementById(id); }
+  function fmt(x, d) { d = d === undefined ? 2 : d; var s = x.toFixed(d); return s.indexOf(".") < 0 ? s : s.replace(/\.?0+$/, ""); }
+  function wid(i) { return "w" + String(i).padStart(4, "0"); }
+  function css(name) { return "var(" + name + ")"; }
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // windows [start, end) in minutes for capture C, window W, stride S
+  function plan(C, W, S) {
+    var k = C >= W ? Math.floor((C - W) / S) + 1 : 0, out = [];
+    for (var i = 0; i < k; i++) out.push([i * S, i * S + W]);
+    return out;
+  }
+  function roles(n, W, S) {
+    var P = Math.ceil(W / S) - 1, r = [];
+    var ok = n >= 1 + P + 1;
+    for (var i = 0; i < n; i++) r.push(!ok ? "none" : i === n - 1 ? "val" : i >= n - 1 - P ? "purge" : "train");
+    return { roles: r, purge: P, ok: ok };
+  }
+  var COLOR = { train: css("--c-train"), purge: css("--c-purge"), val: css("--c-val"), none: css("--c-purge") };
+
+  // draw an axis + window bars; returns {svg, x, rowY}
+  function drawTimeline(svg, C, wins, opts) {
+    clear(svg);
+    var L = 70, R = 620, top = 26, rowH = wins.length > 20 ? 7 : 16, gap = wins.length > 20 ? 2 : 4;
+    var H = top + wins.length * (rowH + gap) + 30;
+    svg.setAttribute("viewBox", "0 0 640 " + H);
+    var x = function (m) { return L + (R - L) * m / C; };
+    var step = C <= 20 ? 1 : C <= 40 ? 5 : 10;
+    for (var m = 0; m <= C; m += step) {
+      svg.appendChild(el("line", { x1: x(m), x2: x(m), y1: top - 6, y2: H - 22, stroke: css("--rule"), "stroke-width": 1 }));
+      if (C <= 20 && m % 2 && m !== C) continue;
+      svg.appendChild(el("text", { x: x(m), y: top - 10, "font-size": 10, "text-anchor": "middle", fill: css("--muted") }, m));
+    }
+    svg.appendChild(el("text", { x: 4, y: top - 10, "font-size": 10, fill: css("--muted") }, "minute"));
+    var rowY = function (i) { return top + i * (rowH + gap); };
+    wins.forEach(function (w, i) {
+      var g = el("g", { "data-i": i });
+      if (rowH >= 12) g.appendChild(el("text", { x: 4, y: rowY(i) + rowH - 4, "font-size": 11 }, wid(i)));
+      g.appendChild(el("rect", { x: x(w[0]), y: rowY(i), width: x(w[1]) - x(w[0]), height: rowH, rx: 3,
+        fill: opts.fill(i), opacity: opts.opacity ? opts.opacity(i) : 1, stroke: opts.stroke ? opts.stroke(i) : "none", "stroke-width": 2.5 }));
+      if (opts.label && rowH >= 12) g.appendChild(el("text", { x: x(w[0]) + 5, y: rowY(i) + rowH - 4, "font-size": 10, fill: "#fff" }, opts.label(i)));
+      svg.appendChild(g);
+    });
+    var lastEnd = wins.length ? wins[wins.length - 1][1] : 0;
+    if (lastEnd < C) {
+      var yb = H - 20;
+      svg.appendChild(el("rect", { x: x(lastEnd), y: top - 4, width: x(C) - x(lastEnd), height: yb - top + 4, fill: css("--c-bad"), opacity: 0.12 }));
+      svg.appendChild(el("text", { x: (x(lastEnd) + x(C)) / 2, y: H - 6, "font-size": 10, "text-anchor": "middle", fill: css("--c-bad") }, "dropped"));
+    }
+    return { x: x, rowY: rowY, rowH: rowH, top: top, H: H };
+  }
+
+  // ---- 2. slicer
+  function slicer() {
+    var C = +$("slC").value, W = +$("slW").value, S = +$("slS").value;
+    $("slS").max = W; if (S > W) { S = W; $("slS").value = W; }
+    $("oC").textContent = C; $("oW").textContent = W; $("oS").textContent = S;
+    var wins = plan(C, W, S), r = roles(wins.length, W, S);
+    drawTimeline($("slSvg"), C, wins, { fill: function (i) { return COLOR[r.roles[i]]; },
+      label: function (i) { return r.roles[i] === "none" ? "" : r.roles[i]; } });
+    var k = wins.length, lastEnd = k ? wins[k - 1][1] : 0, ntrain = r.roles.filter(function (x) { return x === "train"; }).length;
+    var s = "windows = ⌊(capture − window) / stride⌋ + 1 = ⌊(" + C + " − " + W + ") / " + S + "⌋ + 1 = ⌊" + fmt((C - W) / S) + "⌋ + 1 = <span class=v>" + k + "</span>\n";
+    s += "purged  = ⌈window / stride⌉ − 1 = ⌈" + W + " / " + S + "⌉ − 1 = <span class=v>" + r.purge + "</span>\n";
+    s += "dropped tail: " + (lastEnd >= C ? "none" : "minute " + lastEnd + "–" + C) + "\n";
+    if (r.ok) s += "split: <span class=v>" + ntrain + " train</span> / " + r.purge + " purged / 1 val  (" + Math.round(100 * r.purge / k) + " % of windows purged)";
+    else s += "<span class=err>[ERROR] only " + k + " window(s); need 1 val + " + r.purge + " purged + 1 train = " + (r.purge + 2) + ".</span>\n(train_gnn_models.py:148-150 exits here)";
+    $("slOut").innerHTML = s;
+    document.querySelectorAll("[data-sl]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-sl") === C + "," + W + "," + S); });
+  }
+  ["slC", "slW", "slS"].forEach(function (id) { $(id).addEventListener("input", slicer); });
+  document.querySelectorAll("[data-sl]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var v = b.getAttribute("data-sl").split(",");
+      $("slC").value = v[0]; $("slW").value = v[1]; $("slS").max = v[1]; $("slS").value = v[2]; slicer();
+    });
+  });
+
+  // ---- 3. one event, several windows
+  var W20 = plan(20, 5, 2);
+  function mmss(m) { var s = Math.round(m * 60); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+  function evRender() {
+    var t = +$("evT").value; $("oT").textContent = fmt(t, 1);
+    var hit = W20.map(function (w) { return w[0] <= t && t < w[1]; });
+    var g = drawTimeline($("evSvg"), 20, W20, { fill: function (i) { return hit[i] ? css("--c-hot") : css("--c-purge"); },
+      opacity: function (i) { return hit[i] ? 1 : 0.35; } });
+    var svg = $("evSvg");
+    svg.appendChild(el("line", { x1: g.x(t), x2: g.x(t), y1: g.top - 8, y2: g.H - 22, stroke: css("--ink"), "stroke-width": 2 }));
+    svg.appendChild(el("circle", { cx: g.x(t), cy: g.top - 8, r: 5, fill: css("--ink") }));
+    var lines = W20.map(function (w, i) {
+      return wid(i) + " [" + w[0] + ", " + w[1] + ")  " + w[0] + " ≤ " + fmt(t, 1) + " < " + w[1] + " ?  " + (hit[i] ? "<span class=v>yes</span>" : "no");
+    });
+    var n = hit.filter(Boolean).length;
+    lines.push("\nevent at minute " + fmt(t, 1) + " is copied into <span class=v>" + n + "</span> window(s)" + (n === 0 ? ": it falls in the dropped tail" : ""));
+    $("evOut").innerHTML = lines.join("\n");
+  }
+  $("evT").addEventListener("input", evRender);
+  document.querySelectorAll("[data-ev]").forEach(function (b) { b.addEventListener("click", function () { $("evT").value = b.getAttribute("data-ev"); evRender(); }); });
+
+  // ---- 4. purge
+  var held = 7;
+  function overlap(a, b) { return Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0])); }
+  function puRender() {
+    var h = W20[held];
+    var g = drawTimeline($("puSvg"), 20, W20, {
+      fill: function (i) { return i === held ? css("--c-val") : overlap(W20[i], h) > 0 ? css("--c-purge") : css("--c-train"); },
+      stroke: function (i) { return i === held ? css("--ink") : "none"; },
+      label: function (i) { return i === held ? "held out" : overlap(W20[i], h) > 0 ? "purge" : "train"; } });
+    var svg = $("puSvg");
+    W20.forEach(function (w, i) {
+      var o = overlap(w, h);
+      if (i === held || !o) return;
+      var a = Math.max(w[0], h[0]), b = Math.min(w[1], h[1]);
+      svg.appendChild(el("rect", { x: g.x(a), y: g.rowY(i), width: g.x(b) - g.x(a), height: g.rowH, fill: css("--c-bad"), opacity: 0.55, "pointer-events": "none" }));
+    });
+    svg.querySelectorAll("g[data-i]").forEach(function (gg) { gg.style.cursor = "pointer"; });
+    var lines = ["held out: " + wid(held) + " [" + h[0] + ", " + h[1] + ")" + (held === 7 ? "  (what the code does: the last window)" : "")];
+    var np = 0;
+    W20.forEach(function (w, i) {
+      if (i === held) return;
+      var o = overlap(w, h);
+      if (o) np++;
+      lines.push(wid(i) + " [" + w[0] + ", " + w[1] + ")  shares " + o + " min → " + (o ? "<span class=v>purge</span>" : "train ok"));
+    });
+    lines.push("\n" + np + " window(s) purged, " + (7 - np) + " left for training");
+    $("puOut").innerHTML = lines.join("\n");
+  }
+  $("puSvg").addEventListener("click", function (e) { var g = e.target.closest("g[data-i]"); if (g) { held = +g.getAttribute("data-i"); puRender(); } });
+
+  // ---- 5. islands
+  var ISL = [
+    { id: "w0003", role: "train", x: 20 }, { id: "w0005", role: "purge", x: 230 }, { id: "w0007", role: "val", x: 440 }];
+  var edgesEls = [];
+  function islRender() {
+    var svg = $("islSvg"); clear(svg); edgesEls = [];
+    ISL.forEach(function (I) {
+      var col = COLOR[I.role];
+      svg.appendChild(el("rect", { class: "box", x: I.x, y: 14, width: 180, height: 190, rx: 12, stroke: col }));
+      svg.appendChild(el("text", { x: I.x + 10, y: 34, "font-size": 12, fill: col }, I.id + " · " + (I.role === "purge" ? "purged" : I.role)));
+      var P = [I.x + 50, 90], F1 = [I.x + 140, 70], F2 = [I.x + 140, 160], N = [I.x + 50, 170];
+      [[P, F1], [P, F2], [P, N], [F2, N]].forEach(function (e) {
+        var ln = el("line", { class: "edge", x1: e[0][0], y1: e[0][1], x2: e[1][0], y2: e[1][1] });
+        svg.appendChild(ln); edgesEls.push(ln);
+      });
+      svg.appendChild(el("circle", { cx: P[0], cy: P[1], r: 13, fill: css("--surface"), stroke: col, "stroke-width": 2 }));
+      svg.appendChild(el("text", { x: P[0], y: P[1] + 30, "font-size": 10, "text-anchor": "middle" }, I.id + "_chrome"));
+      [F1, F2].forEach(function (f, j) {
+        svg.appendChild(el("rect", { x: f[0] - 11, y: f[1] - 11, width: 22, height: 22, fill: css("--surface"), stroke: col, "stroke-width": 2 }));
+        svg.appendChild(el("text", { x: f[0], y: f[1] - 16, "font-size": 10, "text-anchor": "middle" }, j ? "dll" : "cache"));
+      });
+      svg.appendChild(el("polygon", { points: [N[0], N[1] - 13, N[0] + 13, N[1], N[0], N[1] + 13, N[0] - 13, N[1]].join(","), fill: css("--surface"), stroke: col, "stroke-width": 2 }));
+    });
+  }
+  $("msgBtn").addEventListener("click", function () {
+    edgesEls.forEach(function (e) { e.classList.add("lit"); });
+    $("msgOut").textContent = edgesEls.length + " edges carried messages · 0 crossed between windows";
+    setTimeout(function () { edgesEls.forEach(function (e) { e.classList.remove("lit"); }); }, reduce ? 1500 : 1100);
+  });
+
+  // ---- 5b. loss
+  var LW = ["w0000", "w0000", "w0001", "w0001", "w0001"];
+  function lossBuild(vals) {
+    var tb = $("lossBody"); tb.innerHTML = "";
+    vals.forEach(function (v, i) {
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td>train node " + (i + 1) + "</td><td><code>" + LW[i] + "</code></td><td><input type=number step=0.1 value=" + v + " aria-label='score of node " + (i + 1) + "'></td><td class=num></td>";
+      tb.appendChild(tr);
+    });
+    tb.querySelectorAll("input").forEach(function (inp) { inp.addEventListener("input", lossCalc); });
+    lossCalc();
+  }
+  function lossCalc() {
+    var ins = $("lossBody").querySelectorAll("input"), rel = [], sum = 0, r = +$("lossR").value || 0;
+    ins.forEach(function (inp, i) {
+      var s = +inp.value || 0, v = Math.max(s, 0); rel.push(v); sum += v;
+      inp.closest("tr").cells[3].textContent = fmt(v);
+    });
+    var mean = sum / rel.length, L = r * r + 2 * mean;
+    $("lossOut").innerHTML = "relu      = [" + rel.map(function (v) { return fmt(v); }).join(", ") + "]\n" +
+      "mean      = " + fmt(sum) + " / " + rel.length + " = " + fmt(mean, 3) + "\n" +
+      "L = r² + (1/β)·mean = " + fmt(r) + "² + 2 × " + fmt(mean, 3) + " = " + fmt(r * r, 3) + " + " + fmt(2 * mean, 3) + " = <span class=v>" + fmt(L, 3) + "</span>\n" +
+      "The model never sees which window a node came from; it just averages.";
+  }
+  $("lossR").addEventListener("input", lossCalc);
+  document.querySelectorAll("[data-loss]").forEach(function (b) { b.addEventListener("click", function () { $("lossR").value = 0.5; lossBuild(b.getAttribute("data-loss").split(",").map(Number)); }); });
+
+  // ---- 6. whole vs windows
+  var mmMode = "whole";
+  function parseNums(s) { return s.split(/[\s,;]+/).filter(Boolean).map(Number).filter(function (x) { return isFinite(x); }); }
+  function gapsOf(ts) { var s = ts.slice().sort(function (a, b) { return a - b; }), g = []; for (var i = 1; i < s.length; i++) g.push(s[i] - s[i - 1]); return g; }
+  function mmRender() {
+    var ev = parseNums($("mmEv").value).filter(function (t) { return t >= 0 && t < 20; }).sort(function (a, b) { return a - b; });
+    var svg = $("mmSvg"); clear(svg);
+    var L = 70, R = 620, x = function (m) { return L + (R - L) * m / 20; };
+    var lines = [];
+    if (mmMode === "whole") {
+      svg.setAttribute("viewBox", "0 0 640 90");
+      svg.appendChild(el("text", { x: 4, y: 48, "font-size": 11 }, "20 min"));
+      svg.appendChild(el("rect", { x: x(0), y: 30, width: x(20) - x(0), height: 30, rx: 4, fill: css("--c-purge"), opacity: 0.25 }));
+      ev.forEach(function (t) { svg.appendChild(el("circle", { cx: x(t), cy: 45, r: 5, fill: css("--c-hot") })); });
+      var g = gapsOf(ev).map(function (m) { return m * 60; }), mx = g.length ? Math.max.apply(null, g) : 0;
+      for (var i = 1; i < ev.length; i++) if ((ev[i] - ev[i - 1]) * 60 === mx) {
+        svg.appendChild(el("line", { x1: x(ev[i - 1]), x2: x(ev[i]), y1: 72, y2: 72, stroke: css("--c-bad"), "stroke-width": 2 }));
+        svg.appendChild(el("text", { x: (x(ev[i - 1]) + x(ev[i])) / 2, y: 86, "font-size": 10, "text-anchor": "middle", fill: css("--c-bad") }, "max gap " + fmt(mx, 0) + " s"));
+      }
+      lines.push("one graph: gaps (s) = [" + g.map(function (v) { return fmt(v, 0); }).join(", ") + "]");
+      lines.push("max idle = <span class=v>" + fmt(mx, 0) + " s</span>" + (mx > 300 ? "  (larger than any 5-min live window can ever produce)" : ""));
+    } else {
+      var g2 = drawTimeline(svg, 20, W20, { fill: function () { return css("--c-purge"); }, opacity: function () { return 0.3; } });
+      W20.forEach(function (w, i) {
+        var inside = ev.filter(function (t) { return w[0] <= t && t < w[1]; });
+        inside.forEach(function (t) { svg.appendChild(el("circle", { cx: g2.x(t), cy: g2.rowY(i) + g2.rowH / 2, r: 4, fill: css("--c-hot") })); });
+        var gp = gapsOf(inside).map(function (m) { return m * 60; }), mx = gp.length ? Math.max.apply(null, gp) : 0;
+        lines.push(wid(i) + "_explorer  events " + inside.length + "  max idle " + (inside.length < 2 ? "0 s (fewer than 2 events → 0)" : "<span class=v>" + fmt(mx, 0) + " s</span>"));
+      });
+      lines.push("\nEvery value is ≤ 300 s, the same range a live 5-min window produces.");
+    }
+    $("mmOut").innerHTML = lines.join("\n");
+    document.querySelectorAll("[data-mm]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-mm") === mmMode); });
+  }
+  $("mmEv").addEventListener("input", mmRender);
+  document.querySelectorAll("[data-mm]").forEach(function (b) { b.addEventListener("click", function () { mmMode = b.getAttribute("data-mm"); mmRender(); }); });
+
+  // ---- 7. gap calculator
+  function gapRender() {
+    var ts = parseNums($("gapIn").value).filter(function (t) { return t >= 0 && t < 300; }).sort(function (a, b) { return a - b; });
+    var g = gapsOf(ts), out = [];
+    out.push("events (s) : " + (ts.length > 12 ? ts.slice(0, 6).join(", ") + ", … (" + ts.length + " events)" : ts.join(", ")));
+    if (g.length === 0) {
+      out.push("gaps       : none (" + ts.length + " event)");
+      out.push("avg = max = min = <span class=v>0</span>   ← quirk: no gap exists, so the code writes 0");
+    } else {
+      var avg = g.reduce(function (a, b) { return a + b; }, 0) / g.length, mx = Math.max.apply(null, g), mn = Math.min.apply(null, g);
+      if (g.length <= 12) out.push("gaps (s)   : " + g.map(function (v, i) { return fmt(ts[i + 1]) + "−" + fmt(ts[i]) + " = " + fmt(v); }).join(", "));
+      else out.push("gaps (s)   : " + g.length + " gaps, all " + (mx === mn ? fmt(mx) : fmt(mn) + "–" + fmt(mx)));
+      out.push("avg = " + (g.length <= 12 ? "(" + g.map(function (v) { return fmt(v); }).join(" + ") + ") / " + g.length + " = " : "") + "<span class=v>" + fmt(avg, 1) + " s</span>   max = <span class=v>" + fmt(mx) + " s</span>   min = <span class=v>" + fmt(mn) + " s</span>");
+      out.push("\nscaled with the training range 0–300 s, (value − 0) / (300 − 0):");
+      out.push("avg " + fmt(avg / 300, 3) + "   max " + fmt(mx / 300, 3) + "   min " + fmt(mn / 300, 3));
+    }
+    $("gapOut").innerHTML = out.join("\n");
+  }
+  $("gapIn").addEventListener("input", gapRender);
+  document.querySelectorAll("[data-gap]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var v = b.getAttribute("data-gap");
+      if (v === "chrome") { var a = []; for (var t = 0; t < 300; t += 2) a.push(t); v = a.join(", "); }
+      $("gapIn").value = v; gapRender();
+    });
+  });
+
+  // ---- 8. group key
+  var RAW = [1 + 10 / 60, 1 + 30 / 60, 8 + 5 / 60, 8 + 20 / 60];  // chrome events, minutes
+  var gk = "win";
+  function gkRender() {
+    var rows = [];
+    if (gk === "pid") rows.push({ id: "chrome", ev: RAW });
+    else W20.forEach(function (w, i) { rows.push({ id: wid(i) + "_chrome", ev: RAW.filter(function (t) { return w[0] <= t && t < w[1]; }) }); });
+    var tb = $("gkBody"); tb.innerHTML = ""; var globalMax = 0;
+    rows.forEach(function (r) {
+      var g = gapsOf(r.ev).map(function (m) { return Math.round(m * 60); }), mx = g.length ? Math.max.apply(null, g) : 0;
+      globalMax = Math.max(globalMax, mx);
+      var tr = document.createElement("tr");
+      if (!r.ev.length) tr.className = "dim";
+      if (mx > 300) tr.className = "hot";
+      tr.innerHTML = "<td><code>" + r.id + "</code></td><td>" + (r.ev.length ? r.ev.map(mmss).join(", ") : "no events → no node") + "</td><td class=num>" + (g.join(", ") || "–") + "</td><td class=num>" + (r.ev.length ? mx + " s" : "–") + "</td>";
+      tb.appendChild(tr);
+    });
+    $("gkOut").innerHTML = gk === "pid"
+      ? "One group for all 20 minutes: the 1:30 → 8:05 gap of <span class=v>395 s</span> is counted.\nNo live 5-min window can ever produce a gap above 300 s."
+      : "Each window is its own group. The 395 s gap never appears: 1:30 and 8:05 are never in the same group.\nNote 8:05 and 8:20 are copied into three windows (w0002, w0003, w0004), as in section 3.";
+    document.querySelectorAll("[data-gk]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-gk") === gk); });
+  }
+  document.querySelectorAll("[data-gk]").forEach(function (b) { b.addEventListener("click", function () { gk = b.getAttribute("data-gk"); gkRender(); }); });
+
+  slicer(); evRender(); puRender(); islRender();
+  lossBuild([-0.1, 0.3, 0, 0.2, -0.4]); mmRender(); gapRender(); gkRender();
+})();
+</script>
+</body>
+</html>

@@ -73,8 +73,10 @@ Read in this order (about 30 minutes):
 
 1. `../docs/reports/professor.md`: the 5-minute overview, with architecture diagrams.
 2. `../docs/notes/data-flow.md`: how Windows logs become the model's input, end to end (raw events → edges → windows → features → tensors).
-   Then, in a browser: `../docs/explainers/edges-to-node-features.html` (edges → the 15 node features) and
-   `../docs/explainers/live-windows.html` (how one live window is scored; windows vs stride).
+   Then, in a browser: `../docs/explainers/edges-to-node-features.html` (edges → the 15 node features),
+   `../docs/explainers/live-windows.html` (how one live window is scored; windows vs stride),
+   `../docs/explainers/training-windows.html` (20-min capture → 5-min windows → purge → one pooled graph → idle features) and
+   `../docs/explainers/inference.html` (how a score maps back to a real process / file / network node).
 3. `../docs/reports/teammate.md`: how to run things, known pitfalls, open tasks.
 4. `ansible/README.md` (the two VMs) and `live/README.md` (the live demo).
 

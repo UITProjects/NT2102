@@ -56,6 +56,12 @@ either side.
 - Any symbolic notation (a formula, an interval like [t−w, t)) gets at least 2 concrete worked
   examples with real numbers.
 - Backend/distributed-systems analogies only when they genuinely clarify.
+- Python code explanations (user, 2026-10-20): before explaining what a line does, label the type of
+  every variable and sub-expression (`nodes: pd.DataFrame`, `nodes["node_uuid"]: pd.Series[str]`,
+  `attrs: dict[str, str]`, `x: torch.Tensor [N, 15]`), e.g. as a piece | type | meaning table or
+  inline comments. Call out when `[]` or `=` is not plain indexing/assignment (DataFrame column
+  write, boolean mask, dict lookup) and give the Java equivalent when it helps. Same in CODE mode
+  comments and in explainer pages.
 - Do not ask check questions unprompted (user, 2026-10-13). Quizzing happens only in QUIZ mode.
 - Tag statements:
   - [PAPER] what the paper states
