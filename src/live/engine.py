@@ -109,6 +109,14 @@ def _f(v):
     return None if v is None or (isinstance(v, float) and math.isnan(v)) else float(v)
 
 
+def display_attrs(attr, ntype: str) -> dict:
+    """UI only: NET attrs decoded from SilkETW's signed integers (alg2.display_attr), raw value kept in
+    attr_raw so a shown IP can be traced back to the raw line. Stored files and node IDs stay raw."""
+    shown = alg2.display_attr(attr, ntype)
+    raw = "" if attr is None or (isinstance(attr, float) and math.isnan(attr)) else str(attr)
+    return {"attr": shown} | ({"attr_raw": raw} if shown != raw else {})
+
+
 def utc_id(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
@@ -367,7 +375,7 @@ class Engine:
             top = {}
             for t, g in nodes.groupby("node_type"):
                 g = g.sort_values("margin", ascending=False).head(self.top_k)
-                top[t] = [{"id": r.node_uuid, "attr": r.attr, "score": _f(r.score), "tau": _f(r.tau),
+                top[t] = [{"id": r.node_uuid, **display_attrs(r.attr, t), "score": _f(r.score), "tau": _f(r.tau),
                            "margin": _f(r.margin), "flagged": bool(r.flagged)} for r in g.itertuples()]
             rec = S["by_id"][wid]
             fl = nodes[nodes["flagged"]]
@@ -377,7 +385,10 @@ class Engine:
                        **sg_sum, alert=sg_sum["subgraphs_kept"] > 0, scoring_ms=ms,
                        edges_dropped_relation=info["edges_dropped_relation"],
                        max_margin=_f(nodes["margin"].max()))
-            S["details"][wid] = {"top": top, "subgraphs": subgraphs[:25], "truncated": truncated,
+            # display copy: subgraphs.json and the LLM job keep the raw attrs
+            shown = [{**g, "nodes": [{**n, **display_attrs(n.get("attr"), n["type"])} for n in g["nodes"]]}
+                     for g in subgraphs[:25]]
+            S["details"][wid] = {"top": top, "subgraphs": shown, "truncated": truncated,
                                  "subgraphs_total": len(subgraphs), "alg1_stats": sg_stats}
             if rec["alert"] and self.llm:
                 self._queue_llm(S, rec, wdir, subgraphs, edges_norm)
@@ -538,6 +549,9 @@ def selftest():
                                   PID="200", daddr="93.184.216.34", dport="443"))
         streams["knet"].append(ev(kn, "KERNEL_NETWORK_TASK_TCPIP/Datasent.", 4, "System", t + 7,
                                   PID="999", daddr="10.21.2.1", dport="8000"))
+        # SilkETW's real format: signed little-endian ints (= 23.220.64.154:443), decoded for the UI only
+        streams["knet"].append(ev(kn, "KERNEL_NETWORK_TASK_TCPIP/Datasent.", 4, "System", t + 8,
+                                  PID="200", daddr="-1,707,025,385", dport="-17663"))
 
     def batches(stream, lines, start_line, n, offset):
         """lines[start_line:start_line+n] as one shipper batch with CRLF byte offsets."""
@@ -628,6 +642,10 @@ def selftest():
         assert raw_lines == len(streams["kfile"]), (raw_lines, len(streams["kfile"]))
         assert any(x["type"] == "window" for x in seen)
         assert eng.window_detail(w1)["top"], "no top nodes"
+        net = next(v for k, v in eng.window_detail(w1)["top"].items() if k.lower() == "net")
+        sil = [r for r in net if r["attr"] == "23.220.64.154:443"]
+        assert sil and sil[0]["attr_raw"] == "-1,707,025,385:-17663", net
+        assert attrs["node_attr"].eq("-1,707,025,385:-17663").any(), "node_attrs.csv must keep the raw attr"
         for w in wins:
             if w["status"] == "scored":
                 assert "subgraphs_kept" in w and w["alert"] == (w["subgraphs_kept"] > 0), w

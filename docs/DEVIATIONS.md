@@ -146,7 +146,8 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   - Serialization follows [AUTHOR CODE] `prepare_document` (subject ACTION the type : object, per minute,
     "(N times)" = distinct seconds). [OURS] real UTC times (the repo fakes a base date for SimulatedW10);
     full paths, not basenames; NET attrs decoded from SilkETW's signed integers
-    (`-1,707,025,385:-17663` = `23.220.64.154:443`; display only, node IDs unchanged).
+    (`-1,707,025,385:-17663` = `23.220.64.154:443`; display only, node IDs unchanged). The live UI shows the
+    same decoded value with the raw one beside it (`engine.display_attrs`); saved window files stay raw.
   - No vector store or embeddings: a window's document fits in the prompt. Documents above 400 lines are
     cut, keeping lines that touch anomalous nodes first (count recorded).
   - Left out: Alg. 2 l.16–25 (an LLM judge picks top IOCs, their context is pulled from the graph DB, the

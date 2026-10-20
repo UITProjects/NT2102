@@ -142,8 +142,8 @@ Model:
   so background jobs (e.g. the 32-bit `updater`) are unseen and get flagged.
 
 Data validation (LLM input):
-- NET attrs are SilkETW signed integers (`-1,707,025,385:-17663` = `23.220.64.154:443`); decoded only for
-  display in `alg2.py`. Process attrs are only the image name (`updater`), no path or command line, so the
+- NET attrs are SilkETW signed integers (`-1,707,025,385:-17663` = `23.220.64.154:443`); stored raw, decoded
+  for display in the LLM document (`alg2.py`) and the live UI (raw shown beside it). Process attrs are only the image name (`updater`), no path or command line, so the
   LLM sees little context for processes.
 
 Live tooling:

@@ -113,7 +113,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     <h2>Windows <span class="muted" id="winParams"></span></h2>
     <div class="timeline" id="timeline"></div>
     <div class="note legend">
-      <span>green: scored, no subgraph kept by SG-Det</span><span style="color:var(--anom)">red: ≥ 1 subgraph at or above the cut-off (default Moderate, score &gt; 10)</span>
+      <span>green: scored, no subgraph kept by SG-Det</span><span style="color:var(--anom)">red: ≥ 1 subgraph at or above the cut-off (<span id="cutTxt">default Moderate, score ≥ 30</span>)</span>
       <span>badge on red windows = LLM verdict (<span style="color:var(--anom)">attack</span> /
         <span style="color:var(--warn)">FP</span>, struck through, still red: the GNN alert is never hidden / ? uncertain / … pending)</span>
       <span>dashed: partial / empty (not scored)</span><span style="color:var(--win)">blue: open window filling up</span>
@@ -151,6 +151,8 @@ tr.flag td{color:var(--anom);font-weight:600}
   const num = (v, d=3) => v == null ? "–" : Number(v).toFixed(d);
   const base = p => String(p || "").split(/[\\/]/).pop() || p;
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  // NET attrs arrive decoded (engine.display_attrs); attr_raw = SilkETW's own value, to trace back to the raw line
+  const full = n => n.attr_raw ? `${n.attr} (raw ${n.attr_raw})` : (n.attr ?? "");
 
   const LLM_LABEL = {pending: "LLM: …", attack: "LLM: attack", false_positive: "LLM: FP",
                      uncertain: "LLM: ?", error: "LLM: error"};
@@ -163,6 +165,9 @@ tr.flag td{color:var(--anom);font-weight:600}
     $("modelTxt").textContent = status ? "model " + base(status.model.run_dir) + " · converter " + status.model.converter_check : "";
     const p = status?.params;
     if (p) $("winParams").textContent = `w = ${p.window_min} min, s = ${p.stride_min} min, lateness ${p.lateness_s} s`;
+    const a1 = p?.alg1;
+    if (a1) $("cutTxt").textContent = a1.min_score != null ? `score > ${a1.min_score}`
+      : a1.min_level === "Moderate" ? `Moderate, score ≥ ${a1.moderate_from}` : `level ≥ ${a1.min_level}`;
     if (status) $("tauTxt").textContent = "τ per type: " + Object.entries(status.model.tau).map(([k,v]) => `${k} ${num(v,5)}`).join(" · ");
     if (!s) { $("tiles").innerHTML = '<div class="muted">waiting for data (shipper or Loki)…</div>'; return; }
     $("sessionTxt").textContent = `session ${s.id} (${s.mode}${s.host ? ", " + s.host : ""})`;
@@ -302,7 +307,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     $("cy").innerHTML = "";
     const shape = {process: "ellipse", file: "round-rectangle", net: "diamond"};
     const els = g.nodes.map(n => ({data: {id: n.id, label: base(n.attr) || n.id, shape: shape[n.type] || "ellipse",
-                                          role: n.role, tip: `${n.type} ${n.attr}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}  prob ${num(n.prob,3)}`}}))
+                                          role: n.role, tip: `${n.type} ${full(n)}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}  prob ${num(n.prob,3)}`}}))
       .concat(g.edges.map((e,i) => ({data: {id: "e"+i, source: e.src, target: e.dst,
                                             label: e.type + (e.count > 1 ? " ×" + e.count : "")}})));
     cy = cytoscape({
@@ -331,7 +336,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     const score = `subgraph score ${num(g.sg_score,3)} = Σ prob of ${g.n_anomalous} anomalous nodes → ${esc(g.level)}${g.oversize ? " · oversize" : ""}`;
     const lab = Object.fromEntries(g.nodes.map(n => [n.id, base(n.attr) || n.id]));
     const lines = g.edges.map(e => `${hms(e.first_ms)}${e.last_ms !== e.first_ms ? "–" + hms(e.last_ms) : ""}  ${esc(lab[e.src])} → ${esc(lab[e.dst])} (${esc(e.type)}${e.count > 1 ? " ×" + e.count : ""})`);
-    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(n.attr)}  score ${num(n.score,4)} τ ${num(n.tau,4)}${n.role === "anomalous" ? " prob " + num(n.prob,3) : ""}`);
+    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(full(n))}  score ${num(n.score,4)} τ ${num(n.tau,4)}${n.role === "anomalous" ? " prob " + num(n.prob,3) : ""}`);
     $("alertcard").innerHTML = head + "\n" + score + "\n\n"
       + (lines.length ? lines.join("\n") : "(single anomalous node, no edge to another anomaly)") + "\n\n" + nodes.join("\n");
   }
@@ -340,7 +345,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     const top = detail.top || {};
     $("tables").innerHTML = Object.keys(top).sort().map(t => `<div class="tbl"><h2>${esc(t)}</h2><table>
       <tr><th>attr</th><th>score</th><th>margin</th></tr>
-      ${top[t].map(r => `<tr class="${r.flagged ? "flag" : ""}"><td class="attr" title="${esc(r.id)}">${esc(r.attr)}</td>
+      ${top[t].map(r => `<tr class="${r.flagged ? "flag" : ""}"><td class="attr" title="${esc(r.id)}${r.attr_raw ? "\nraw " + esc(r.attr_raw) : ""}">${esc(r.attr)}</td>
         <td class="num">${num(r.score,4)}</td><td class="num">${num(r.margin,4)}</td></tr>`).join("")}
     </table></div>`).join("") || '<span class="muted">window not scored</span>';
   }
