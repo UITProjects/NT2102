@@ -124,28 +124,11 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   2026-10-13): target demo = exploit of a lab service (DVWA OS command injection) → RCE → ATT&CK
   techniques; OCR-APT supplies the method. The repo is a live demo of the paper's core concept, not a 100% reproduction. No publishing-style evaluation, metrics
   or NODLINK baseline are required; the section 6 metrics rules apply only if numbers are ever reported.
-- IN PROGRESS — react2shell → DVWA swap (user, 2026-10-19): the attack target was changed from
-  react2shell to DVWA on XAMPP (react2shell's real CVE — RSC-Flight deserialization — has no usable
-  PoC; DVWA's OS-command-injection page is a real, documented sink). The code change is complete across
-  the lab, attack pack and deliverables (commit `cee70be`, branch `ansible-two-vm-provisioning`), BUT it
-  is NOT verified end to end: the `win_vulnlab` role (XAMPP + DVWA + `setup.php` schema build) has not
-  had a clean provisioning run confirmed on `ws-etw`, DVWA-installed/serving-on-:3000 is unconfirmed, and
-  the firewall state was not checked. Treat DVWA as the intended target, not a working one, until a
-  provisioning run + `verify-windows.yml -e vulnlab_enabled=true` pass. The `setup.php` schema step is
-  the known risk.
-
-- IN PROGRESS — Linux target migration (user, 2026-10-19): the vulnerable target + monitored host are
-  being moved off Windows/XAMPP onto a native-LAMP Ubuntu 22.04 VM (`ubuntu-target`, 10.21.2.40),
-  monitored with Sysmon-for-Linux instead of SilkETW, because DVWA on XAMPP/Windows was unstable. Scope
-  this phase = infra + converter only (Vagrant/Ansible + the Sysmon->NODLINK converter); keep the Windows
-  path as the source of truth until the Linux path is verified. DONE + verified offline on the host:
-  `src/pipeline/sysmon2nodlink.py` (same CSV contract as `etw2nodlink.py`), wired via
-  `build_experiment.py --source sysmon` and `loki_pull.py --job sysmon`, graph `SimulatedU22`. WRITTEN but
-  NOT verified on a VM: 4th Vagrant VM, `ansible/target.yml`, roles `ubuntu_vulnlab` + `ubuntu_collector`,
-  `verify-ubuntu-target.yml`, all gated by `linux_target_enabled` (default false). Known risk: the exact
-  Sysmon syslog line/field shape is [INFERENCE] until confirmed on the VM. Fidelity gaps (DEVIATIONS D10):
-  no Load edges, Send-only network, file I/O approximated — the Linux graph is sparser; no cross-OS score
-  comparison. Phase 2 (not built): Linux bash kill chain, Linux benign workload, retrain, live verify.
+- Attack target: DVWA on XAMPP (user, 2026-10-19), its OS-command-injection page
+  (`/vulnerabilities/exec/`) as the RCE sink, served on :3000. VERIFIED on `ws-etw`: the `win_vulnlab`
+  role (XAMPP Apache + PHP + MariaDB, DVWA cloned + `setup.php` schema build) provisions cleanly and
+  `verify-windows.yml -e vulnlab_enabled=true` passes (DVWA serving on :3000, login admin/password,
+  security low). Remaining is to run the kill chain against it live (PROGRESS).
 
 When direction or progress changes, update `docs/PROGRESS.md` (replace status lines in place; no
 history of earlier progress) and, if relevant, this section.

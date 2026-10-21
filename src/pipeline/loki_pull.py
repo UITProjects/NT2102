@@ -62,8 +62,7 @@ def sha256_file(path):
 # --------------------------------------------------------------------------- discovery
 def discover(lk, lookback_ns, split=None, now_ns=None, job="silketw"):
     """-> runs newest first: [{run, split, host, first_ns, last_ns, counts{provider: n}}].
-    Built from label values + query_range (see Loki.label_values for why not /series).
-    job = "silketw" (Windows) or "sysmon" (Linux target); both share the split/run/provider scheme."""
+    Built from label values + query_range (see Loki.label_values for why not /series)."""
     now_ns = now_ns or time.time_ns()
     start = now_ns - lookback_ns
     out = []
@@ -196,8 +195,8 @@ def pull(lk, sel, out_dir, page=5000, log=print, job="silketw"):
         sys.exit("[loki_pull] nothing in that range/selection")
 
     # dos map + ledger per run. Both are Windows (SilkETW) concepts: the dos map translates
-    # \Device\HarddiskVolumeN -> C: (Linux paths are POSIX), and the workload ledger rides job="etw-meta"/
-    # "workload-ledger" alongside SilkETW. A Linux (Sysmon) pull carries neither, so skip this block.
+    # \Device\HarddiskVolumeN -> C:, and the workload ledger rides job="etw-meta"/"workload-ledger"
+    # alongside SilkETW.
     meta, ledger_lines = {}, 0
     if job == "silketw":
         runs = sorted({k[:2] for k in counts})
@@ -330,9 +329,7 @@ def main(argv=None):
     g.add_argument("--end", help="custom range end (default now)")
     g.add_argument("--since", help="custom range = [now - SINCE, now), e.g. 2h")
     ap.add_argument("--split", choices=["train", "test"], help="filter runs / the custom range")
-    ap.add_argument("--job", default="silketw", choices=["silketw", "sysmon"],
-                    help="which collector's streams to pull: silketw (Windows, default) or sysmon (Linux target)")
-    ap.add_argument("--provider", nargs="+", choices=["kproc", "kfile", "knet", "sysmon"], help="custom range only")
+    ap.add_argument("--provider", nargs="+", choices=["kproc", "kfile", "knet"], help="custom range only")
     ap.add_argument("--out-root", default=DEFAULT_OUT)
     ap.add_argument("--id", help="experiment folder name (default: run name, or range-<UTC start>)")
     ap.add_argument("--page", type=int, default=5000, help="lines per Loki request (server max_entries_limit)")
@@ -350,7 +347,7 @@ def main(argv=None):
         lk.ready()
     except OSError as e:
         sys.exit(f"[loki_pull] Loki not reachable at {a.loki} ({e}); set --loki or LOKI_URL")
-    runs = discover(lk, parse_time("now") - parse_time(a.lookback), split=None, job=a.job)
+    runs = discover(lk, parse_time("now") - parse_time(a.lookback), split=None)
     if a.list:
         for r in runs:
             print(describe(r, tz))
@@ -384,7 +381,7 @@ def main(argv=None):
     if os.path.exists(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(a.out_root, exist_ok=True)
-    rec = pull(lk, sel, out_dir, page=a.page, job=a.job)
+    rec = pull(lk, sel, out_dir, page=a.page)
     for s in rec["streams"]:
         print(f"[loki_pull]   {s['split']}/{s['run']}/{s['provider']}.json  {s['lines']:,} lines  sha256 {s['sha256'][:12]}"
               + (f"  ({s['duplicates_dropped']:,} duplicates dropped)" if s["duplicates_dropped"] else ""))
@@ -399,12 +396,8 @@ def main(argv=None):
         splits = sorted({s["split"] for s in rec["streams"]})
         if len(splits) != 1:
             sys.exit(f"[loki_pull] pulled several splits {splits}; run build_experiment.py --split ... yourself")
-        # Linux (sysmon) runs: tell the builder to use sysmon2nodlink.py and the Linux graph name.
-        extra = ["--source", "sysmon", "--graph", "SimulatedU22"] if a.job == "sysmon" else []
-        return build_experiment.main(["--exp", out_dir, "--split", splits[0], *extra])
+        return build_experiment.main(["--exp", out_dir, "--split", splits[0]])
     nextcmd = f"uv run python src/pipeline/build_experiment.py --exp {out_dir}"
-    if a.job == "sysmon":
-        nextcmd += " --source sysmon --graph SimulatedU22"
     print(f"[loki_pull] next: {nextcmd}")
     return 0
 
