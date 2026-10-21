@@ -3,7 +3,7 @@
 How one second of Windows activity becomes the tensors the OCRGCN reads. One toy capture is carried
 through every stage; all numbers below come from running the real code on it (not hand-made).
 
-Tags: [PAPER] paper text · [REPO] upstream behaviour (`OCR-APT/src/encode_to_PyG.py`; rounding and
+Tags: [PAPER] paper text · [AUTHOR CODE] upstream behaviour (`OCR-APT/src/encode_to_PyG.py`; rounding and
 zero-column drop spot-checked) · [OURS] what this project does · [INFERENCE] a guess.
 
 ```
@@ -30,7 +30,7 @@ Eight events on a VM, all on 2026-10-07 around 10:00:00 UTC:
 Plus two decoys: a `Write` by `SilkService` (the collector itself) and a `Read` by pid 77 on a file object whose
 `Create` we never saw.
 
-## 1. Raw events → edges (`etw2nodlink.py`, embedded in `src/scripts/04-collector.ps1`)
+## 1. Raw events → edges (`src/pipeline/etw2nodlink.py`)
 
 Every ETW event is classified by (provider, event name) (`classify`, ps1 l.157-181). Only these map to an edge;
 everything else is counted under `unmapped` in `*_summary.json`.
@@ -75,7 +75,7 @@ Timestamps are epoch **milliseconds**. 5 nodes, 6 edges. This is the NODLINK W10
 
 ## 2. Edges → windows
 
-**Training** (`etwwindow.py`, `src/scripts/05-collect-for-20-minutes.ps1` l.52-): the capture is cut into 5-min
+**Training** (`src/pipeline/etwwindow.py`): the capture is cut into 5-min
 windows with a 2-min stride, so a 20-min capture gives 8 windows. Window *i* covers $[s_i, s_i + 300\,\text{s})$ with
 $s_i = s_0 + 120\,i$. Example: $s_0 = 14{:}56{:}33$ → w0000 = 14:56:33–15:01:33, w0001 = 14:58:33–15:03:33
 (real values from `windows.csv`). An event at 14:59:00 lies in both. Every window gets its own copy of the nodes
@@ -119,7 +119,7 @@ Every node has at least one edge, so the norm is never 0.
 sort its timestamps and take consecutive gaps in seconds; then avg / max / min of the gaps. A node with one
 event has no gap and gets 0, 0, 0. Example, cmd: event times 0.000, 0.010, 1.5, 3.0, 4.5, 9.0 s →
 gaps 0.01, 1.49, 1.5, 1.5, 4.5 → avg 1.80, max 4.5, min 0.01. x.txt: 1.5, 4.5, 9.0 → gaps 3.0, 4.5 →
-avg 3.75, max 4.5, min 3.0. [REPO] The three aggregates are then rounded to whole seconds (`repo_rounding`),
+avg 3.75, max 4.5, min 3.0. [AUTHOR CODE] The three aggregates are then rounded to whole seconds (`repo_rounding`),
 so cmd becomes avg 2, max 4 (numpy rounds .5 to even), min 0.
 
 **Min-max scaling** ($x' = (x - \min)/(\max - \min)$, l.121). min and max are per idle column and come from a
@@ -131,7 +131,7 @@ so cmd becomes avg 2, max 4 (numpy rounds .5 to even), min 0.
    (D3 in `DEVIATIONS.md`).
 
 [OURS] The scaler is fit on train only and reused for test and live; all 15 columns are kept even if a
-column is all zero, so the feature dimension never depends on the data. [REPO] upstream drops all-zero columns
+column is all zero, so the feature dimension never depends on the data. [AUTHOR CODE] upstream drops all-zero columns
 and fits on train+test together.
 
 Output: `features_model.csv`, shape [N, 15] float. Toy cmd row (column order as above):
@@ -156,7 +156,7 @@ Details that matter:
 - **Node order**: nodes are sorted by (type, id) and numbered 0…N-1. Toy: `f342…`=0, `f7c6…`=1, `n740…`=2,
   `p100…`=3, `p4321…`=4. `x` is re-indexed to this order.
 - **Relation = (source type, edge type, destination type)**, e.g. `process|write|file`. Each gets an id.
-  [REPO] An inverse `file|inv_write|process` is added for every relation, so messages flow both ways.
+  [AUTHOR CODE] An inverse `file|inv_write|process` is added for every relation, so messages flow both ways.
   The edge list is therefore the forward edges followed by the same edges reversed ($2E$ columns).
 - Toy: 5 forward relations (no Recv in this capture) + 5 inverse = $R = 10$. Edge 1 (Start, p100 → p4321) is
   `[3, 4]` with relation `process|start|process` = id 3; its inverse is `[4, 3]` with id $3 + 5 = 8$.
@@ -185,8 +185,8 @@ see `docs/PROGRESS.md` "Open items" and the pitfalls in `src/README.md`.
 
 ## Reproduce
 
-The toy capture above is built on the converter's own selftest (embedded in `src/scripts/04-collector.ps1`,
-runs on the VM). The host selftests below exercise the same code paths on their own, smaller toys; they do
+The toy capture above is built on the converter's own selftest (`src/pipeline/etw2nodlink.py --selftest`,
+which Ansible also runs on the VM). The host selftests below exercise the same code paths on their own, smaller toys; they do
 not print the numbers in this note:
 
 ```

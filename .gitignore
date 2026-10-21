@@ -21,3 +21,13 @@ dataset.tar.xz
 /original-dataset/
 /src/live/sessions/
 __pycache__/
+
+# Ansible lab secrets and local artefacts
+/src/ansible/group_vars/vault.yml
+/src/ansible/inventory.cloud.ini
+/src/ansible/*.retry
+/src/ansible/.vault-pass
+/src/ansible/.venv/
+
+# per-machine current-model pointer written by `lab promote` (overrides src/artifacts/current.json)
+/src/artifacts/current.local.json

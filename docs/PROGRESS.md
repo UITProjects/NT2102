@@ -1,4 +1,4 @@
-# PROGRESS (status as of 2026-10-13)
+# PROGRESS (status as of 2026-10-18)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 
@@ -11,8 +11,7 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 
 ## Done
 
-- GraphDB environment: `src/graphdb/compose.yaml` (GraphDB 10.8.0, security on, `nt2102-net` 10.21.3.0/24).
-- Windows 10 ETW lab VM + collector + converter, end to end: `src/scripts/01..07*.ps1`.
+- Windows 10 ETW lab VM + collector + converter, end to end (Ansible, `src/ansible/`) + `src/scripts/06, 07`.
 - Benign train dataset, experiment `20261009T145632Z` (verified, `src/out/etw/experiments/20261009T145632Z/`):
   20-min capture, workload seed 42, launch mode explorer-com; 8 windows (5 min / 2 min stride);
   37,294 edges in → 68,319 windowed edges (484 outside any window); 6,810 node-window copies
@@ -26,23 +25,22 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   1 val (w0007); emb_std 0.05–0.19 for every type and seed; thresholds differ across seeds;
   train_flag_rate ≈ contamination (process 0.0017 = 1/575). Model saved from run 0 (seed 360).
 - Live path code (with `--selftest` each): `src/pipeline/score_window.py` (shared scorer),
-  `src/live/` (etwship.py shipper/replay, engine.py, live_server.py + UI, compare_replay.py),
-  `src/scripts/08-live-shipper.ps1`. See `src/live/README.md`, DEVIATIONS D8.
+  `src/live/` (etwship.py shipper/replay, engine.py, live_server.py + UI, compare_replay.py). See `src/live/README.md`, DEVIATIONS D8.
 - Live path end to end (verified): session `live-20261011T105718Z` showed converter sha256 `match`,
   dos_map `\device\harddiskvolume4 → c:` from the VM, shipper PID excluded. First scored window
-  (`live-20261011T112141Z`, 11:25–11:30Z, VM running `03-workload.ps1`): 7,813 edges, 835 nodes, 19 flagged
+  (`live-20261011T112141Z`, 11:25–11:30Z, VM running the old server-install workload): 7,813 edges, 835 nodes, 19 flagged
   (2.3 %), all FILE (445 file nodes; process 0/147, net 0/243). 18 of the 19 are syswow64 DLLs loaded once
   by a short-lived `updater` process (0 `updater` processes in training; the DLLs themselves are in
   training). Identical score 0.3220 vs τ_file 0.2297 (train max 0.2312), so prob = 1 each (clamped).
 - Alg. 1 + SG-Det (code + selftest, verified on real data 2026-10-12): `src/pipeline/alg1.py` (in memory,
-  [REPO] score = Σ clamped min-max prob, keep ≥ Moderate), used by `engine.py`; flags in
+  [AUTHOR CODE] score = Σ clamped min-max prob, keep ≥ Moderate), used by `engine.py`; flags in
   `live_server.py`; UI shows level/score and greys subgraphs below the cut-off. The saved exp01 models
   reproduce `train_scores.csv` (max |diff| 1.3e-5), so the prob range is valid. Replay of
   `live-20261011T112141Z` through the live server: 11 scored windows, 5 with nodes above τ → 1 red
   (11:25 `updater`, 18 DLLs, score 18.0, Moderate). Other windows ≤ Minor (max 5.83). `alg1.py
   --session-dir` re-judges saved sessions without the VM.
 - [OURS] live level scale (2026-10-13, DEVIATIONS D8): Moderate from sg_score 30 (`--sg-moderate-from`,
-  [REPO] > 10). Re-judged replay: 11:25 `updater` = Minor → 0 red windows of 10.
+  [AUTHOR CODE] > 10). Re-judged replay: 11:25 `updater` = Minor → 0 red windows of 10.
 - VM crash 2026-10-11 18:02 diagnosed (verified in `journalctl -k`, `VBox.log.1`): not OOM, a VirtualBox
   VMSVGA segfault in `libnvidia-glcore.so.595.84` (3D acceleration). Fixed: `accelerate3d off` on
   `w10-etw` and in `src/Vagrantfile`.
@@ -52,8 +50,33 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   Plumbing verified with the keyword mock on a replay of `live-20261011T112141Z` (before the scale
   change; now needs `--sg-moderate-from 10.0001`): 1 red window (11:25 `updater`), verdict attached,
   `llm/` files written. No real LLM run yet (provider not chosen).
-- Attack pack + labelling scheme drafted: `src/atomic-attack-pack/` (10 scenarios, `LABELING.md`,
-  `tools/build_node_labels.py`). Not yet run.
+- Attack pack is now ONE attack: the RCE kill chain (`src/atomic-attack-pack/scenarios/rce-killchain.ps1`),
+  delivered from a Kali attacker VM (`tools/launch_exploit.py`; local-only Vagrant box, pack mounted at
+  `/opt/attack-pack`, not Ansible-managed). Kali exploits DVWA (OS command injection) and the RCE shell
+  runs Discovery (T1033/T1082/T1057/T1016) → T1105 → T1053.005,
+  self-logging labels (`LABELING.md`, D6). Launcher `--selftest` passes on the host; the old 01–10
+  scenarios + orchestrator + local sink are removed.
+- Windows collector provisioned + verified on `ws-etw` via Ansible (2026-10-18): `ansible-playbook
+  windows.yml -e vulnlab_enabled=true` installs every tool — SilkETW/Python/converter/etwctl, Alloy,
+  `start-live.ps1`, benign `06`/`07`, and DVWA. New `src/ansible/verify-windows.yml` asserts all
+  present and DVWA serving on :3000. **Idempotent: a 2nd run is
+  `changed=0`** (downloads now `force: no` + SilkETW/Python checksums pinned). DVWA (`win_vulnlab`):
+  XAMPP (Apache + PHP + MariaDB) via Chocolatey, DVWA cloned to `C:\lab\DVWA` at the Apache DocumentRoot
+  on :3000, Apache + MariaDB installed as services, and the schema built once via `setup.php`
+  (admin/password, security=low).
+- Alloy → Loki data path verified end to end on `ws-etw` → `ubuntu-trainer` (2026-10-18): a 37 s test
+  capture shipped **losslessly** — Loki's per-provider counts equal the raw files (kproc 3372 / knet 223 /
+  kfile 28224), with labels job/host/split/run/provider correct and line JSON intact. (The provisioning-time
+  "Loki not reachable" warning was just Loki still initializing ~1 min after a trainer reboot; the trainer's
+  host-only NIC also needed a `vagrant reload` once.)
+- Log pipeline Alloy → Loki (code + selftests, 2026-10-17; Ubuntu side verified on `ubuntu-trainer`: lossless
+  pull, host build = VM build, live via Loki = offline 8/8 windows; Windows side verified 2026-10-18:
+  capture ships to Loki losslessly, counts match): `win_alloy` / `ubuntu_loki` roles, `src/pipeline/loki_pull.py` (interactive / flags) →
+  `build_experiment.py`, `src/live/loki_source.py` (`live_server.py --loki-url`), `src/live/loki_push.py`
+  (test feed). Lab moved to Windows Server 2022 + Ubuntu trainer (Ansible, `src/ansible/`).
+- Improve loop (code + selftest, 2026-10-17): `lab` CLI (`src/lab/cli.py`): status / pull / train / loop /
+  promote; one run folder per model; current-model pointer read by the live server, `serve.sh`,
+  `rejudge.sh` and `ocr-live`.
 - Concepts: provenance graphs; GNN message passing.
 
 ## Invalid / needs redo
@@ -62,9 +85,18 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 
 ## Not done
 
-- CVE → RCE demo scenario (target attack for the end goal): exploit a lab service (e.g. Apache /
-  PostgreSQL installed by `03-workload.ps1`), then ATT&CK follow-on. The attack pack has only
-  Atomic/custom scripts today.
+- Data check (verified 2026-10-17): in capture `20261009T145632Z`, `kfile.json` only covers 14:56:33–14:57:40
+  (67 s of a 20-min capture). FILE Read/Write edges come from that first minute. Check the next capture's
+  per-provider time span before training on it.
+- New benign train capture (07) pulled from Loki, retrain, and a new run replacing `exp01`. (The
+  Alloy→Loki path itself is now verified end to end — see Done, 2026-10-18.)
+
+- Run the RCE kill chain end to end against DVWA. DVWA provisioning is verified on `ws-etw`
+  (`ansible-playbook -i inventory.local.ini windows.yml -e vulnlab_enabled=true` serves DVWA on :3000,
+  login admin/password, security low — see Done). Remaining: `vagrant up kali` (mounts the pack at
+  `/opt/attack-pack`), then `python3 -I /opt/attack-pack/tools/launch_exploit.py --target
+  http://10.21.2.10:3000` during a live session, and check the window reaches ≥ Moderate (sg_score ≥ 30)
+  while benign stays green.
 - Concepts 2 (rest) to 9. Phase 0 toy exercises; Phase 1 one-page paper summary + hyperparameter list.
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
@@ -95,15 +127,10 @@ Model:
 - τ comes from training scores, so it sits at the training maximum (τ_file 0.2297 vs max 0.2312);
   any benign file in an unseen neighbourhood crosses it. Benign coverage is one 20-min scripted capture,
   so background jobs (e.g. the 32-bit `updater`) are unseen and get flagged.
-- `03-workload.ps1` is a provisioner (choco installs, config edits), not a benign generator: use
-  `06-benign-workload.ps1` for benign live tests.
-
-Environment:
-- `src/graphdb/compose.yaml`: GraphDB heap `-Xmx8g` exceeds the container `mem_limit` 4g (latent; use ≤ 3g).
 
 Data validation (LLM input):
-- NET attrs are SilkETW signed integers (`-1,707,025,385:-17663` = `23.220.64.154:443`); decoded only for
-  display in `alg2.py`. Process attrs are only the image name (`updater`), no path or command line, so the
+- NET attrs are SilkETW signed integers (`-1,707,025,385:-17663` = `23.220.64.154:443`); stored raw, decoded
+  for display in the LLM document (`alg2.py`) and the live UI (raw shown beside it). Process attrs are only the image name (`updater`), no path or command line, so the
   LLM sees little context for processes.
 
 Live tooling:
@@ -116,13 +143,8 @@ Code bugs found in the 2026-10-13 docs pass (verified in code, not fixed yet):
 - `etwship.py --speed` help says "0 = no sleep", but 0 hangs (see Live tooling); default is 60, `replay.sh` uses 120.
 - `build_node_labels.py` expects `node_id,type,name,timestamp`; the converter writes `node,node_type,node_attr`
   (no timestamp, types `PROCESS/FILE/NET`), and NET is checked as `network`. It cannot run as is.
-- `attack-lib.ps1` / `cleanup-all.ps1` import `C:\AtomicRedTeam\invoke-atomicredteam\*.psd1`, but `02-tools.ps1`
-  installs the module from PSGallery (`-Scope AllUsers`).
-- `selftest.sh` skips `encode_to_features.py --selftest`; `w10_to_rdf.py` has no `--selftest`.
-- Runtime messages name old files: `07-build-train-dataset.ps1` ("next w10_to_rdf.py", next is
-  `encode_to_features.py`; "05-collect-10-minutes-window.ps1") and `02-tools.ps1` ("Run base.ps1 first").
-- `02-tools.ps1` pins (`SilkZipSha256`, `InvokeArtVersion`, `AtomicsRef`) are still empty, so rebuilds
-  install "latest"; copy them from `lab-versions.json`.
+- `selftest.sh` skips `encode_to_features.py --selftest`.
+- Runtime message names an old file: `07-build-train-dataset.ps1` ("05-collect-10-minutes-window.ps1").
 - `src/Vagrantfile:13` names `./host-setup.sh`; the file is `src/setup-virtualbox.sh`.
 - `live_server.py --sg-moderate-from` hard-codes 30.0 instead of `alg1.MODERATE_FROM`.
 - Scenarios 05 (lsass handle access) and 09 (timestomp) may be invisible to the collector's file keywords
@@ -143,6 +165,6 @@ Repo hygiene:
    `sg_score` per window, mean ± std over ~10 windows.
 2. Replay equivalence without the VM (`src/live/README.md` step 4, `--stride-min 2 --origin-ms
    1791557793343`); `compare_replay.py` must print `ALL MATCH`.
-3. End goal: run one Atomic scenario during a live session. Check that its window reaches ≥ Moderate
-   (sg_score ≥ 30). If not, the cut-off must stay above the benign max from step 1; record the outcome in
-   DEVIATIONS D8 (decided on benign data, confirmed on the attack, not tuned to it).
+3. End goal: run the RCE kill chain (`launch_exploit.py` from Kali) during a live session. Check that its window
+   reaches ≥ Moderate (sg_score ≥ 30). If not, the cut-off must stay above the benign max from step 1;
+   record the outcome in DEVIATIONS D8 (decided on benign data, confirmed on the attack, not tuned to it).

@@ -1,0 +1,199 @@
+% Tài liệu tham khảo cho đồ án: Phát hiện bất thường trên endpoint device log dựa trên OCR-APT
+% Encoding: UTF-8. Chỉ tài liệu bên ngoài; dữ liệu tự thu thập của nhóm không đưa vào đây.
+% Thông tin thư mục đối chiếu với danh mục tham khảo của bài báo OCR-APT (bản arXiv v2) khi có.
+
+% ---------------------------------------------------------------- Bài báo gốc
+@inproceedings{aly2025ocrapt,
+  title     = {{OCR-APT}: Reconstructing {APT} Stories from Audit Logs using Subgraph Anomaly Detection and {LLMs}},
+  author    = {Aly, Ahmed and Mansour, Essam and Youssef, Amr},
+  booktitle = {Proceedings of the 2025 ACM SIGSAC Conference on Computer and Communications Security (CCS)},
+  year      = {2025},
+  doi       = {10.1145/3719027.3765219},
+  note      = {Bản mở rộng: arXiv:2510.15188}
+}
+
+@misc{ocrapt_repo,
+  title        = {{OCR-APT}: source code and recovered reports},
+  author       = {{CoDS-GCS}},
+  year         = {2025},
+  howpublished = {\url{https://github.com/CoDS-GCS/OCR-APT}}
+}
+
+% ---------------------------------------------------------------- Hệ thống phát hiện liên quan
+@inproceedings{li2024nodlink,
+  title     = {{NODLINK}: An Online System for Fine-Grained {APT} Attack Detection and Investigation},
+  author    = {Li, Shaofei and Dong, Feng and Xiao, Xusheng and Wang, Haoyu and Shao, Fei and Chen, Jiedong and Guo, Yao and Chen, Xiangqun and Li, Ding},
+  booktitle = {Network and Distributed System Security (NDSS) Symposium},
+  year      = {2024}
+}
+
+@inproceedings{rehman2024flash,
+  title     = {Flash: A Comprehensive Approach to Intrusion Detection via Provenance Graph Representation Learning},
+  author    = {Rehman, Mati Ur and Ahmadi, Hadi and Hassan, Wajih Ul},
+  booktitle = {2024 IEEE Symposium on Security and Privacy (SP)},
+  pages     = {3552--3570},
+  year      = {2024}
+}
+
+@inproceedings{cheng2024kairos,
+  title     = {Kairos: Practical Intrusion Detection and Investigation using Whole-system Provenance},
+  author    = {Cheng, Zijun and Lv, Qiujian and Liang, Jinyuan and Wang, Yan and Sun, Degang and Pasquier, Thomas and Han, Xueyuan},
+  booktitle = {2024 IEEE Symposium on Security and Privacy (SP)},
+  pages     = {3533--3551},
+  year      = {2024}
+}
+
+@article{wang2022threatrace,
+  title   = {Threatrace: Detecting and Tracing Host-based Threats in Node Level through Provenance Graph Learning},
+  author  = {Wang, Su and Wang, Zhiliang and Zhou, Tao and Sun, Hongbin and Yin, Xia and Han, Dongqi and Zhang, Han and Shi, Xingang and Yang, Jiahai},
+  journal = {IEEE Transactions on Information Forensics and Security},
+  volume  = {17},
+  pages   = {3972--3987},
+  year    = {2022}
+}
+
+@article{zipperle2022survey,
+  title   = {Provenance-based Intrusion Detection Systems: A Survey},
+  author  = {Zipperle, Michael and Gottwalt, Florian and Chang, Elizabeth and Dillon, Tharam},
+  journal = {ACM Computing Surveys (CSUR)},
+  year    = {2022}
+}
+
+@inproceedings{arp2022dos,
+  title     = {Dos and Don'ts of Machine Learning in Computer Security},
+  author    = {Arp, Daniel and Quiring, Erwin and Pendlebury, Feargus and Warnecke, Alexander and Pierazzi, Fabio and Wressnegger, Christian and Cavallaro, Lorenzo and Rieck, Konrad},
+  booktitle = {USENIX Security Symposium},
+  year      = {2022}
+}
+
+% ---------------------------------------------------------------- Mô hình và thuật toán
+@inproceedings{kipf2017gcn,
+  title     = {Semi-Supervised Classification with Graph Convolutional Networks},
+  author    = {Kipf, Thomas N. and Welling, Max},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2017}
+}
+
+@inproceedings{schlichtkrull2018rgcn,
+  title     = {Modeling Relational Data with Graph Convolutional Networks},
+  author    = {Schlichtkrull, Michael and Kipf, Thomas N. and Bloem, Peter and van den Berg, Rianne and Titov, Ivan and Welling, Max},
+  booktitle = {European Semantic Web Conference (ESWC)},
+  publisher = {Springer},
+  year      = {2018}
+}
+
+@article{schoelkopf2001ocsvm,
+  title   = {Estimating the Support of a High-Dimensional Distribution},
+  author  = {Sch{\"o}lkopf, Bernhard and Platt, John C. and Shawe-Taylor, John and Smola, Alex J. and Williamson, Robert C.},
+  journal = {Neural Computation},
+  volume  = {13},
+  number  = {7},
+  pages   = {1443--1471},
+  year    = {2001}
+}
+
+@inproceedings{ruff2018deepsvdd,
+  title     = {Deep One-Class Classification},
+  author    = {Ruff, Lukas and Vandermeulen, Robert and G{\"o}rnitz, Nico and Deecke, Lucas and Siddiqui, Shoaib Ahmed and Binder, Alexander and M{\"u}ller, Emmanuel and Kloft, Marius},
+  booktitle = {Proceedings of the 35th International Conference on Machine Learning (ICML)},
+  pages     = {4393--4402},
+  year      = {2018}
+}
+
+@article{wang2021ocgnn,
+  title   = {One-Class Graph Neural Networks for Anomaly Detection in Attributed Networks},
+  author  = {Wang, Xuhong and Jin, Baihong and Du, Ying and Cui, Ping and Tan, Yingshan and Yang, Yupu},
+  journal = {Neural Computing and Applications},
+  volume  = {33},
+  pages   = {12073--12085},
+  year    = {2021}
+}
+
+@article{blondel2008louvain,
+  title   = {Fast Unfolding of Communities in Large Networks},
+  author  = {Blondel, Vincent D. and Guillaume, Jean-Loup and Lambiotte, Renaud and Lefebvre, Etienne},
+  journal = {Journal of Statistical Mechanics: Theory and Experiment},
+  volume  = {2008},
+  number  = {10},
+  pages   = {P10008},
+  year    = {2008}
+}
+
+@inproceedings{wei2022cot,
+  title     = {Chain-of-Thought Prompting Elicits Reasoning in Large Language Models},
+  author    = {Wei, Jason and Wang, Xuezhi and Schuurmans, Dale and Bosma, Maarten and Ichter, Brian and Xia, Fei and Chi, Ed H. and Le, Quoc V. and Zhou, Denny},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2022}
+}
+
+% ---------------------------------------------------------------- Thư viện
+@article{liu2024pygod,
+  title   = {{PyGOD}: A {Python} Library for Graph Outlier Detection},
+  author  = {Liu, Kay and Dou, Yingtong and Ding, Xueying and Hu, Xiyang and Zhang, Ruitong and Peng, Hao and Sun, Lichao and Yu, Philip S.},
+  journal = {Journal of Machine Learning Research},
+  volume  = {25},
+  number  = {141},
+  pages   = {1--9},
+  year    = {2024}
+}
+
+@inproceedings{fey2019pyg,
+  title     = {Fast Graph Representation Learning with {PyTorch Geometric}},
+  author    = {Fey, Matthias and Lenssen, Jan Eric},
+  booktitle = {ICLR Workshop on Representation Learning on Graphs and Manifolds},
+  year      = {2019}
+}
+
+@misc{graphdb,
+  title        = {{GraphDB}},
+  author       = {{Ontotext}},
+  year         = {2025},
+  howpublished = {\url{https://graphdb.ontotext.com/}}
+}
+
+% ---------------------------------------------------------------- Bộ dữ liệu
+@misc{darpa_tc3,
+  title        = {Transparent Computing Engagement 3 ({TC3}) Data Release},
+  author       = {{DARPA}},
+  year         = {2018},
+  howpublished = {\url{https://github.com/darpa-i2o/Transparent-Computing}}
+}
+
+@misc{darpa_optc,
+  title        = {Operationally Transparent Cyber ({OpTC}) Data Release},
+  author       = {{DARPA}},
+  year         = {2020},
+  howpublished = {\url{https://github.com/FiveDirections/OpTC-data}}
+}
+
+@misc{nodlink_data,
+  title        = {{NODLINK} Simulated Dataset (Ubuntu, {WS12}, {W10})},
+  author       = {{PKU-ASAL}},
+  year         = {2024},
+  howpublished = {\url{https://github.com/PKU-ASAL/Simulated-Data}}
+}
+
+% ---------------------------------------------------------------- Công cụ thu thập và tấn công
+@misc{silketw,
+  title        = {{SilkETW}: {ETW} Collection Framework},
+  author       = {{Mandiant}},
+  howpublished = {\url{https://github.com/mandiant/SilkETW}}
+}
+
+@misc{grafana_loki,
+  title        = {{Grafana Loki} and {Grafana Alloy}},
+  author       = {{Grafana Labs}},
+  howpublished = {\url{https://grafana.com/oss/loki/}, \url{https://grafana.com/docs/alloy/}}
+}
+
+@misc{mitre_attack,
+  title        = {{MITRE ATT\&CK}},
+  author       = {{The MITRE Corporation}},
+  howpublished = {\url{https://attack.mitre.org/}}
+}
+
+@misc{atomic_red_team,
+  title        = {Atomic Red Team},
+  author       = {{Red Canary}},
+  howpublished = {\url{https://github.com/redcanaryco/atomic-red-team}}
+}

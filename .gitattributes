@@ -1,0 +1,6 @@
+# Python tools whose sha256 is recorded at training time (experiment.json tools.*) and checked live,
+# or that Ansible copies byte-for-byte to the VM. LF everywhere, so every clone hashes the same.
+src/pipeline/etw2nodlink.py text eol=lf
+src/pipeline/etwwindow.py   text eol=lf
+src/live/etwship.py         text eol=lf
+src/pipeline/check_rdf_input.py text eol=lf

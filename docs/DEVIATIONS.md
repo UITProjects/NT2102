@@ -1,7 +1,7 @@
 # DEVIATIONS from OCR-APT (paper + upstream repo)
 
 Each entry: what changed, why, expected impact, which claims it limits.
-Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this project · [INFERENCE] unverified.
+Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.com/CoDS-GCS/OCR-APT) · [OURS] this project · [INFERENCE] unverified.
 
 ## D1. Windowed, near-live detection
 - What: [PAPER] offline prediction over the whole test log. [OURS] 5-min windows (train: 2-min stride,
@@ -21,22 +21,22 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
 - Limits: our numbers are not comparable with the paper's tables.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
-- What: [REPO] `encode_to_PyG.py::feature_engineering` drops all-zero columns and fits the idle
+- What: [AUTHOR CODE] `encode_to_PyG.py::feature_engineering` drops all-zero columns and fits the idle
   MinMax scaler on train+test. [OURS] all 15 columns kept; scaler fit on train only and reused;
   no RDF/GraphDB/PyG step; repo rounding of idle gaps to whole seconds kept (switchable).
 - Why: fixed feature dimension across train/test/live; no test leakage into scaling; CSV for EDA.
 - Impact: test/live idle values may fall outside [0, 1]; overlapping windows produce correlated rows.
 - Limits: feature values are not bit-identical to the repo's.
 
-## D4. Minimal W10 RDF transform (`src/pipeline/w10_to_rdf.py`)
-- What: [REPO] `transform_to_RDF.py` for all datasets. [OURS] SimulatedW10 CSV only, train split only
-  for now, ground-truth file optional (missing = all benign), stricter Turtle escaping.
-- Why: only the W10 path is needed; train-only lets the pipeline run before a test capture exists.
-- Impact: none on the live demo. Alg. 1 runs in memory without GraphDB (D8), so this RDF path is unused.
+## D4. No RDF / GraphDB
+- What: [AUTHOR CODE] `transform_to_RDF.py` writes the graph as Turtle into GraphDB; Alg. 1 and Alg. 2 l.16–25
+  query it with SPARQL. [OURS] no RDF and no GraphDB: edges stay CSV, Alg. 1 runs in memory per window (D8).
+- Why: a 5-min window fits in RAM; one less service to run.
+- Impact: none on the detector.
 - Limits: no claim about the repo's GraphDB-based Alg. 1 / Alg. 2 l.16–25 path.
 
 ## D5. Trainer re-implemented (`src/pipeline/train_gnn_models.py`)
-- What: [REPO] authors' PyGOD fork (`OCRGCN`), random 15 % validation, stop at first TNR decline,
+- What: [AUTHOR CODE] authors' PyGOD fork (`OCRGCN`), random 15 % validation, stop at first TNR decline,
   random seeds after run 0. [OURS] own `OCRGCN` (PyG `RGCNConv` ×3, 32-d, lr 0.005, β 0.5, warmup 2,
   contamination 0.001); validation = last window held out + 2 overlapping windows purged; patience 5;
   seeds 360 + run; `use_deterministic_algorithms(warn_only=True)`. For scoring test/live graphs,
@@ -48,41 +48,61 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
 - Limits: cannot claim to reproduce OCRGCN exactly.
 
 ## D6. Labels from injected attacks (`src/atomic-attack-pack/LABELING.md`)
-- What: [PAPER] DARPA ground truth / analyst reports (with §7 label-provenance caveats). [OURS]
-  scenarios self-log a JSONL; a node is malicious if it matches an indicator AND is active in the
+- What: [PAPER] DARPA ground truth / analyst reports (with §7 label-provenance caveats). [OURS] the
+  attack self-logs a JSONL; a node is malicious if it matches an indicator AND is active in the
   attack time range.
+- [OURS] the injected attack is now ONE RCE kill chain (`scenarios/rce-killchain.ps1`), delivered from a
+  Kali attacker VM (`tools/launch_exploit.py`): Kali exploits DVWA via its documented OS-command-injection
+  page (T1190/T1059.001), then the RCE shell runs Discovery (T1033/T1082/T1057/T1016) → ingress transfer
+  (T1105) → persistence (T1053.005). The external origin means the attack subtree is rooted at the vuln
+  service (`httpd.exe → cmd.exe → powershell → …`), which is itself the anomalous signal; indicators are
+  the tool image names, the downloaded file, the `UpdaterSync` task, and `<attacker>:8080`. DVWA's
+  command-injection page (`/vulnerabilities/exec/`, security=low) is a real, documented and intentional
+  OS-command sink, so the exploited RCE is faithful. (Earlier: 10 Atomic/custom scenarios run on the VM.)
 - Why: exact knowledge of what was run, no external ground truth available.
 - Impact: weak oracle; benign processes with the same image name inside an attack window can be
   over-labelled.
 - Limits: claims only "detection of injected ATT&CK techniques on our capture".
 
 ## D7. Environment
-- What: [PAPER] §7.2.2 does not state a GraphDB version. [OURS] GraphDB 10.8.0 (Docker Compose);
-  Python deps via uv (`uv.lock`), torch / torch-geometric, no PyGOD.
-- Impact: none expected for the detector; GraphDB-dependent stages untested.
+- What: [OURS] Python deps via uv (`uv.lock`), torch / torch-geometric, no PyGOD; Loki + Grafana in
+  Docker on the trainer.
+- Impact: none expected for the detector.
 
 ## D8. Live inference path (`src/live/`, `src/pipeline/score_window.py`, `src/pipeline/alg1.py`)
 - What: [PAPER] offline prediction on the whole test graph (§5.1.3), then Alg. 1 subgraphs with a
   subgraph anomaly-score filter (§5.2). [OURS]:
-  - The VM streams raw SilkETW lines; the host reorders by event time (20 s lateness), runs the training
-    converter (same sha256, from `04-collector.ps1`), cuts clock-aligned tumbling 5-min windows, and
-    scores each with the frozen train scaler, train relation list and per-type models.
+  - The VM's raw SilkETW lines reach the host, which reorders them by event time (20 s lateness), runs
+    the training converter (`src/pipeline/etw2nodlink.py`, same sha256), cuts clock-aligned tumbling
+    5-min windows, and scores each window with the frozen train scaler, train relation list and per-type
+    models.
+  - Transport (user decision, 2026-10-17): Grafana Alloy on the VM ships every line, unchanged, to Loki
+    on the trainer. `live_server.py --loki-url` follows the newest test run there
+    (`src/live/loki_source.py`). Training pulls the same store (`loki_pull.py` → `build_experiment.py`).
+    The HTTP shipper (`etwship.py`) remains only for `--replay` / `compare_replay.py`.
+  - Clock with Loki: no VM heartbeat travels through Loki. The engine clock is the newest event time
+    seen. After `--loki-idle-s` without new lines (default 2 × lateness), it follows the host's wall
+    clock minus the last measured lag. The shipper path used the VM wall clock instead. Windows close
+    about 1–5 s later: Alloy batches up to 1 s, then the poll interval adds 1 s. The UI's "clock skew"
+    tile becomes "pipeline lag (host − newest event)".
+  - Alloy's own file reads appear in Kernel-File. Their edges are dropped by image name (`alloy`, like
+    `silkservice`), in training and live alike. Raw lines stay complete.
   - Windows starting before the capture are `partial` and not scored. The shipper's own PID is dropped.
     Relations unseen in training are dropped (counted). No cross-window dedup. State is in memory.
-- Alg. 1 per window (`alg1.py`, in memory, no GraphDB) follows [REPO] `detect_anomalous_subgraphs.py`:
+- Alg. 1 per window (`alg1.py`, in memory, no GraphDB) follows [AUTHOR CODE] `detect_anomalous_subgraphs.py`:
   initSG = edges touching an anomalous node; top 15 seeds per type; 1-hop forward/backward traversal to
   unvisited anomalous nodes; ≥ 3 nodes; each node correlated once; Louvain above 5000 edges; identical
   subgraphs removed.
   - Subgraph score = Σ over anomalous nodes of prob = clamp((score − train_min_t) / (train_max_t −
-    train_min_t), 0, 1). [REPO] definition (`subgraph_anomaly_score` sums PyGOD
+    train_min_t), 0, 1). [AUTHOR CODE] definition (`subgraph_anomaly_score` sums PyGOD
     `Prediction_probability`, 'linear'); [PAPER] §5.2 only says "sum of the scores", but raw scores
     differ in scale per type (NET is negative). train_min/max from `train_scores.csv` (split = train);
     the saved model reproduces that file to 1.3e-5.
   - [OURS] level scale (user decision, 2026-10-13): ≤ 1 Negligible, < 30 Minor, 30–100 Moderate,
-    ≤ 1000 Significant, else Critical. [REPO] l.394 has Moderate > 10; other bounds unchanged.
-    `--sg-moderate-from` (default 30; `10.0001` = [REPO] scale). A window alerts only if ≥ 1 subgraph
+    ≤ 1000 Significant, else Critical. [AUTHOR CODE] l.394 has Moderate > 10; other bounds unchanged.
+    `--sg-moderate-from` (default 30; `10.0001` = [AUTHOR CODE] scale). A window alerts only if ≥ 1 subgraph
     is ≥ Moderate.
-  - [OURS] no top-k fallback when nothing reaches Moderate ([REPO] l.433–461); live, it would make every
+  - [OURS] no top-k fallback when nothing reaches Moderate ([AUTHOR CODE] l.433–461); live, it would make every
     window red.
   - [OURS] a partition still above max_e is kept whole (`oversize`), not sampled per edge type.
   - [OURS] optional numeric cut-off `--sg-min-score`, to be calibrated on benign sessions only.
@@ -90,14 +110,18 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
 - Why: live demo, with the same code path as offline so a replay of the training capture can be checked
   against the offline artefacts (`compare_replay.py`). Level scale: [PAPER] §5.2 says the subgraph set
   "can be adjusted based on the desired abnormality threshold". A 5-min window is far smaller than the
-  paper's whole-log graphs, and the [REPO] cut-off (> 10) left the benign 11:25 `updater` window red.
+  paper's whole-log graphs, and the [AUTHOR CODE] cut-off (> 10) left the benign 11:25 `updater` window red.
   30 = that window's score (18) plus margin.
 - Impact:
+  - Loki clock [INFERENCE]: while a capture runs, SilkETW emits kernel events continuously, so the event
+    clock rarely stalls. When the capture stops, the last full window closes through the idle fallback.
+    If the events stall but the capture keeps running, windows close up to `--loki-idle-s` late. They
+    are not lost. Not yet measured on the VM.
   - Events later than the lateness are dropped (shown in the UI); processes started before a window
     have no Start edge inside it.
   - Since prob ≤ 1, ≥ 30 means "at least ~30 anomalous nodes in one connected story" (paper: > ~10).
     [INFERENCE] the paper's levels were set for DARPA-scale graphs, not 5-min windows (~100–850 nodes).
-  - Benign replay `live-20261011T112141Z`: 5 windows with ≥ 1 node above τ; [REPO] scale → 1 red
+  - Benign replay `live-20261011T112141Z`: 5 windows with ≥ 1 node above τ; [AUTHOR CODE] scale → 1 red
     (11:25 `updater`, 18 unseen-context DLLs, score 18); our scale → 0 red.
   - An attack whose best subgraph scores < 30 in a window is filtered out. The attack side is not
     measured; 30 comes from ONE benign window. Check the Atomic / demo attack against 30, do not re-tune
@@ -113,16 +137,17 @@ Tags: [PAPER] paper text · [REPO] verified in upstream code · [OURS] this proj
   decides attack vs benign, and its instructions ("APT attack investigator … summarizing … into attack
   reports") assume an attack. [OURS] for each red window, a neutral triage prompt first returns a JSON
   verdict (attack / benign / uncertain, MITRE ATT&CK tactics, evidence lines). Only "attack" runs the
-  paper's prompts, copied verbatim from [REPO] `llm_prompt.py`: extract IOCs → drop IOCs not in the
+  paper's prompts, copied verbatim from [AUTHOR CODE] `llm_prompt.py`: extract IOCs → drop IOCs not in the
   document (repo hallucination filter) → per-subgraph report; with ≥ 2 attack subgraphs, IOCs per APT
   stage → comprehensive report (Alg. 2 l.3–15).
   - Window verdict: attack if any subgraph is attack; uncertain if any is uncertain or failed; else
     false_positive. Triage evidence lines must appear verbatim in the document; if none do, the verdict
     becomes uncertain.
-  - Serialization follows [REPO] `prepare_document` (subject ACTION the type : object, per minute,
+  - Serialization follows [AUTHOR CODE] `prepare_document` (subject ACTION the type : object, per minute,
     "(N times)" = distinct seconds). [OURS] real UTC times (the repo fakes a base date for SimulatedW10);
     full paths, not basenames; NET attrs decoded from SilkETW's signed integers
-    (`-1,707,025,385:-17663` = `23.220.64.154:443`; display only, node IDs unchanged).
+    (`-1,707,025,385:-17663` = `23.220.64.154:443`; display only, node IDs unchanged). The live UI shows the
+    same decoded value with the raw one beside it (`engine.display_attrs`); saved window files stay raw.
   - No vector store or embeddings: a window's document fits in the prompt. Documents above 400 lines are
     cut, keeping lines that touch anomalous nodes first (count recorded).
   - Left out: Alg. 2 l.16–25 (an LLM judge picks top IOCs, their context is pulled from the graph DB, the

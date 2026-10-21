@@ -1,0 +1,40 @@
+---
+# Clone the repo, uv sync (also installs the `lab` command into .venv/bin), and run the live server as a systemd service. The repo files run as the
+# login user (not root); only the systemd unit install needs become.
+
+- name: Clone the project repo
+  become: false
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ repo_dest }}"
+    version: "{{ repo_branch }}"
+    update: true
+    recursive: false   # submodules (OCR-APT paper repo, NODLINK data) are reference material, not needed here;
+                       # with them the module reports "submodules_changed" on every run
+  notify: restart ocr-live   # the running server keeps the old Python code until restarted
+
+- name: uv sync (resolve torch, torch-geometric, fastapi, ...)
+  become: false
+  ansible.builtin.command: uv sync
+  args:
+    chdir: "{{ repo_dest }}"
+  register: uv_sync
+  changed_when: "'Installed' in uv_sync.stderr or 'Uninstalled' in uv_sync.stderr"   # "Resolved" prints every run
+
+# The live server loads the CURRENT MODEL from the repo's pointer (src/artifacts/current.json, or
+# current.local.json written by `lab promote` on this host). Each run folder carries its own
+# experiment.json, so nothing has to be copied from the control node.
+
+- name: Install the live-server systemd unit
+  ansible.builtin.template:
+    src: ocr-live.service.j2
+    dest: /etc/systemd/system/ocr-live.service
+    mode: "0644"
+  notify: restart ocr-live
+
+- name: Enable and start the live server
+  ansible.builtin.systemd:
+    name: ocr-live
+    enabled: true
+    state: started
+    daemon_reload: true

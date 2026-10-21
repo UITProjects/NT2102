@@ -1,0 +1,14 @@
+---
+# Deploy start-live.ps1: start/stop a live (test) SilkETW capture. Alloy (win_alloy) ships it to Loki and
+# the live server follows Loki, so this script no longer sends anything itself. Run it interactively
+# during the demo (elevated PowerShell), alongside the benign workload.
+
+- name: Deploy start-live.ps1
+  ansible.windows.win_template:
+    src: start-live.ps1.j2
+    dest: 'C:\scripts\start-live.ps1'
+
+- name: Remove the old HTTP-shipper script (replaced by Alloy -> Loki)
+  ansible.windows.win_file:
+    path: 'C:\scripts\ship-live.ps1'
+    state: absent

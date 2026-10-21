@@ -8,7 +8,7 @@
 #   ./rejudge.sh replay-live-20261011T112141Z
 #   ./rejudge.sh replay-live-20261011T112141Z anthropic
 #   ./rejudge.sh replay-live-20261011T112141Z "" --sg-min-score 20    # other cut-off, no LLM
-# Env: RUN_DIR (default src/artifacts/runs/exp01).
+# Env: RUN_DIR (default: the current model, `lab current --field run_dir`).
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]] && { sed -n '2,11p' "$0"; exit 0; }
@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 session=$1
 provider=${2:-}
 shift $(( $# >= 2 ? 2 : 1 ))
-RUN_DIR=${RUN_DIR:-src/artifacts/runs/exp01}
+RUN_DIR=${RUN_DIR:-$(uv run lab current --field run_dir)}
 sdir="src/live/sessions/$session"
 [[ -d "$sdir/windows" ]] || { echo "[rejudge] no session at $sdir" >&2; exit 1; }
 

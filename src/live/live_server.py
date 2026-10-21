@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-live_server.py - HTTP layer around engine.Engine: ingest from the VM shipper, JSON API + SSE for the UI.
+live_server.py - HTTP layer around engine.Engine: ingest from Loki or the shipper, JSON API + SSE for the UI.
 
-    POST /ingest              shipper batches (JSON, optionally gzip). 409 = offset gap, body.expected
+    --loki-url URL            follow the newest test run in Loki (Alloy on the VM ships to it; loki_source.py)
+    POST /ingest              shipper/replay batches (JSON, optionally gzip). 409 = offset gap, body.expected
     GET  /api/status          shipper / session / model status
     GET  /api/windows         every window of the current session (summary rows)
     GET  /api/windows/{wid}   one window: top nodes per type, Alg. 1 subgraphs (score, level, kept),
@@ -11,9 +12,10 @@ live_server.py - HTTP layer around engine.Engine: ingest from the VM shipper, JS
     GET  /                    the UI (static/index.html)
 
 Usage (from the repo root): ./serve.sh [live|local] [flags] wraps
-    uv run python src/live/live_server.py --run-dir src/artifacts/runs/exp01 \
-        --scaler src/artifacts/features/self-dataset/feature_scaler.json \
-        --experiment src/out/etw/experiments/20261009T145632Z/experiment.json --bind 10.21.2.1
+    uv run python src/live/live_server.py --bind 127.0.0.1 [--loki-url http://127.0.0.1:3100]
+  The model comes from the current-model pointer (src/artifacts/current.local.json, else current.json;
+  `lab promote <run>` sets it). --run-dir / --scaler / --experiment override it, e.g.
+    --run-dir src/artifacts/runs/exp01 --scaler src/artifacts/features/self-dataset/feature_scaler.json
     add --llm-provider anthropic|openai|ollama|mock for the LLM verdict on red windows (src/live/README.md)
 """
 from __future__ import annotations
@@ -32,10 +34,11 @@ from starlette.concurrency import run_in_threadpool
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))          # src/: the `lab` package (current-model pointer)
 from engine import Engine  # noqa: E402
 
 
-def create_app(engine: Engine, token: str | None) -> FastAPI:
+def create_app(engine: Engine, token: str | None, source=None) -> FastAPI:
     app = FastAPI(title="OCR-APT live")
     clients: set[tuple] = set()                  # (event loop, asyncio.Queue) per open SSE connection
 
@@ -57,7 +60,10 @@ def create_app(engine: Engine, token: str | None) -> FastAPI:
 
     @app.get("/api/status")
     async def status():
-        return engine.status()
+        st = engine.status()
+        if source is not None:
+            st["source"] = source.status()
+        return st
 
     @app.get("/api/windows")
     async def windows():
@@ -99,9 +105,9 @@ def create_app(engine: Engine, token: str | None) -> FastAPI:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run-dir", required=True, help="train_gnn_models.py output (models/, train_meta.json)")
-    ap.add_argument("--scaler", required=True, help="TRAIN feature_scaler.json")
-    ap.add_argument("--experiment", help="training experiment.json: checks the converter sha256 matches")
+    ap.add_argument("--run-dir", help="train_gnn_models.py output (models/, train_meta.json); default: current model")
+    ap.add_argument("--scaler", help="TRAIN feature_scaler.json; default: current model's")
+    ap.add_argument("--experiment", help="training experiment.json (converter sha256 check); default: current model's")
     ap.add_argument("--bind", default="10.21.2.1", help="host-only IP the VM can reach (127.0.0.1 for replay)")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--window-min", type=float, default=5, help="MUST equal the training window length")
@@ -113,14 +119,22 @@ def main():
     ap.add_argument("--sessions-dir", default=os.path.join(HERE, "sessions"))
     ap.add_argument("--token", default=os.environ.get("LAB_TOKEN"), help="optional shared secret (X-Lab-Token)")
     ap.add_argument("--allow-collapsed", action="store_true")
+    g = ap.add_argument_group("Loki source (src/live/loki_source.py); without --loki-url only POST /ingest feeds the engine")
+    g.add_argument("--loki-url", default=None, help="e.g. http://127.0.0.1:3100 (Loki on this host)")
+    g.add_argument("--loki-split", default="test", choices=["train", "test"], help="follow the newest run of this split")
+    g.add_argument("--loki-poll-s", type=float, default=1.0)
+    g.add_argument("--loki-lookback-s", type=float, default=3600,
+                   help="how far back to look for the newest run (raise it to follow an old replayed run)")
+    g.add_argument("--loki-idle-s", type=float, default=None,
+                   help="no new line for this long -> the clock follows host time (default 2 x lateness)")
     g = ap.add_argument_group("Alg. 1 / SG-Det (src/pipeline/alg1.py)")
     g.add_argument("--n-seed", type=int, default=15, help="[PAPER] seed nodes per node type")
-    g.add_argument("--min-nodes", type=int, default=3, help="[REPO] smallest subgraph kept by construction")
+    g.add_argument("--min-nodes", type=int, default=3, help="[AUTHOR CODE] smallest subgraph kept by construction")
     g.add_argument("--max-edges", type=int, default=5000, help="[PAPER] max_e; larger subgraphs are split (0 = no cap)")
     g.add_argument("--sg-min-level", default="Moderate", choices=["Negligible", "Minor", "Moderate", "Significant", "Critical"],
                    help="window alerts only if a subgraph reaches this level (Moderate = score >= --sg-moderate-from)")
     g.add_argument("--sg-moderate-from", type=float, default=30.0,
-                   help="[OURS] Moderate starts at this subgraph score (default 30; [REPO] scale: 10.0001)")
+                   help="[OURS] Moderate starts at this subgraph score (default 30; [AUTHOR CODE] scale: 10.0001)")
     g.add_argument("--sg-min-score", type=float, default=None,
                    help="[OURS] numeric cut-off instead of the level (alert if sg_score > X); calibrate on BENIGN sessions")
     g = ap.add_argument_group("LLM triage + attack report after SG-Det (src/pipeline/alg2.py)")
@@ -130,6 +144,17 @@ def main():
     g.add_argument("--llm-base-url", default=None, help="e.g. a remote Ollama http://host:11434/v1")
     g.add_argument("--llm-max-subgraphs", type=int, default=5, help="kept subgraphs investigated per window")
     a = ap.parse_args()
+    if not (a.run_dir and a.scaler):
+        from lab import current
+        cur = current()
+        if not cur:
+            ap.error("no --run-dir/--scaler and no current-model pointer (src/artifacts/current.json)")
+        explicit = a.run_dir is not None
+        a.run_dir = a.run_dir or cur["run_dir"]
+        a.scaler = a.scaler or cur["scaler"]
+        if not explicit and a.experiment is None and cur.get("experiment") and os.path.exists(cur["experiment"]):
+            a.experiment = cur["experiment"]
+        print(f"[live] current model {cur['run']} ({os.path.relpath(cur['pointer'])})")
     if not 1 < a.sg_moderate_from <= 100:
         ap.error("--sg-moderate-from must be in (1, 100]")
 
@@ -146,8 +171,14 @@ def main():
     print(f"[live] Alg. 1 {engine.sg}  train score range {engine.run.score_range}")
     print(f"[live] LLM {engine.llm_cfg}")
     print(f"[live] converter sha256 {engine.conv_sha} ({engine.conv_check})")
+    source = None
+    if a.loki_url:
+        from loki_source import LokiSource
+        source = LokiSource(engine, a.loki_url, split=a.loki_split, poll_s=a.loki_poll_s, lookback_s=a.loki_lookback_s,
+                            idle_s=a.loki_idle_s if a.loki_idle_s is not None else 2 * a.lateness_s).start()
+        print(f"[live] following Loki {a.loki_url} split={a.loki_split}")
     print(f"[live] UI: http://{a.bind}:{a.port}/")
-    uvicorn.run(create_app(engine, a.token), host=a.bind, port=a.port, log_level="warning")
+    uvicorn.run(create_app(engine, a.token, source), host=a.bind, port=a.port, log_level="warning")
 
 
 if __name__ == "__main__":

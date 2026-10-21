@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
 alg1.py - OCR-APT Algorithm 1 (anomalous subgraphs + subgraph-score filter, "SG-Det") on ONE scored window,
-in memory (no GraphDB). [REPO] l.N = upstream detect_anomalous_subgraphs.py.
+in memory (no GraphDB). [AUTHOR CODE] l.N = upstream detect_anomalous_subgraphs.py.
 
     A       = anomalous nodes (score > tau of their type)                       [PAPER] Alg. 1 input
-    initSG  = every edge with >= 1 endpoint in A  (+ isolated A nodes)          Alg. 1 l.3-5   [REPO] l.238-293
-    seeds   = top n_seed A nodes per type, not isolated in initSG,              Alg. 1 l.6-7   [REPO] l.705-722
+    initSG  = every edge with >= 1 endpoint in A  (+ isolated A nodes)          Alg. 1 l.3-5   [AUTHOR CODE] l.238-293
+    seeds   = top n_seed A nodes per type, not isolated in initSG,              Alg. 1 l.6-7   [AUTHOR CODE] l.705-722
               by prob desc, then type order net < process < file
-    per seed: seed + anomalous neighbours, plus any neighbour leading to an     Alg. 1 l.8-11  [REPO] l.552-648
+    per seed: seed + anomalous neighbours, plus any neighbour leading to an     Alg. 1 l.8-11  [AUTHOR CODE] l.552-648
               unvisited anomalous node; >= min_nodes or dropped; nodes become
               "correlated" (correlated seeds are not skipped, as upstream)
-    > max_e edges -> Louvain communities (>= min_nodes nodes, > 2 edges)        Alg. 1 l.12-17 [REPO] l.520-542
-    drop identical subgraphs                                                    Alg. 1 l.19    [REPO] l.650-672
-    sg_score = sum over ANOMALOUS nodes of                                      Alg. 1 l.21    [REPO] l.864-871
+    > max_e edges -> Louvain communities (>= min_nodes nodes, > 2 edges)        Alg. 1 l.12-17 [AUTHOR CODE] l.520-542
+    drop identical subgraphs                                                    Alg. 1 l.19    [AUTHOR CODE] l.650-672
+    sg_score = sum over ANOMALOUS nodes of                                      Alg. 1 l.21    [AUTHOR CODE] l.864-871
                prob = clamp((score - train_min_t) / (train_max_t - train_min_t), 0, 1)
     level    = Negligible / Minor / Moderate / Significant / Critical ([OURS] Moderate from MODERATE_FROM)
-    kept     = level >= min_level (default Moderate, [REPO] l.61)               Alg. 1 l.22-24
+    kept     = level >= min_level (default Moderate, [AUTHOR CODE] l.61)               Alg. 1 l.22-24
 
 Deviations ([OURS] level scale, no top-k fallback, `oversize`, --sg-min-score): docs/DEVIATIONS.md D8.
 
@@ -38,12 +38,12 @@ import networkx as nx
 import pandas as pd
 
 LEVELS = ["Negligible", "Minor", "Moderate", "Significant", "Critical"]
-MODERATE_FROM = 30.0                                    # [OURS] live scale; [REPO] l.394 is > 10
-TYPE_ORDER = {"net": 1, "process": 2, "file": 3}        # [REPO] node_type_order l.674
+MODERATE_FROM = 30.0                                    # [OURS] live scale; [AUTHOR CODE] l.394 is > 10
+TYPE_ORDER = {"net": 1, "process": 2, "file": 3}        # [AUTHOR CODE] node_type_order l.674
 
 
 def load_score_range(run_dir: str) -> dict:
-    """node_type -> (min, max) of the TRAINING scores of the saved model ([REPO] decision_score_).
+    """node_type -> (min, max) of the TRAINING scores of the saved model ([AUTHOR CODE] decision_score_).
 
     train_scores.csv is written from run 0, the run whose models are saved (train_gnn_models.py)."""
     p = os.path.join(run_dir, "train_scores.csv")
@@ -56,14 +56,14 @@ def load_score_range(run_dir: str) -> dict:
 
 
 def node_prob(nodes: pd.DataFrame, score_range: dict) -> pd.Series:
-    """[REPO] PyGOD 'linear' probability: training min -> 0, training max -> 1, clamped to [0, 1]."""
+    """[AUTHOR CODE] PyGOD 'linear' probability: training min -> 0, training max -> 1, clamped to [0, 1]."""
     lo = nodes["node_type"].map(lambda t: score_range.get(t, (math.nan, math.nan))[0])
     hi = nodes["node_type"].map(lambda t: score_range.get(t, (math.nan, math.nan))[1])
     return ((nodes["score"] - lo) / (hi - lo)).clip(0, 1).fillna(0.0)
 
 
 def classify_level(score: float, moderate_from: float = MODERATE_FROM) -> str:
-    """[REPO] l.394 bounds (upper bound inclusive) except Minor/Moderate: Moderate from `moderate_from` (inclusive)."""
+    """[AUTHOR CODE] l.394 bounds (upper bound inclusive) except Minor/Moderate: Moderate from `moderate_from` (inclusive)."""
     if score <= 1:
         return "Negligible"
     if score < moderate_from:
@@ -121,7 +121,7 @@ def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range
         return e[e["source-id"].isin(members) & e["destination-id"].isin(members)]
 
     def partition(members, sub_e):
-        """[REPO] l.520-542: Louvain on the directed multigraph, seed 0."""
+        """[AUTHOR CODE] l.520-542: Louvain on the directed multigraph, seed 0."""
         G = nx.MultiDiGraph()
         G.add_nodes_from(members)
         G.add_edges_from(zip(sub_e["source-id"], sub_e["destination-id"]))
@@ -236,7 +236,7 @@ def selftest():
     assert p == [1.0, 0.0, 0.5], p
     assert [classify_level(x) for x in (1, 1.01, 10, 29.99, 30, 100, 100.5, 1000, 1000.5)] == \
         ["Negligible", "Minor", "Minor", "Minor", "Moderate", "Moderate", "Significant", "Significant", "Critical"]
-    assert [classify_level(x, moderate_from=10.0001) for x in (10, 10.01)] == ["Minor", "Moderate"]  # [REPO] scale
+    assert [classify_level(x, moderate_from=10.0001) for x in (10, 10.01)] == ["Minor", "Moderate"]  # [AUTHOR CODE] scale
 
     # (a) the 11:25 'updater' shape: 18 DLLs above the training max, loaded by ONE unflagged process
     spec = {"upd": ("process", 0.0), **{f"dll{i}": ("file", 0.32) for i in range(18)}}
@@ -245,7 +245,7 @@ def selftest():
     assert len(sgs) == 1 and sgs[0]["n_anomalous"] == 18 and sgs[0]["n_connectors"] == 1, sgs
     assert sgs[0]["sg_score"] == 18.0 and sgs[0]["level"] == "Minor" and not sgs[0]["kept"], sgs[0]
     assert st["seeds"] == 15 and st["left_out"] == 0, st
-    # [REPO] scale (Moderate > 10) -> kept; a numeric cut-off above it -> not kept again
+    # [AUTHOR CODE] scale (Moderate > 10) -> kept; a numeric cut-off above it -> not kept again
     g = construct(nd, ed, {}, rng, moderate_from=10.0001)[0][0]
     assert g["level"] == "Moderate" and g["kept"], g
     assert not construct(nd, ed, {}, rng, min_score=20, moderate_from=10.0001)[0][0]["kept"]
@@ -321,13 +321,13 @@ def main():
     ap.add_argument("--window-dir", help="one live window dir (scores.csv, edges.csv)")
     ap.add_argument("--session-dir", help="a live session dir: every windows/<wid>/ with scores.csv")
     ap.add_argument("--n-seed", type=int, default=15, help="[PAPER] §7.2.1 n_seed = 15 per node type")
-    ap.add_argument("--min-nodes", type=int, default=3, help="[REPO] --min-nodes 3")
+    ap.add_argument("--min-nodes", type=int, default=3, help="[AUTHOR CODE] --min-nodes 3")
     ap.add_argument("--max-edges", type=int, default=5000, help="[PAPER] max_e = 5000 (0 = no cap)")
     ap.add_argument("--sg-min-level", default="Moderate", choices=LEVELS)
     ap.add_argument("--sg-min-score", type=float, default=None,
                     help="[OURS] numeric cut-off (kept = sg_score > X); overrides --sg-min-level")
     ap.add_argument("--sg-moderate-from", type=float, default=MODERATE_FROM,
-                    help="[OURS] Moderate starts at sg_score >= X (default 30; [REPO] scale: 10.0001)")
+                    help="[OURS] Moderate starts at sg_score >= X (default 30; [AUTHOR CODE] scale: 10.0001)")
     a = ap.parse_args()
     if not 1 < a.sg_moderate_from <= 100:
         ap.error("--sg-moderate-from must be in (1, 100]")

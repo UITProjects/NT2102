@@ -12,7 +12,7 @@ which one reflects the intent.
 2. Before answering about the pipeline, read the relevant code. Cite file + line when relying on it.
 3. The paper PDF in the repo (`OCR-APT/OCR_APT_paper_preprint_extended_version.pdf`) is the source
    for [PAPER] claims; the upstream repo (github.com/CoDS-GCS/OCR-APT, submodule `OCR-APT/`) is the
-   source for [REPO] claims. Cite section / table / algorithm line.
+   source for [AUTHOR CODE] claims. Cite section / table / algorithm line.
 4. Never mark something done because it is listed here. Progress counts only when the user says so
    or it is verified in code/data.
 
@@ -56,10 +56,17 @@ either side.
 - Any symbolic notation (a formula, an interval like [t−w, t)) gets at least 2 concrete worked
   examples with real numbers.
 - Backend/distributed-systems analogies only when they genuinely clarify.
+- Python code explanations (user, 2026-10-20): before explaining what a line does, label the type of
+  every variable and sub-expression (`nodes: pd.DataFrame`, `nodes["node_uuid"]: pd.Series[str]`,
+  `attrs: dict[str, str]`, `x: torch.Tensor [N, 15]`), e.g. as a piece | type | meaning table or
+  inline comments. Call out when `[]` or `=` is not plain indexing/assignment (DataFrame column
+  write, boolean mask, dict lookup) and give the Java equivalent when it helps. Same in CODE mode
+  comments and in explainer pages.
 - Do not ask check questions unprompted (user, 2026-10-13). Quizzing happens only in QUIZ mode.
 - Tag statements:
   - [PAPER] what the paper states
-  - [REPO] what upstream code does (only if verified in files)
+  - [AUTHOR CODE] what the authors' upstream code (github.com/CoDS-GCS/OCR-APT) does (only if
+    verified in files). Never write [REPO]: it reads as this project's own repo.
   - [OURS] what this project does differently
   - [INFERENCE] interpretation or guess. Never present a guess as fact.
 
@@ -80,7 +87,7 @@ LaTeX does not render in the terminal. In terminal replies, use readable Unicode
   parsing issues; paper §7).
 - Keep three things apart: "it runs", "it works correctly" (validated on known-good data),
   "I understand why it works". The user needs all three.
-- Errors (OOM, CUDA, GraphDB, dependencies): ask for the full traceback, versions and data sizes
+- Errors (OOM, CUDA, dependencies): ask for the full traceback, versions and data sizes
   before suggesting fixes.
 - Build the pipeline one stage at a time. Each stage writes standalone CSV/JSON outputs that can be
   checked with EDA, rather than relying on the upstream repo's end-to-end automation (the user finds
@@ -102,7 +109,7 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
 
 ## 8. Current direction (source of truth; change only when the user says so)
 
-- Scope: a proof of concept covering roughly 40% of the paper. Keeps OCR-APT's core idea
+- Scope: a proof of concept of the paper's core (no coverage percentage: user, 2026-10-18). Keeps OCR-APT's core idea
   (per-node-type one-class RGCN on behavior features over a provenance graph) but is not an exact
   reproduction.
 - Current focus: the live detection demo. A valid training run (`runs/exp01`) and the live path
@@ -114,26 +121,37 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   host names.
 - End goal (user, 2026-10-11): demonstrate the paper's core concept live: a real attack run during the
   demo raises a true alert while benign windows stay green. The attack is general, not APT-specific (user,
-  2026-10-13): target demo = CVE exploit in a lab service → RCE → ATT&CK techniques; OCR-APT supplies the
-  method. The repo is a live demo of the paper's core concept, not a 100% reproduction. No publishing-style evaluation, metrics
+  2026-10-13): target demo = exploit of a lab service (DVWA OS command injection) → RCE → ATT&CK
+  techniques; OCR-APT supplies the method. The repo is a live demo of the paper's core concept, not a 100% reproduction. No publishing-style evaluation, metrics
   or NODLINK baseline are required; the section 6 metrics rules apply only if numbers are ever reported.
+- Attack target: DVWA on XAMPP (user, 2026-10-19), its OS-command-injection page
+  (`/vulnerabilities/exec/`) as the RCE sink, served on :3000. VERIFIED on `ws-etw`: the `win_vulnlab`
+  role (XAMPP Apache + PHP + MariaDB, DVWA cloned + `setup.php` schema build) provisions cleanly and
+  `verify-windows.yml -e vulnlab_enabled=true` passes (DVWA serving on :3000, login admin/password,
+  security low). Remaining is to run the kill chain against it live (PROGRESS).
 
 When direction or progress changes, update `docs/PROGRESS.md` (replace status lines in place; no
 history of earlier progress) and, if relevant, this section.
 
 ## 9. Decisions already made (with rationale)
 
-- Environment: Docker Compose on a single host, not Kubernetes, as the reference environment
-  (`src/graphdb/compose.yaml`). GraphDB 10.8.0 runs there with persistent volumes and security enabled, on
-  `nt2102-net` 10.21.3.0/24 (moved so it no longer overlaps the lab VM's host-only network).
-  Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers yet.
-- Live demo transport: the VM ships raw SilkETW lines over HTTP to the host at 10.21.2.1:8000 (host
-  side of the host-only network; 10.21.3.x is not routable from an isolated VM). All conversion,
-  windowing and scoring run on the host with the training converter code, scaler and relation list;
-  event time comes from the VM clock only (watermark = VM clock − lateness).
-- Collection lab: Windows 10 VM built with pinned, idempotent Vagrant provisioners (base, tools,
-  collector) so a teammate can rebuild it. Collector is SilkETW/SilkService on the Kernel-Process,
-  Kernel-File and Kernel-Network providers.
+- Environment: Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers. Docker is
+  used only on the Ubuntu trainer for Loki + Grafana (installed by Ansible). No RDF / GraphDB (user,
+  2026-10-17): edges stay CSV and Alg. 1 runs in memory.
+- Log transport (user, 2026-10-17): Grafana Alloy (native on the Windows VM) ships raw SilkETW lines,
+  unchanged, to Loki (Docker, host network) on the Ubuntu trainer. Labels: job, host, split, run, provider;
+  event/pid/process as structured metadata. Training pulls from Loki by run or time range
+  (`loki_pull.py`); the live server follows Loki (`--loki-url`). All conversion, windowing and scoring run on
+  the trainer with the training converter code, scaler and relation list; the live clock is event time
+  (newest event − lateness), with a host-clock fallback when idle (DEVIATIONS D8). The HTTP shipper
+  (`etwship.py`) remains for replay only.
+- Collection lab: three VMs provisioned by Ansible (`src/ansible/`, cloud-portable via inventory): Windows
+  Server 2022 `ws-etw` (SilkETW/SilkService on Kernel-Process, Kernel-File, Kernel-Network + Alloy + the
+  DVWA vulnlab on XAMPP, no training), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
+  Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, same host-only subnet;
+  LOCAL LAB ONLY and NOT Ansible-managed — it mounts `src/atomic-attack-pack` via a Vagrant synced
+  folder). The Vagrantfile only
+  builds the bare VMs.
 - Target schema (NODLINK W10, as the repo expects): 3 node types `PROCESS`, `FILE`, `NET`
   (repo `database_config.py`), 6 edge types (Write, Read, Send, Recv, Start, Load), epoch-millisecond
   timestamps.
@@ -160,27 +178,41 @@ history of earlier progress) and, if relevant, this section.
 
 ### Pipeline map (where each stage lives)
 
-- VM side (PowerShell provisioners, embed the Python tools they install):
-  `src/scripts/01-base` → `02-tools` → `03-workload` → `04-collector` (SilkETW, `etwctl`,
-  `etw2nodlink.py` converter) → `05-collect-for-20-minutes` (`etwwindow.py`) → `06-benign-workload`
-  → `07-build-train-dataset` (per-experiment orchestrator: capture, convert, window, check)
-  → `08-live-shipper` (live capture + embedded copy of `src/live/etwship.py`; resync with
-  `src/live/sync_ps1.py`).
-- Attack side: `src/atomic-attack-pack/` (scenarios 01–10, `LABELING.md`, `tools/build_node_labels.py`).
-- Host side: `src/pipeline/w10_to_rdf.py` (minimal RDF/TSV transform) →
-  `encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
+- VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (SilkETW, `etwctl`,
+  copies `src/pipeline/etw2nodlink.py` / `etwwindow.py` / `src/live/etwship.py`), `win_alloy`
+  (Alloy → Loki), `win_shipper` (`start-live.ps1`), `win_benign` (`src/scripts/06-benign-workload`,
+  `07-build-train-dataset`), `win_vulnlab` (XAMPP + DVWA).
+- Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
+  = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
+  pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
+  `live_server.py`, `serve.sh`, `rejudge.sh` and `ocr-live` read.
+- Attack side: `src/atomic-attack-pack/` — one RCE kill chain (`scenarios/rce-killchain.ps1`) delivered
+  from the Kali VM by `tools/launch_exploit.py` (pack mounted at `/opt/attack-pack` by Vagrant, not
+  Ansible); exploits DVWA (OS command injection) then runs Discovery→T1105→T1053.005. `LABELING.md`, `tools/build_node_labels.py`.
+- Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py`
+  (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
+- Host side: `src/pipeline/encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
   `score_window.py` (score any edge CSV with the train scaler + relations).
-- Live (host): `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
+- Live (host): `src/live/loki_source.py` (follows Loki) → `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
   reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
   sessions) → `src/pipeline/alg2.py` (optional LLM thread: triage verdict + Alg. 2 l.3–15 report on red
   windows); `etwship.py --replay` + `compare_replay.py` check the live path against the offline
   pipeline. Run guide: `src/live/README.md`.
 - Artefacts: `src/out/etw/experiments/<id>/` (raw, converted, windowed edges, `windows.csv`,
-  `experiment.json`, `check.json`, benign ledger in `labels/`), `src/artifacts/features/self-dataset/` and
-  `src/artifacts/features/paper/` (NODLINK W10), `src/artifacts/runs/<exp>/`, live sessions
+  `experiment.json`, `check.json`, `pull.json`, benign ledger in `labels/`), `src/artifacts/runs/<run>/`
+  (one model: `models/`, `features/` + scaler, `experiment.json`, `lineage.json`; `exp01` predates this and
+  uses `src/artifacts/features/self-dataset/`), `src/artifacts/features/paper/` (NODLINK W10), live sessions
   `src/live/sessions/<id>/` (raw copy + per-window CSV/JSON; gitignored). NODLINK data: `dataset/nodlink/`.
 - EDA notebooks: `src/notebooks/01-silketw-raw` … `05-features-paper` (numbered in reading order).
-- GraphDB: `src/graphdb/compose.yaml`. Explainer page (edges → features): `docs/explainers/`.
+- Explainer page (edges → features): `docs/explainers/`.
+- Deliverables (Vietnamese text, technical terms kept in English):
+  - Report: `latex/` (`main.tex` title page + preamble, `contents.tex` body, `ref.bib`; build with
+    `latexmk -pdf main.tex`).
+  - Slides: `presentation/` (Slidev; `slides.md`; Vue diagrams in `components/`: `RgcnLayer` one-layer
+    animation, `HiddenLayers`, `Hypersphere`, `OurPipeline`, `Windows`, `AttackGraph`; Q&A backup in
+    `note.txt`). `npm run dev` / `npx slidev build`; check layout with
+    `npx slidev export --format png [--range N] [--with-clicks]`. Max 30 slides; the text cites slide
+    numbers ("slide 19"), so re-check them whenever slides are added or removed.
 - Root shortcuts: `selftest.sh`, `serve.sh`, `replay.sh`, `rejudge.sh` (wrap the documented commands).
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.
@@ -193,13 +225,13 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
 - Own scripted Windows ETW data instead of NODLINK/DARPA datasets; benign activity is scripted.
 - Feature extraction: all 15 columns kept; idle scaler fit on train only; RDF skipped; per-window
   nodes give correlated rows.
-- Graph conversion: minimal Windows-only RDF transform, train split only for now.
+- Graph storage: no RDF/GraphDB; edges stay CSV and Alg. 1 runs in memory per window.
 - Trainer: own OCRGCN re-implementation (loss/threshold details are [INFERENCE] from upstream PyGOD),
   window-based validation split, patience-based early stop, deterministic seeds.
 - Labels: indicator + time oracle from injected attacks, not analyst ground truth.
 - Live inference: clock-aligned tumbling windows, partial windows not scored, shipper PID excluded,
-  no cross-window dedup. Alg. 1 runs in memory per window with the [REPO] subgraph score (Σ clamped
-  min-max prob, not the paper text's "sum of scores"), [OURS] level scale (Moderate from score 30, [REPO] > 10), no top-k fallback.
+  no cross-window dedup. Alg. 1 runs in memory per window with the [AUTHOR CODE] subgraph score (Σ clamped
+  min-max prob, not the paper text's "sum of scores"), [OURS] level scale (Moderate from score 30, [AUTHOR CODE] > 10), no top-k fallback.
 - LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
   Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
 

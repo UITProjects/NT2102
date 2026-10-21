@@ -1,0 +1,6 @@
+---
+- name: restart ocr-live
+  ansible.builtin.systemd:
+    name: ocr-live
+    state: restarted
+    daemon_reload: true

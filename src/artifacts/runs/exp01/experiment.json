@@ -1,0 +1,46 @@
+{
+    "id":  "20261009T145632Z",
+    "graph":  "SimulatedW10",
+    "split":  "train",
+    "os_build":  "10.0.19045.0",
+    "label_source":  "benign by construction: scripted workload, no attack executed; includes background OS activity",
+    "capture":  {
+                    "run":  "x-20261009T145632Z",
+                    "settle_s":  30,
+                    "started_utc":  "2026-10-09T14:56:32.3392499Z",
+                    "stopped_utc":  "2026-10-09T15:17:19.5685934Z",
+                    "raw":  "C:\\lab-out\\etw\\experiments\\20261009T145632Z\\raw\\train\\x-20261009T145632Z"
+                },
+    "workload":  {
+                     "script":  "C:\\scripts\\06-benign-workload.ps1",
+                     "seed":  42,
+                     "duration_min":  20,
+                     "include_user_powershell":  false,
+                     "launch_mode":  "explorer-com",
+                     "ledger_dir":  "C:\\lab-out\\etw\\experiments\\20261009T145632Z\\labels"
+                 },
+    "expected_windows":  8,
+    "windowing":  {
+                      "window_min":  5,
+                      "stride_min":  2,
+                      "max_gap_s":  120
+                  },
+    "results":  {
+                    "windows":  8,
+                    "edges_in":  37294,
+                    "edges_out":  68319,
+                    "edges_in_no_window":  484,
+                    "nodes_unique":  2733,
+                    "node_window_copies":  6810,
+                    "contract_ok":  true
+                },
+    "tools":  {
+                  "workload":  "35b420183c2384b688a62edbdb2b8e275cceb2e35302dfd31004b0165820693c",
+                  "etwctl":  "7e9e199b2c1d861690407e7adb9cb7bfa5e024e6a986450b8fe4c2fa0701727c",
+                  "converter":  "0c213147e4c0a7f0778b6af13b3d2bf56c8f27f0e93b5cd895ea0a6b90a59fb0",
+                  "etwwindow":  "343f72a66978a018ade2010bb6a980fe7eaa50364d4d4a60de7b85c9dff6e864",
+                  "checker":  "b243486598bb49666136f85540c6c59e60a4c8dfb6503768475cf15edb605b84",
+                  "orchestrator":  "ac01d3b36af4680447be42fe7bacb4a10f425f79e904cc65944a2d6537a74790"
+              },
+    "postprocessed_utc":  "2026-10-09T15:17:38.5891810Z"
+}

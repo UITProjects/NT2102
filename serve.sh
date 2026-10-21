@@ -8,14 +8,13 @@
 #   ./serve.sh                                  # demo with the VM
 #   ./serve.sh local --llm-provider mock --sg-moderate-from 10.0001   # UI test: 11:25 replay window red + mock verdict
 #   ./serve.sh local --stride-min 2 --origin-ms 1791557793343   # training-capture replay check
-# Env overrides: RUN_DIR, SCALER, EXPERIMENT, PORT (default 8000). UI: http://<bind>:<port>/
+# Model: the current-model pointer (`lab promote <run>`; src/artifacts/current*.json).
+# Env overrides: RUN_DIR, SCALER, EXPERIMENT (all three to bypass the pointer), PORT (default 8000).
+# UI: http://<bind>:<port>/
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { sed -n '2,12p' "$0"; exit 0; }
 
-RUN_DIR=${RUN_DIR:-src/artifacts/runs/exp01}
-SCALER=${SCALER:-src/artifacts/features/self-dataset/feature_scaler.json}
-EXPERIMENT=${EXPERIMENT:-src/out/etw/experiments/20261009T145632Z/experiment.json}
 PORT=${PORT:-8000}
 
 mode=live
@@ -26,6 +25,9 @@ fi
 bind=10.21.2.1
 [[ $mode == local ]] && bind=127.0.0.1
 
+model=()
+[[ -n "${RUN_DIR:-}" ]] && model+=(--run-dir "$RUN_DIR")
+[[ -n "${SCALER:-}" ]] && model+=(--scaler "$SCALER")
+[[ -n "${EXPERIMENT:-}" ]] && model+=(--experiment "$EXPERIMENT")
 # extra flags go last, so they override the defaults above (argparse keeps the last value)
-exec uv run python src/live/live_server.py --bind "$bind" --port "$PORT" --run-dir "$RUN_DIR" \
-  --scaler "$SCALER" --experiment "$EXPERIMENT" "$@"
+exec uv run python src/live/live_server.py --bind "$bind" --port "$PORT" "${model[@]}" "$@"

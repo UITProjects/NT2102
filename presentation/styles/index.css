@@ -1,0 +1,110 @@
+/* Dense, report-style slides (same base as the IT2003 deck), coloured with the report's palette
+   (latex/main.tex: cprep gray, cdet blue, cinv orange, cout green, catk dark red). */
+:root {
+  --c-title: #1e3a8a;
+  --c-prep: #eeeeee;
+  --c-det: #dbe4fb;
+  --c-inv: #fde3c7;
+  --c-out: #d6f0d6;
+  --c-atk: #a51d1d;
+}
+
+.slidev-layout {
+  padding: 1.6rem 2.6rem;
+  font-size: 1.02rem;
+}
+.slidev-layout h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.9rem;
+  color: var(--c-title);
+}
+.slidev-layout h1 + p { opacity: 0.8; }
+.slidev-layout h3 { font-size: 1.05rem; font-weight: 700; margin: 0.4rem 0 0.25rem; }
+.slidev-layout li { margin: 0.12rem 0; line-height: 1.4; }
+.slidev-layout p { margin: 0.35rem 0; }
+
+.slidev-layout table { font-size: 0.8rem; width: 100%; }
+.slidev-layout th, .slidev-layout td { padding: 0.28rem 0.5rem; line-height: 1.3; }
+.slidev-layout th { background: #eef2fb; }
+
+/* Side-by-side columns and cards. */
+.cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.card { border-radius: 8px; padding: 0.6rem 0.9rem; border: 1px solid #d1d5db; }
+.card h3 { margin-top: 0; }
+.card ul, .card ol { padding-left: 1.1rem; }
+.card.paper { background: #eff6ff; border-color: #93c5fd; }   /* what the paper does */
+.card.ours { background: #f0fdf4; border-color: #86efac; }    /* what we do */
+.card.inv { background: #fff7ed; border-color: #fdba74; }     /* LLM step */
+.card.atk { background: #fef2f2; border-color: #fca5a5; }     /* attack / limits */
+.card.neutral { background: #f8fafc; }
+.card.det { background: #eff4fe; border-color: #a5b8ef; }     /* detection (GNN) step */
+
+.small { font-size: 0.85rem; }
+.tiny { font-size: 0.75rem; }
+.muted { color: #6b7280; }
+.atk { color: var(--c-atk); }
+
+/* Source tags, as in the report: PAPER / AUTHOR CODE / OURS / INFERENCE. */
+.tag {
+  display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; font-weight: 700;
+  padding: 0 0.3rem; border-radius: 3px; vertical-align: 0.12em; letter-spacing: 0.02em;
+}
+.tag.paper { background: #dbeafe; color: #1e40af; }
+.tag.repo { background: #ede9fe; color: #5b21b6; }
+.tag.ours { background: #dcfce7; color: #166534; }
+.tag.inf { background: #ffedd5; color: #9a3412; }
+
+/* Placeholder for numbers we do not have yet (\todoval in the report). */
+.todo { color: #dc2626; font-weight: 600; }
+
+/* Numbered step badge (\stepnum in the report). */
+.num {
+  display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem;
+  border-radius: 50%; background: #1e3a8a; color: #fff; font-size: 0.72rem; font-weight: 700;
+}
+
+/* Live demo slides. */
+.demo-badge {
+  display: inline-block; padding: 0.25rem 0.9rem; border-radius: 999px;
+  background: #dc2626; color: #fff; font-weight: 700; letter-spacing: 0.08em; font-size: 0.85rem;
+}
+.demo-badge { animation: demo-pulse 1.6s ease-in-out infinite; }
+@keyframes demo-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+  50% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+}
+
+/* Click reveals: fade + rise instead of a plain opacity switch. */
+.slidev-vclick-target {
+  transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.slidev-vclick-hidden {
+  opacity: 0 !important;
+  transform: translateY(14px);
+  pointer-events: none;
+}
+/* Keep table rows from shifting (transforms on <tr> are unreliable). */
+tr.slidev-vclick-hidden { transform: none; }
+
+/* Paper figures: full width, thin frame, source line underneath. */
+.fig { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px; background: #fff; }
+.src { font-size: 0.68rem; color: #6b7280; text-align: right; margin-top: 2px; }
+
+/* Static highlight. */
+.hl { background: linear-gradient(transparent 55%, #bfdbfe 55%); padding: 0 2px; }
+
+/* KaTeX blocks a bit tighter than default. */
+.slidev-layout .katex-display { margin: 0.4rem 0; }
+
+/* Sub-items under a numbered agenda entry. */
+.slidev-layout ol ul { padding-left: 1.4rem; }
+
+/* Final feature matrix (slide ② Kết quả): 15 numeric columns, zeros shown as a dot. */
+table.feat { font-size: 0.68rem; font-family: 'JetBrains Mono', monospace; }
+table.feat th, table.feat td { padding: 0.18rem 0.3rem; text-align: right; }
+table.feat th.g { text-align: center; font-family: 'Be Vietnam Pro', sans-serif; }
+table.feat td.n { text-align: left; }
+table.feat td.z { color: #cbd5e1; }
+table.feat tr.hl td { background: #f8fafc; font-weight: 700; }
+table.feat td.hot { background: #fef2f2; color: var(--c-atk); font-weight: 700; }

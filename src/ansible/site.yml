@@ -1,0 +1,6 @@
+---
+# Full lab: Windows collector/shipper/vulnlab + Ubuntu trainer. Run both, or one at a time with
+# --limit windows / --limit ubuntu. (The Kali attacker VM is local-only and NOT provisioned by Ansible:
+# it gets the attack pack via a Vagrant synced-folder mount — see src/Vagrantfile.)
+- import_playbook: windows.yml
+- import_playbook: ubuntu.yml

@@ -1,0 +1,5 @@
+---
+# SSH connection for the Ubuntu group. ansible_user / key come from the inventory (Vagrant insecure
+# key locally; your own key on cloud). Nothing secret here.
+ansible_connection: ssh
+ansible_python_interpreter: /usr/bin/python3

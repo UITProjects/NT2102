@@ -21,7 +21,7 @@ Practical start for a teammate. Status lives in `docs/PROGRESS.md`, differences 
 | live server for the VM / for a replay | `./serve.sh` / `./serve.sh local` |
 | replay a recorded capture | `./replay.sh <session-id\|raw-dir>` |
 | re-judge a saved session (cut-off, LLM) | `./rejudge.sh <session-id> [llm-provider]` |
-| build the VM | `src/README.md` → VM provisioners |
+| build the VM | `src/ansible/README.md` |
 | train data → model | `07-build-train-dataset.ps1` (VM) → `encode_to_features.py` → `train_gnn_models.py` (`src/README.md` → Data flow) |
 
 Step-by-step live runbook (replay check, live with the VM, alert rule, outputs): `src/live/README.md`.

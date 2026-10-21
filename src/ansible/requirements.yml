@@ -1,0 +1,14 @@
+# Install with:  ansible-galaxy collection install -r requirements.yml
+collections:
+  - name: ansible.windows      # win_service, win_copy, win_get_url, win_powershell, ...
+    version: ">=2.5.0"
+  - name: community.windows    # win_unzip, win_scheduled_task, win_firewall_rule, ...
+    version: ">=2.6.0"
+  - name: chocolatey.chocolatey  # win_chocolatey (Node, git, VC++ runtime)
+    version: ">=1.5.0"
+  - name: community.general    # misc (not strictly required; handy)
+    version: ">=9.0.0"
+  - name: ansible.posix        # ufw, sysctl on Ubuntu
+    version: ">=1.6.0"
+  - name: community.docker     # docker_compose_v2 (Loki + Grafana on the Ubuntu trainer)
+    version: ">=4.0.0"

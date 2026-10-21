@@ -1,0 +1,24 @@
+# Cloud lab. Copy to inventory.cloud.ini and fill in the real addresses, then run:
+#   ansible-playbook -i inventory.cloud.ini site.yml
+#
+# Both VMs live in ONE subnet/VPC. Each host has TWO addresses:
+#   ansible_host = PUBLIC IP or DNS (how your workstation reaches the VM: WinRM 5985 / SSH 22)
+#   private_ip   = the VM's SUBNET/VPC IP (how the Windows shipper reaches the Ubuntu server)
+# Inter-VM traffic (Alloy -> Loki 3100, live UI 8000, vulnlab 3000) uses private_ip and must stay inside
+# the subnet. Open WinRM/SSH (and Grafana 3000 on Ubuntu) to your admin IP only; never expose 3100/8000/3000
+# to the public internet. grafana_admin_password comes from the vault (-e @group_vars/vault.yml).
+
+[windows]
+ws-etw ansible_host=CHANGE_ME_WINDOWS_PUBLIC_IP private_ip=CHANGE_ME_WINDOWS_SUBNET_IP
+
+[ubuntu]
+# For a cloud Ubuntu use your own SSH key/user, e.g.:
+#   ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/lab_key
+ubuntu-trainer ansible_host=CHANGE_ME_UBUNTU_PUBLIC_IP private_ip=CHANGE_ME_UBUNTU_SUBNET_IP ansible_user=ubuntu
+
+[ubuntu:vars]
+admin_cidr=CHANGE_ME_YOUR_ADMIN_IP/32
+
+[lab:children]
+windows
+ubuntu

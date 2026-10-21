@@ -1,0 +1,74 @@
+---
+# Shared, address-agnostic configuration. No IP literals live here — the data-plane target is derived
+# from the inventory's private_ip so moving to the cloud is just editing the inventory.
+
+# Repo layout: playbook_dir is src/ansible, so src_dir is src/ (holds pipeline/, live/, scripts/).
+src_dir: "{{ playbook_dir }}/.."
+
+# ---- data-plane (Windows shipper -> Ubuntu live server) -------------------------------------------
+# The trainer address the shipper POSTs to. Defaults to the Ubuntu host's subnet IP from the inventory;
+# override in host_vars/group_vars on a cloud where the VMs reach each other on a different address.
+trainer_host: "{{ hostvars['ubuntu-trainer'].private_ip }}"
+server_port: 8000
+# The Ubuntu server binds all interfaces so it listens on the subnet IP whatever it is.
+server_bind: "0.0.0.0"
+
+# ---- log pipeline: Alloy (Windows, native) -> Loki + Grafana (Docker, host network, on the trainer) --
+# Alloy pushes to loki_url; the live server and loki_pull.py read Loki on the trainer itself (127.0.0.1).
+loki_port: 3100
+grafana_port: 3000            # on the Ubuntu host (vulnlab's 3000 is on the Windows host: no clash)
+loki_url: "http://{{ trainer_host }}:{{ loki_port }}"
+loki_retention: "720h"        # 30 d: how long raw ETW stays queryable (also the max age Loki accepts)
+loki_image: "grafana/loki:3.7.8"
+grafana_image: "grafana/grafana:13.2.2"
+loki_stack_dir: "/opt/lokistack"
+# Inventory supplies: admin_cidr (who may open Grafana, e.g. your workstation), grafana_admin_password
+# (local inventory for the lab; vault for cloud). Loki itself only accepts the Windows host's private_ip.
+
+# ---- lab clock ------------------------------------------------------------------------------------
+# Both VMs run on UTC+7. Safe for the pipeline: SilkETW writes the offset into every TimeStamp
+# (e.g. "...+07:00"), labels/ledger/window IDs use UTC explicitly, so epoch ms do not depend on the zone.
+tz_windows: "SE Asia Standard Time"   # Windows ID: (UTC+07:00) Bangkok, Hanoi, Jakarta
+tz_linux: "Asia/Ho_Chi_Minh"          # IANA name, UTC+7, no DST
+
+# ---- DVWA vulnlab (XAMPP + Damn Vulnerable Web Application, defensive detection target) ------------
+vulnlab_enabled: false       # optional demo target; it may already run elsewhere (e.g. a teammate's cloud VM)
+vulnlab_port: 3000           # XAMPP Apache listens here (same port on a different host from Grafana's 3000)
+vulnlab_repo: "https://github.com/digininja/DVWA.git"
+vulnlab_dir: 'C:\lab\DVWA'   # served at the Apache DocumentRoot, so the exploit path is /vulnerabilities/exec/
+xampp_package: "xampp-81"    # Chocolatey package: Apache + PHP 8.1 + MariaDB bundle
+dvwa_db_name: "dvwa"         # DVWA schema; created at provision time (DVWA builds tables via setup.php)
+dvwa_db_user: "dvwa"         # DVWA on MariaDB needs a dedicated app user (its README); NOT root
+dvwa_db_password: "p@ssw0rd" # lab-only DB password on a host-only network; DVWA's documented default
+# The Kali attacker (exploit + RCE kill chain) is a local-only Vagrant box, NOT managed by Ansible: it
+# gets the attack pack via a synced-folder mount (src/Vagrantfile). No attacker vars here.
+
+# ---- pinned tool versions -------------------------------------------------------------------------
+silketw_tag: "v0.8"
+# v0.8 release asset. Pin the sha256 after the first download (printed by the role) to make it immutable.
+silketw_url: "https://github.com/mandiant/SilkETW/releases/download/v0.8/SilkETW_SilkService_v8.zip"
+silketw_sha256: "sha256:6c612c406844c72cde51bcd0660ca6bb704656549043cb5a8b8bbba5fe3d8dc3"
+
+python_embed_version: "3.12.7"
+python_embed_url: "https://www.python.org/ftp/python/{{ python_embed_version }}/python-{{ python_embed_version }}-embed-amd64.zip"
+python_embed_sha256: "sha256:0d57bb6cb078b74d23dbfe91f77d6780d45bed328911609f1f7ee2ba1606bf44"
+
+alloy_version: "1.20.1"
+alloy_url: "https://github.com/grafana/alloy/releases/download/v{{ alloy_version }}/alloy-installer-windows-amd64.exe"
+alloy_sha256: "sha256:23fcfe3755f02e8a6a83f27149851322ab2b66d584e76d239d9c031f50d3a8f0"   # release SHA256SUMS
+
+# ---- Windows lab paths ----------------------------------------------------------------------------
+graph_name: "SimulatedW10"   # the repo asserts the host name against a fixed list; keep this name
+tools_dir: 'C:\Tools'
+lab_home: 'C:\ProgramData\etwlab'
+silketw_dir: 'C:\Tools\SilkETW'
+out_dir: 'C:\lab-out\etw'
+raw_root: 'C:\lab-out\etw\raw'
+service_name: "SilkService"
+
+# ---- Ubuntu trainer -------------------------------------------------------------------------------
+repo_url: "https://github.com/UITProjects/NT2102.git"
+repo_branch: "ansible-two-vm-provisioning"   # TODO before merging: set back to "main"
+repo_dest: "/home/{{ ansible_user | default('vagrant') }}/NT2102"
+# The model ocr-live loads is NOT set here: it is the repo's pointer src/artifacts/current.json, or
+# current.local.json on the trainer (`lab promote <run>`). No run_id / experiment_id to keep in sync.

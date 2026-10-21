@@ -1,50 +1,46 @@
-# Scenarios (easy -> hard)
+# The demo attack: RCE kill chain
 
-All chosen to be **observable** by SilkETW Kernel-Process/File/Network. Registry-only and
-in-memory-only techniques are excluded on purpose: they produce no graph nodes.
+One scenario (`scenarios/rce-killchain.ps1`) replaces the old 01–10 pack. It is the end-goal attack
+(CLAUDE §8): a real exploit of the lab's vulnerable service, then a compact ATT&CK follow-on, all
+observable by SilkETW Kernel-Process/File/Network and self-labelled into
+`C:\lab-labels\attack-labels.jsonl` (LABELING.md, DEVIATIONS D6).
 
-| # | File | Tactic | ATT&CK | Node types | Admin | Source |
-|---|------|--------|--------|-----------|-------|--------|
-| 01 | `01-discovery.ps1` | Discovery | T1033, T1082, T1087.001, T1057 | process | no | ART |
-| 02 | `02-lolbin-exec.ps1` | Defense Evasion | T1218.011/.010/.005 | process (+file/net) | no | ART |
-| 03 | `03-ingress-transfer.ps1` | C2 | T1105 | process+network+file | no | custom |
-| 04 | `04-persistence.ps1` | Persistence | T1053.005, T1547.001 | process+file | partial | ART |
-| 05 | `05-credential-access-lsass.ps1` | Credential Access | T1003.001 | process+file | **yes** | ART |
-| 06 | `06-c2-beacon.ps1` | C2 | T1071.001 | process+network | no | custom |
-| 07 | `07-collection-staging.ps1` | Collection | T1005, T1074.001, T1560.001 | process+file | no | custom |
-| 08 | `08-exfiltration.ps1` | Exfiltration | T1041 | process+file+network | no | custom |
-| 09 | `09-defense-evasion.ps1` | Defense Evasion | T1070.001, T1070.006 | process+file | **yes** | ART |
-| 10 | `10-apt-chain.ps1` | full kill chain | all of the above | process+file+network | **yes** | mixed |
+## Topology (same subnet, phases split by port)
 
-"ART" = runs a real Atomic Red Team test via `Invoke-AtomicTest`. "custom" = a small scripted
-action (the C2 sink target and staging paths need to be deterministic to label cleanly; the
-corresponding ART atomics hit external test infrastructure you don't control).
-
-Visibility doubts [INFERENCE], check on a capture: **05** LSASS handle access is not in the collected
-events (only rundll32 and the `.dmp` write should show); **09** timestomp is a set-information call, not in
-the Kernel-File keywords 0x390 (name/create/read/write).
-
-## Atomic Red Team in brief
-
-- ATT&CK *tactic* = the why (Discovery, C2…); *technique* = the how (`T1003.001`). ART ships one YAML per
-  technique with *atomic tests*: executor, exact command, inputs, prerequisites, cleanup.
-- `Invoke-AtomicTest` is the PowerShell runner. Always read before running; test numbers drift between ART
-  versions, so confirm with `-ShowDetailsBrief` and fix `-TestNumbers` in the scenario if needed:
-
-```powershell
-Invoke-AtomicTest T1003.001 -ShowDetailsBrief             # list tests + their numbers (like `ls`)
-Invoke-AtomicTest T1003.001 -TestNumbers 1 -ShowDetails   # print the literal command (like `cat` before run)
-Invoke-AtomicTest T1003.001 -TestNumbers 1 -GetPrereqs    # fetch files the test needs
-Invoke-AtomicTest T1003.001 -TestNumbers 1                # run
-Invoke-AtomicTest T1003.001 -TestNumbers 1 -Cleanup       # undo
+```
+Kali attacker (10.21.2.30)                 ws-etw target (10.21.2.10)
+  tools/launch_exploit.py  --target 3000-->  DVWA (httpd.exe -> cmd.exe)  --cmd injection-->
+       serves :8080  <---- fetch stage ----  powershell (RCE child)  --runs--> killchain.ps1
+                     <---- T1105 GET  :8080-  Invoke-WebRequest tool.bin
 ```
 
-## Difficulty, and the alert cut-off
+The exploit comes from Kali; the kill chain runs on the target as `httpd.exe -> cmd.exe -> powershell
+-> killchain.ps1`. A separate C2 subnet is deliberately NOT used: the detector sees only `ip:port` hashes
+and per-node features, so a subnet buys no signal (DEVIATIONS D8). One Kali box doubles as exploit
+source and stage/C2 endpoint; phases are separated by port (exploit → :3000, stage/download → :8080).
 
-A window alerts only if one subgraph holds roughly ≥ 30 anomalous nodes (DEVIATIONS D8). [INFERENCE] from
-the node counts below, single scenarios probably stay under it; 10 is the best candidate. Untested.
+## Phases (MITRE ATT&CK)
 
-- **01–03**: single techniques, few nodes, benign-looking.
-- **04–06**: distinctive structure (persistence artefacts, a dump-writing process, a single-endpoint beacon).
-- **07–09**: multi-node patterns (collection fan-in, exfil linkage, log clearing).
-- **10**: one connected subgraph across all three node types, in kill-chain order: what Alg. 1 recovers.
+| Phase | Tactic | ATT&CK | Observable as |
+|-------|--------|--------|---------------|
+| Delivery | Initial access / Execution | T1190, T1059.001 | `httpd.exe` -> `cmd.exe` spawns `powershell.exe`; NET to Kali |
+| Discovery | Discovery | T1033, T1082, T1057, T1016 | `whoami`/`systeminfo`/`hostname`/`tasklist`/`ipconfig`/`netstat`/`net` under the RCE shell |
+| Ingress transfer | Command & Control | T1105 | `powershell` writes `C:\Users\Public\downloaded_tool.bin`; NET to `<kali>:8080` |
+| Persistence | Persistence | T1053.005 | `schtasks.exe` creates task `UpdaterSync` running the tool |
+
+Only SilkETW-observable techniques are used; registry-only / in-memory-only steps are left out (they
+produce no graph nodes). Kernel-File keywords 0x390 cover name/create/read/write, which the FILE
+artefacts above fall under.
+
+## The alert cut-off (honesty)
+
+A window alerts only if one subgraph holds roughly ≥ 30 anomalous nodes (DEVIATIONS D8), a threshold set
+on ONE benign window. The kill chain is sized (a Discovery burst of several processes + the download +
+persistence, all rooted at the unseen RCE shell) to clear it, but this is **confirmed on a capture, not
+tuned to the attack**: if the window scores < 30, widen the chain or justify a lower `--sg-moderate-from`
+from the benign baseline — do not re-tune the threshold to the attack window (that fits the test).
+
+## Run
+
+See `README.md` for the full recipe. In short: start the capture + benign workload on the target, then
+on Kali run `python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://<ws-etw>:3000` (only input is the URL).

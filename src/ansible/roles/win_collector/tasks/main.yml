@@ -1,0 +1,135 @@
+---
+# Collector install: SilkETW, converter, etwctl, SilkService.
+# Installs SilkETW/SilkService, embeddable Python, deploys the converter/windowing tool/shipper/etwctl,
+# registers the service. The Python tools are copied byte-for-byte from src/pipeline and src/live, so
+# Get-FileHash on the VM (experiment.json tools.*) equals the sha engine.py load_converter computes.
+
+# ---------- 1. VC++ runtime (SilkETW needs it) ----------
+- name: Install the VC++ 2015-2022 runtime
+  chocolatey.chocolatey.win_chocolatey:
+    name: vcredist140
+    state: present
+
+# ---------- 2. SilkETW ----------
+- name: Download SilkETW {{ silketw_tag }}
+  ansible.windows.win_get_url:
+    url: "{{ silketw_url }}"
+    dest: "{{ tools_dir }}\\SilkETW_{{ silketw_tag }}.zip"
+    checksum: "{{ silketw_sha256 | regex_replace('^sha256:', '') or omit }}"
+    checksum_algorithm: sha256
+    force: false   # version-pinned URL: keep the existing file, do not re-download each run (idempotent)
+  register: silk_dl
+
+- name: Report the SilkETW zip sha256 (pin silketw_sha256 to this)
+  ansible.windows.win_stat:
+    path: "{{ tools_dir }}\\SilkETW_{{ silketw_tag }}.zip"
+    get_checksum: true
+    checksum_algorithm: sha256
+  register: silk_stat
+
+- name: Show the sha256 to pin
+  ansible.builtin.debug:
+    msg: "SilkETW zip sha256 = {{ silk_stat.stat.checksum }} (set silketw_sha256: 'sha256:{{ silk_stat.stat.checksum }}')"
+  when: silketw_sha256 == ""
+
+- name: Extract SilkETW
+  community.windows.win_unzip:
+    src: "{{ tools_dir }}\\SilkETW_{{ silketw_tag }}.zip"
+    dest: "{{ silketw_dir }}"
+    creates: "{{ silketw_dir }}"
+
+- name: Locate SilkService.exe
+  ansible.windows.win_find:
+    paths: "{{ silketw_dir }}"
+    recurse: true
+    patterns: ["SilkService.exe"]
+  register: silksvc_find
+
+- name: Fail if SilkService.exe is missing
+  ansible.builtin.assert:
+    that: silksvc_find.files | length > 0
+    fail_msg: "SilkService.exe not found under {{ silketw_dir }}"
+
+- name: Record the SilkService directory
+  ansible.builtin.set_fact:
+    silkservice_exe: "{{ silksvc_find.files[0].path }}"
+    silkservice_dir: "{{ silksvc_find.files[0].path | win_dirname }}"
+
+# ---------- 3. Embeddable Python (stdlib only, runs the converter) ----------
+- name: Download embeddable Python {{ python_embed_version }}
+  ansible.windows.win_get_url:
+    url: "{{ python_embed_url }}"
+    dest: "{{ tools_dir }}\\python-{{ python_embed_version }}-embed-amd64.zip"
+    checksum: "{{ python_embed_sha256 | regex_replace('^sha256:', '') or omit }}"
+    checksum_algorithm: sha256
+    force: false   # version-pinned URL: do not re-download each run (idempotent)
+
+- name: Extract embeddable Python
+  community.windows.win_unzip:
+    src: "{{ tools_dir }}\\python-{{ python_embed_version }}-embed-amd64.zip"
+    dest: "{{ tools_dir }}\\python-embed\\{{ python_embed_version }}"
+    creates: "{{ tools_dir }}\\python-embed\\{{ python_embed_version }}\\python.exe"
+
+- name: Record the Python path
+  ansible.builtin.set_fact:
+    python_exe: "{{ tools_dir }}\\python-embed\\{{ python_embed_version }}\\python.exe"
+
+# ---------- 4. Deploy converter, shipper, etwctl, config ----------
+- name: "Deploy the converter (source of truth: src/pipeline/etw2nodlink.py)"
+  ansible.windows.win_copy:
+    src: "{{ src_dir }}/pipeline/etw2nodlink.py"
+    dest: "{{ lab_home }}\\etw2nodlink.py"
+
+- name: "Deploy the shipper (source of truth: src/live/etwship.py)"
+  ansible.windows.win_copy:
+    src: "{{ src_dir }}/live/etwship.py"
+    dest: "{{ lab_home }}\\etwship.py"
+
+- name: "Deploy the windowing tool (source of truth: src/pipeline/etwwindow.py, used by 07)"
+  ansible.windows.win_copy:
+    src: "{{ src_dir }}/pipeline/etwwindow.py"
+    dest: "{{ lab_home }}\\etwwindow.py"
+
+- name: Deploy etwctl.ps1
+  ansible.windows.win_copy:
+    src: etwctl.ps1
+    dest: "{{ lab_home }}\\etwctl.ps1"
+
+- name: Deploy etwlab.json (settings etwctl reads)
+  ansible.windows.win_template:
+    src: etwlab.json.j2
+    dest: "{{ lab_home }}\\etwlab.json"
+
+- name: Deploy the etwctl.cmd PATH shim
+  ansible.windows.win_copy:
+    content: "@powershell -NoProfile -ExecutionPolicy Bypass -File \"{{ lab_home }}\\etwctl.ps1\" %*\r\n"
+    dest: "{{ tools_dir }}\\etwctl.cmd"
+
+- name: Add Tools dir to the machine PATH
+  ansible.windows.win_path:
+    name: PATH
+    elements: "{{ tools_dir }}"
+    scope: machine
+
+- name: Converter selftest (proves it runs; not that it detects attacks)
+  ansible.windows.win_command: '"{{ python_exe }}" "{{ lab_home }}\etw2nodlink.py" --selftest'
+  changed_when: false
+
+- name: Windowing-tool selftest
+  ansible.windows.win_command: '"{{ python_exe }}" "{{ lab_home }}\etwwindow.py" --selftest'
+  changed_when: false
+
+# ---------- 5. SilkService Windows service ----------
+- name: Register the SilkService collector (startup = Manual)
+  ansible.windows.win_service:
+    name: "{{ service_name }}"
+    path: "{{ silkservice_exe }}"
+    display_name: "SilkETW collector (etwlab)"
+    start_mode: manual
+    state: stopped
+
+- name: Configure crash-restart (stay Manual; a reboot must not resume into an old run folder)
+  ansible.windows.win_command: >-
+    sc.exe failure {{ service_name }} reset= 86400
+    actions= restart/30000/restart/30000/restart/30000
+  changed_when: false

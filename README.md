@@ -62,6 +62,7 @@ Defaults can be overridden with `RUN_DIR`, `SCALER`, `EXPERIMENT`, `PORT`. Next:
 |---|---|
 | `src/` | lab VM (Vagrant + PowerShell), host pipeline, live demo, trained artifacts, notebooks. Map in `src/README.md` |
 | `docs/` | `PROGRESS.md` (status), `DEVIATIONS.md` (differences from the paper), `reports/`, `notes/`, `explainers/` |
+| `presentation/` | Slidev deck of the report (`latex/`): `cd presentation && npm ci && npm run dev` |
 | `OCR-APT/` | git submodule: the authors' code ([CoDS-GCS/OCR-APT](https://github.com/CoDS-GCS/OCR-APT)) and the paper PDF |
 | `pyproject.toml`, `uv.lock` | Python dependencies, managed with [uv](https://docs.astral.sh/uv/) |
 | `CLAUDE.md` | project context for Claude Code sessions |
@@ -71,7 +72,7 @@ Defaults can be overridden with `RUN_DIR`, `SCALER`, `EXPERIMENT`, `PORT`. Next:
 
 - Linux host with [uv](https://docs.astral.sh/uv/) (Python ≥ 3.12).
 - Lab VM: VirtualBox + Vagrant, about 8 GB free RAM. Build steps in `src/README.md`.
-- Docker only for GraphDB (`src/graphdb/compose.yaml`), which the live demo does not need.
+- Docker on the Ubuntu trainer only (Loki + Grafana, installed by Ansible).
 
 ## Safety
 

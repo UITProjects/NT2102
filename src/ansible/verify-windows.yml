@@ -1,0 +1,118 @@
+---
+# Read-only verification that every collector tool is installed on ws-etw (incl. DVWA).
+# Safe + idempotent (no changes): run on demand, NOT part of site.yml.
+#   ansible-playbook -i inventory.local.ini verify-windows.yml -e vulnlab_enabled=true
+# Each assert names the tool and the role that installs it, so a failure points straight at the fix.
+- name: Verify Windows collector tools
+  hosts: windows
+  gather_facts: false
+  tasks:
+
+    # ---------- win_collector ----------
+    - name: SilkService service is registered (win_collector)
+      ansible.windows.win_service_info:
+        name: "{{ service_name }}"
+      register: silksvc
+    - ansible.builtin.assert:
+        that: silksvc.services | length == 1
+        fail_msg: "SilkService not registered — run role win_collector"
+        success_msg: "SilkService registered (start_mode={{ silksvc.services[0].start_mode }})"
+
+    - name: Collector files present (win_collector)
+      ansible.windows.win_stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ lab_home }}\\etw2nodlink.py"
+        - "{{ lab_home }}\\etwwindow.py"
+        - "{{ lab_home }}\\etwship.py"
+        - "{{ lab_home }}\\etwctl.ps1"
+        - "{{ tools_dir }}\\etwctl.cmd"
+        - "{{ tools_dir }}\\python-embed\\{{ python_embed_version }}\\python.exe"
+      register: collector_files
+    - ansible.builtin.assert:
+        that: collector_files.results | map(attribute='stat.exists') | min
+        fail_msg: "A collector file is missing — run role win_collector"
+        success_msg: "Converter, windowing, shipper, etwctl and embeddable Python all present"
+
+    - name: Converter selftest (proves it runs)
+      ansible.windows.win_command: >-
+        "{{ tools_dir }}\python-embed\{{ python_embed_version }}\python.exe" "{{ lab_home }}\etw2nodlink.py" --selftest
+      changed_when: false
+
+    # ---------- win_alloy ----------
+    - name: Alloy service running (win_alloy)
+      ansible.windows.win_service_info:
+        name: Alloy
+      register: alloy_svc
+    - ansible.builtin.assert:
+        that:
+          - alloy_svc.services | length == 1
+          - alloy_svc.services[0].state == 'started'
+        fail_msg: "Alloy not running — run role win_alloy"
+        success_msg: "Alloy service running"
+
+    - name: Alloy config present (win_alloy)
+      ansible.windows.win_stat:
+        path: 'C:\Program Files\GrafanaLabs\Alloy\config.alloy'
+      register: alloy_cfg
+    - ansible.builtin.assert:
+        that: alloy_cfg.stat.exists
+        fail_msg: "config.alloy missing — run role win_alloy"
+
+    # ---------- win_shipper / win_benign ----------
+    - name: Shipper + benign scripts present (win_shipper, win_benign)
+      ansible.windows.win_stat:
+        path: "{{ item }}"
+      loop:
+        - 'C:\scripts\start-live.ps1'
+        - 'C:\scripts\06-benign-workload.ps1'
+        - 'C:\scripts\07-build-train-dataset.ps1'
+      register: scripts_stat
+    - ansible.builtin.assert:
+        that: scripts_stat.results | map(attribute='stat.exists') | min
+        fail_msg: "A script is missing — run roles win_shipper / win_benign"
+        success_msg: "start-live.ps1 + benign workload (06/07) present"
+
+    # ---------- win_vulnlab / DVWA (only when enabled) ----------
+    - name: DVWA checks (win_vulnlab)
+      when: vulnlab_enabled | bool
+      block:
+        - name: Apache + MariaDB services running
+          ansible.windows.win_service_info:
+            name: "{{ item }}"
+          loop:
+            - Apache2.4
+            - mysql
+          register: dvwa_svcs
+
+        - name: DVWA cloned + configured
+          ansible.windows.win_stat:
+            path: "{{ item }}"
+          loop:
+            - "{{ vulnlab_dir }}\\vulnerabilities\\exec\\index.php"
+            - "{{ vulnlab_dir }}\\config\\config.inc.php"
+          register: dvwa_files
+
+        - name: DVWA login page serving on {{ vulnlab_port }}
+          ansible.windows.win_uri:
+            url: "http://localhost:{{ vulnlab_port }}/login.php"
+            method: GET
+            status_code: [200, 302]
+          register: dvwa_http
+          failed_when: false
+
+        - ansible.builtin.assert:
+            that:
+              # flatten the per-service results into one list, then count the ones in state 'started'
+              - (dvwa_svcs.results | map(attribute='services') | sum(start=[]) | selectattr('state', 'equalto', 'started') | list | length) == 2
+              - dvwa_files.results | map(attribute='stat.exists') | min
+              - (dvwa_http.status_code | default(0)) in [200, 302]
+            fail_msg: >-
+              DVWA not fully up — services started={{ dvwa_svcs.results | map(attribute='services') | sum(start=[]) | selectattr('state', 'equalto', 'started') | list | length }}/2,
+              files present={{ dvwa_files.results | map(attribute='stat.exists') | list }},
+              http={{ dvwa_http.status_code | default('no response') }}. Run role win_vulnlab (-e vulnlab_enabled=true).
+            success_msg: "DVWA served by XAMPP on {{ vulnlab_port }} (Apache + MariaDB up, login page reachable)"
+
+    - name: Verification summary
+      ansible.builtin.debug:
+        msg: "ALL TOOLS VERIFIED on {{ inventory_hostname }} (DVWA checked = {{ vulnlab_enabled | bool }})"

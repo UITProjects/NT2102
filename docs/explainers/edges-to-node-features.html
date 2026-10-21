@@ -224,7 +224,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
     </div>
   </div>
   <p class="prose" style="margin-top:20px">That is the whole idea. Every event adds 1 to a counter on its source node and 1 to a counter on its destination node. The rest of this page shows where those counters come from, what happens to them afterwards, and what is lost along the way.</p>
-  <p class="prose" style="font-size:0.9rem;color:var(--muted)">Tags: <span class="tag repo">REPO</span> verified in the project's repo files, with file and line. <span class="tag paper">PAPER</span> stated in the paper. <span class="tag inf">INFERENCE</span> an interpretation, not verified in code or paper. <span class="tag ours">IMPL</span> a practical note for anyone re-implementing this step.</p>
+  <p class="prose" style="font-size:0.9rem;color:var(--muted)">Tags: <span class="tag repo">AUTHOR CODE</span> verified in the authors' code (github.com/CoDS-GCS/OCR-APT), with file and line. <span class="tag paper">PAPER</span> stated in the paper. <span class="tag inf">INFERENCE</span> an interpretation, not verified in code or paper. <span class="tag ours">IMPL</span> a practical note for anyone re-implementing this step.</p>
 </header>
 
 <section>
@@ -243,7 +243,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
   <div class="wrap">
     <h2><span class="n">1</span>Two files come in, only one gets counted</h2>
     <div class="prose">
-      <p><span class="tag repo">REPO</span> <code>transform_to_RDF.py</code> writes two files that <code>encode_to_PyG.py</code> reads back (l.269–271):</p>
+      <p><span class="tag repo">AUTHOR CODE</span> <code>transform_to_RDF.py</code> writes two files that <code>encode_to_PyG.py</code> reads back (l.269–271):</p>
       <p><code>&lt;graph&gt;.tsv</code> holds RDF triples (subject, predicate, object), built at <code>transform_to_RDF.py</code> l.133–223. The encoder uses it to discover node types (l.276), declared edge types (l.277), the per-type node index (l.306–340), labels and the train/test split.</p>
       <p><code>&lt;graph&gt;_graph_df.csv</code> is the plain edge table, one row per event, saved at <code>transform_to_RDF.py</code> l.390. Despite the <code>.csv</code> name it is tab-separated. <strong>This is the file the action counts are computed from</strong> (l.510 passes <code>graph_df</code> into <code>feature_engineering</code>).</p>
       <p>The plain triples have no timestamps. A triple like <code>node/A &nbsp;Start&nbsp; node/B</code> is a set member, so two identical events would collapse into one. The counts only work because <code>graph_df</code> keeps every event as its own row.</p>
@@ -267,7 +267,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
   <div class="wrap">
     <h2><span class="n">2</span>The columns are fixed before any event is read</h2>
     <div class="prose">
-      <p><span class="tag repo">REPO</span> The column list does not come from the data. <code>order_x_features</code> in <code>database_config.py</code> overrides the discovered edge types with a hard-coded list for each host, then expands each action into an <code>out_</code> column and an <code>in_</code> column:</p>
+      <p><span class="tag repo">AUTHOR CODE</span> The column list does not come from the data. <code>order_x_features</code> in <code>database_config.py</code> overrides the discovered edge types with a hard-coded list for each host, then expands each action into an <code>out_</code> column and an <code>in_</code> column:</p>
     </div>
 <pre class="code nomath"><span class="ln" data-n="85">    elif host == 'SimulatedW10':</span><span class="ln" data-n="86">        edge_types = ["Write","Read",'Send','Recv','Start',"Load"]</span><span class="ln" data-n="…"></span><span class="ln" data-n="91">    sorted_edge_types = []</span><span class="ln" data-n="92">    for edge in edge_types:</span><span class="ln" data-n="93">        sorted_edge_types.append("out_" + edge.replace("EVENT_", "").lower())</span><span class="ln" data-n="94">        sorted_edge_types.append("in_" + edge.replace("EVENT_", "").lower())</span></pre>
     <p class="src">database_config.py l.85–94</p>
@@ -287,7 +287,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
   <div class="wrap">
     <h2><span class="n">3</span>Stream the events and count</h2>
     <div class="prose">
-      <p><span class="tag repo">REPO</span> One pass over <code>graph_df</code>. For each row: read the source, the destination and the edge type, lowercase the type, then increment two counters.</p>
+      <p><span class="tag repo">AUTHOR CODE</span> One pass over <code>graph_df</code>. For each row: read the source, the destination and the edge type, lowercase the type, then increment two counters.</p>
     </div>
 <pre class="code nomath" id="loopCode"><span class="ln" data-n="139" data-k="for">    for row in graph_df.itertuples(index=False):</span><span class="ln" data-n="140" data-k="read">        src_uuid = str(row[dict_columns['source-id']])</span><span class="ln" data-n="141" data-k="read">        dst_uuid = str(row[dict_columns['destination-id']])</span><span class="ln" data-n="142" data-k="read">        edge_type = str(row[dict_columns['edge-type']]).replace("EVENT_", "").lower()</span><span class="ln" data-n="…">        # l.143–146: read the timestamp (used later for idle features)</span><span class="ln" data-n="147" data-k="out">        x_list[src_uuid][str("out_" + edge_type)] += 1</span><span class="ln" data-n="148" data-k="in">        x_list[dst_uuid][str("in_" + edge_type)] += 1</span></pre>
     <p class="src">encode_to_PyG.py l.139–148</p>
@@ -331,7 +331,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
 <pre class="code nomath"><span class="ln" data-n="202">    x_list_df = pd.DataFrame.from_dict(x_list, orient='index')</span><span class="ln" data-n="203">    # # removes all columns in x_list_df that are entirely zeros. Not necessary to keep</span><span class="ln" data-n="204">    x_list_df = x_list_df.loc[:, (x_list_df != 0).any(axis=0)]</span></pre>
     <p class="src">encode_to_PyG.py l.202–204</p>
     <div class="prose">
-      <p><span class="tag repo">REPO</span> After counting, the dictionary becomes a DataFrame, and any column that is zero for every node in this encoding run is deleted. With all 17 events, every column is used somewhere, so all 12 survive. Try removing one action type:</p>
+      <p><span class="tag repo">AUTHOR CODE</span> After counting, the dictionary becomes a DataFrame, and any column that is zero for every node in this encoding run is deleted. With all 17 events, every column is used somewhere, so all 12 survive. Try removing one action type:</p>
       <div class="presets">
         <button class="btn" data-preset="noload">Remove all Load events</button>
         <button class="btn" data-preset="nostart">Remove all Start events</button>
@@ -350,7 +350,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
   <div class="wrap">
     <h2><span class="n">5</span>Counts become a behavior mix</h2>
     <div class="prose">
-      <p><span class="tag paper">PAPER</span> §5.1.2 uses L2 normalization "to reduce bias from high-activity benign nodes". <span class="tag repo">REPO</span> With <code>--normalize-features</code>, each row of action columns is divided by its own Euclidean length:</p>
+      <p><span class="tag paper">PAPER</span> §5.1.2 uses L2 normalization "to reduce bias from high-activity benign nodes". <span class="tag repo">AUTHOR CODE</span> With <code>--normalize-features</code>, each row of action columns is divided by its own Euclidean length:</p>
     </div>
 <pre class="code nomath"><span class="ln" data-n="226">    if args.normalize_features:</span><span class="ln" data-n="227">        sorted_edge_types = [action for action in sorted_edge_types if action in x_list_df.columns]</span><span class="ln" data-n="…"></span><span class="ln" data-n="233">        normalized_data = normalize(x_list_df[sorted_edge_types], norm='l2', axis=1)</span><span class="ln" data-n="234">        normalized_x_list_df[sorted_edge_types] = pd.DataFrame(normalized_data, columns=sorted_edge_types)</span></pre>
     <p class="src">encode_to_PyG.py l.226–234 (<code>axis=1</code> means per row, so per node)</p>
@@ -373,7 +373,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
 <pre class="code nomath"><span class="ln" data-n="516">    for label_node in label_nodes_names:</span><span class="ln" data-n="517">        file_path = output_root_path + dataset_name + "/mapping/" + label_node + "_entidx2name.csv"</span><span class="ln" data-n="518">        mapping_nodes_df = pd.read_csv(file_path, header=None, skiprows=1, names=["node_id", "node_uuid"])</span><span class="ln" data-n="519">        mapped_x_list_df = pd.merge(mapping_nodes_df, x_list_df, on="node_uuid")</span><span class="ln" data-n="520">        mapped_x_list_df = mapped_x_list_df.set_index("node_id")</span><span class="ln" data-n="521">        del mapped_x_list_df['node_uuid']</span><span class="ln" data-n="522">        x_list_tensor = torch.from_numpy(mapped_x_list_df.to_numpy()).float()</span><span class="ln" data-n="523">        save_path = output_root_path + dataset_name + "/features/" + label_node + "/node-features.pt"</span><span class="ln" data-n="524">        ensure_dir(save_path)</span><span class="ln" data-n="525">        torch.save(x_list_tensor, save_path)</span></pre>
     <p class="src">encode_to_PyG.py l.516–525</p>
     <div class="prose">
-      <p><span class="tag repo">REPO</span> The normalized table is split by node type. The row order comes from the per-type mapping file, which sorts nodes by UUID string and numbers them from 0 (l.327–330). Row $k$ of <code>PROCESS/node-features.pt</code> is therefore the process whose UUID sorts $k$-th. Upstream <code>OCR-APT/src/train_gnn_models.py</code> l.564–573 later copies these rows into one big <code>x</code> of shape $[N, F]$.</p>
+      <p><span class="tag repo">AUTHOR CODE</span> The normalized table is split by node type. The row order comes from the per-type mapping file, which sorts nodes by UUID string and numbers them from 0 (l.327–330). Row $k$ of <code>PROCESS/node-features.pt</code> is therefore the process whose UUID sorts $k$-th. Upstream <code>OCR-APT/src/train_gnn_models.py</code> l.564–573 later copies these rows into one big <code>x</code> of shape $[N, F]$.</p>
     </div>
     <div class="tensors" id="tensors"></div>
     <div class="prose" style="margin-top:16px">
@@ -386,7 +386,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
   <div class="wrap">
     <h2><span class="n">7</span>When the converter emits an action the list does not know</h2>
     <div class="prose">
-      <p><span class="tag repo">REPO</span> Because the columns are fixed (section 2), an edge type outside the six has no counter. Python raises <code>KeyError</code> at l.147 and the whole encoding stops. Add an unmapped <code>Delete</code> event to see it, then run section 3 again:</p>
+      <p><span class="tag repo">AUTHOR CODE</span> Because the columns are fixed (section 2), an edge type outside the six has no counter. Python raises <code>KeyError</code> at l.147 and the whole encoding stops. Add an unmapped <code>Delete</code> event to see it, then run section 3 again:</p>
       <div class="presets">
         <button class="btn" id="btnExtra">Add a Delete event</button>
       </div>

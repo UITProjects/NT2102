@@ -123,4 +123,4 @@ The first live window flagged 19 / 835 nodes (2.3 %, target ≈ 0.1 %), all from
 
 - **[D1]** NODLINK Simulated Windows 10 host [P2], from the OCR-APT dataset record, Zenodo doi:10.5281/zenodo.17254415. Used as the log schema reference.
 
-**Tools:** SilkETW (Mandiant) · Atomic Red Team (Red Canary) · PyTorch Geometric · GraphDB 10.8.
+**Tools:** SilkETW (Mandiant) · Atomic Red Team (Red Canary) · PyTorch Geometric.

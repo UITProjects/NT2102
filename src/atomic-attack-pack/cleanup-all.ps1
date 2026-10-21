@@ -1,20 +1,32 @@
 <#
-  cleanup-all.ps1 — run AFTER you have stopped and converted the capture.
+  cleanup-all.ps1 — undo the RCE kill chain's artefacts on the target VM.
 
-  Runs Invoke-AtomicTest -Cleanup for the ART-based techniques and removes the custom
-  artifacts (staging dir, archive, downloaded payload). Run this OUTSIDE the labeled
-  capture window so cleanup activity does not pollute your attack labels — or better,
-  just restore the VM snapshot and skip this entirely.
+  Run OUTSIDE the labeled capture window so cleanup activity does not pollute the attack labels — or
+  better, just restore the VM snapshot and skip this. There is no Atomic Red Team dependency anymore:
+  the one scenario (scenarios/rce-killchain.ps1) uses only custom steps, so cleanup is deterministic.
 #>
-Import-Module "C:\AtomicRedTeam\invoke-atomicredteam\Invoke-AtomicRedTeam.psd1" -Force -ErrorAction SilentlyContinue
+$taskName = "UpdaterSync"                 # must match scenarios/rce-killchain.ps1
+$toolPath = "C:\Users\Public\downloaded_tool.bin"
 
-$atomicTechniques = @("T1033","T1082","T1087.001","T1057","T1218.011","T1218.010","T1218.005",
-                      "T1053.005","T1547.001","T1003.001","T1070.001","T1070.006")
-foreach ($t in $atomicTechniques) {
-    try { Invoke-AtomicTest $t -Cleanup -Confirm:$false } catch { Write-Warning "cleanup $t: $($_.Exception.Message)" }
+# Persistence (T1053.005)
+schtasks /delete /tn $taskName /f 2>$null
+
+# Ingress-transfer artefact (T1105)
+Remove-Item $toolPath -Force -ErrorAction SilentlyContinue
+
+# Kill any shell still running under the exploited service (httpd.exe -> cmd.exe -> powershell), best
+# effort. Match on the cmd.exe injected by DVWA (parent httpd.exe) and the powershell it spawned, so we
+# do not touch Apache itself or unrelated cmd/powershell.
+$injectedCmd = Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | Where-Object {
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($_.ParentProcessId)" -ErrorAction SilentlyContinue
+    $p -and $p.Name -eq 'httpd.exe'
+}
+$injectedCmd | ForEach-Object {
+    $cmdId = $_.ProcessId
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe' AND ParentProcessId=$cmdId" |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Stop-Process -Id $cmdId -Force -ErrorAction SilentlyContinue
 }
 
-# custom artifacts
-Remove-Item "C:\Users\Public\stage" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "C:\Users\Public\exfil.zip","C:\Users\Public\downloaded_tool.bin" -Force -ErrorAction SilentlyContinue
-Write-Host "cleanup complete (snapshot restore is still the cleanest reset)" -ForegroundColor Green
+Write-Host "cleanup complete ($taskName removed, $toolPath removed, RCE shells killed)." -ForegroundColor Green
+Write-Host "Snapshot restore is still the cleanest reset." -ForegroundColor DarkGray

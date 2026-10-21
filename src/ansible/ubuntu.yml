@@ -1,0 +1,13 @@
+---
+# Ubuntu trainer VM: Loki + Grafana (stores the pushed logs), repo + uv sync, live server reading Loki.
+- name: Configure the Ubuntu trainer VM
+  hosts: ubuntu
+  become: true
+  gather_facts: true
+  # Tags pick roles, e.g. only pull the new code + restart the live server:
+  #   ansible-playbook -i inventory.local.ini ubuntu.yml --tags project
+  # Running with no --tags still does everything.
+  roles:
+    - { role: ubuntu_base,    tags: [base] }      # apt deps, uv, firewall
+    - { role: ubuntu_loki,    tags: [loki] }      # Loki + Grafana (Docker, host network): receives Alloy's push
+    - { role: ubuntu_project, tags: [project] }   # git clone, uv sync, live_server systemd unit

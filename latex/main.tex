@@ -1,0 +1,121 @@
+\documentclass[a4paper]{article}
+
+%%%%%%%% CREATE DOCUMENT STRUCTURE %%%%%%%%
+%% Language and font encodings
+\usepackage[utf8]{inputenc}
+\usepackage[T5,T1]{fontenc}              % T5 cho tiếng Việt
+\usepackage[vietnamese, english]{babel}
+\usepackage[utf8]{vietnam}
+
+%% Sets page size and margins
+\usepackage[a4paper,top=3cm,bottom=2cm,left=2cm,right=2cm,marginparwidth=1.75cm]{geometry}
+
+%% Useful packages
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{sectsty}
+\usepackage{float}
+\usepackage{titling}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[square,sort,comma,numbers]{natbib}
+\usepackage{xcolor}
+\definecolor{darkgreen}{rgb}{0.0, 0.4, 0.0}
+\usepackage{tabularx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,shapes.geometric,backgrounds,calc}
+
+%% Ngôn ngữ hình vẽ dùng chung: cùng màu = cùng vai trò trong mọi hình
+\colorlet{cprep}{gray!14}      % chuẩn bị dữ liệu
+\colorlet{cdet}{blue!14}       % phát hiện (GNN, Alg. 1)
+\colorlet{cinv}{orange!22}     % điều tra bằng LLM
+\colorlet{cout}{green!18}      % kết quả cho người dùng
+\colorlet{catk}{red!75!black}  % hành vi tấn công
+\tikzset{
+  box/.style={draw, rounded corners, align=center, font=\small, minimum height=0.9cm, text width=2.5cm},
+  prep/.style={box, fill=cprep}, det/.style={box, fill=cdet},
+  inv/.style={box, fill=cinv},   outp/.style={box, fill=cout},
+  arr/.style={-{Stealth[length=2mm]}, thick},
+  opt/.style={arr, dashed},
+  num/.style={circle, fill=black, text=white, font=\scriptsize\bfseries, inner sep=1.2pt},
+  frame/.style={draw, dashed, rounded corners, inner sep=8pt, gray}
+}
+%% Chú giải dưới hình (dùng ngoài tikzpicture)
+\newcommand{\swatch}[2]{\tikz[baseline=-0.6ex]\node[draw, rounded corners=1pt, fill=#1, minimum width=0.5cm, minimum height=0.3cm]{};~#2}
+\newcommand{\arrowkey}[2]{\tikz[baseline=-0.6ex]\draw[#1] (0,0) -- (0.7,0);~#2}
+%% robust: \caption expands its argument, and a fragile \tikz there makes pdflatex loop forever
+\DeclareRobustCommand{\stepnum}[1]{\tikz[baseline=(n.base)]\node[num](n){#1};}
+\newcommand{\figlegend}[1]{\par\smallskip{\footnotesize\raggedright #1\par}}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, breaklines=true, columns=fullflexible,
+        frame=single, backgroundcolor=\color{gray!8}}
+\renewcommand{\lstlistingname}{Đoạn mã}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\floatname{algorithm}{Thuật toán}
+
+%% Nhãn nguồn của một phát biểu: bài báo, mã nguồn gốc, nhóm, suy luận
+\newcommand{\tagbox}[2]{\textsf{\scriptsize\colorbox{#1!15}{#2}}}
+\newcommand{\tagpaper}{\tagbox{blue}{PAPER}}
+\newcommand{\tagrepo}{\tagbox{violet}{AUTHOR CODE}}
+\newcommand{\tagours}{\tagbox{darkgreen}{OURS}}
+\newcommand{\taginf}{\tagbox{orange}{INFERENCE}}
+%% Ô giữ chỗ cho số liệu chưa có
+\newcommand{\todoval}[1][TODO]{\textcolor{red}{[#1]}}
+
+%%%%%%%% DOCUMENT %%%%%%%%
+\begin{document}
+
+%%%% Title Page
+\begin{titlepage}
+
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
+\center
+
+% University
+\textsc{\LARGE ĐẠI HỌC QUỐC GIA THÀNH PHỐ HỒ CHÍ MINH}\\
+
+\textsc{\LARGE TRƯỜNG ĐẠI HỌC CÔNG NGHỆ THÔNG TIN}\\[1cm]
+
+\includegraphics[width=0.3\textwidth]{images/Logo_UIT_updated.jpg}\\[1cm]
+
+% Document info
+\Large Môn học: \textbf{An toàn bảo mật hệ thống thông tin}\\[0.2cm]
+\Large Giảng viên: \textbf{Nguyễn Tấn Cầm}\\[0.2cm]
+\Large Học kì: 2026--2027
+\HRule \\[0.8cm]
+
+{ \huge \bfseries Tên đề tài: \\ Phát hiện bất thường trên endpoint device log\\ dựa trên OCR-APT}\\[0.7cm]
+\HRule \\[1cm]
+
+\large
+\textbf{Thông tin thành viên nhóm:}
+
+\begin{tabular}{>{\bfseries}p{5.5cm} p{7cm}}
+Họ và tên          & Email \\[6pt]
+\midrule[0.3pt]
+Ngô Vũ Minh Đạt & 26848033@grad.uit.edu.vn \\[6pt]
+Nguyễn Long Vũ & 250202060@grad.uit.edu.vn \\[6pt]
+Trần Quang Kiệt & 26848108@grad.uit.edu.vn \\[6pt]
+\end{tabular}
+
+\vspace{1.5cm}
+
+{\large \today}\\[3cm]
+
+\vfill
+\end{titlepage}
+
+%%%% SECTIONS
+\include{contents}
+
+\bibliographystyle{unsrtnat}
+\bibliography{ref}
+
+\end{document}

@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>From Score to Node</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  box-sizing: border-box;
+  --bg: #EEF2F6;
+  --surface: #FFFFFF;
+  --ink: #17202B;
+  --muted: #566373;
+  --rule: #CDD5DE;
+  --mark: #FFE066;
+  --mark-ink: #3A2E00;
+  --code-bg: #F6F8FA;
+  --c-train: #1F63B5;
+  --c-val: #0E8A66;
+  --c-purge: #8A96A3;
+  --c-bad: #C0392B;
+  --c-hot: #B42358;
+  --c-net: #6A4CC2;
+  --c-file: #A86A00;
+  --t-repo: #1F63B5;
+  --t-paper: #0E8A66;
+  --t-inf: #A86A00;
+  --t-ours: #6A4CC2;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171E; --surface: #1A212B; --ink: #E3E8EE; --muted: #9AA7B6; --rule: #2E3946;
+    --mark: #6B5A12; --mark-ink: #FFF3C4; --code-bg: #151B23;
+    --c-train: #6FA8F0; --c-val: #4CC9A0; --c-purge: #6B7785; --c-bad: #F07A6C; --c-hot: #F06C9B;
+    --c-net: #A993F0; --c-file: #E3B04B;
+    --t-repo: #6FA8F0; --t-paper: #4CC9A0; --t-inf: #E3B04B; --t-ours: #A993F0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171E; --surface: #1A212B; --ink: #E3E8EE; --muted: #9AA7B6; --rule: #2E3946;
+  --mark: #6B5A12; --mark-ink: #FFF3C4; --code-bg: #151B23;
+  --c-train: #6FA8F0; --c-val: #4CC9A0; --c-purge: #6B7785; --c-bad: #F07A6C; --c-hot: #F06C9B;
+  --c-net: #A993F0; --c-file: #E3B04B;
+  --t-repo: #6FA8F0; --t-paper: #4CC9A0; --t-inf: #E3B04B; --t-ours: #A993F0;
+}
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--sans); font-size: 17px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.prose { max-width: 720px; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 16px; max-width: 18ch; }
+h2 { font-size: 1.55rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 12px; display: flex; gap: 14px; align-items: baseline; }
+h2 .n { font-family: var(--mono); font-weight: 500; font-size: 0.95rem; color: var(--muted); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 10px; flex: none; }
+h3 { font-size: 1.05rem; font-weight: 600; margin: 24px 0 8px; }
+p { margin: 0 0 14px; }
+a { color: var(--c-train); }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+p code, li code, td code { background: var(--code-bg); border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+section { padding: 44px 0; border-top: 1px solid var(--rule); }
+header.hero { padding: 56px 16px 40px; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 60ch; }
+.q { font-size: 0.92rem; color: var(--muted); font-style: italic; margin-bottom: 18px; }
+
+.tag { font-family: var(--mono); font-size: 0.72rem; font-weight: 500; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; vertical-align: 1px; white-space: nowrap; }
+.tag.repo { color: var(--t-repo); } .tag.paper { color: var(--t-paper); } .tag.inf { color: var(--t-inf); } .tag.ours { color: var(--t-ours); }
+
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px; min-width: 0; margin-top: 18px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 12px; }
+.controls label { font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+.controls input[type=range] { width: 140px; }
+.controls output, .val { font-family: var(--mono); font-weight: 500; min-width: 2.5ch; display: inline-block; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+button.btn { font: inherit; font-size: 0.88rem; font-weight: 500; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+button.btn.on, button.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--c-train); outline-offset: 2px; }
+input[type=text], input[type=number] { font: inherit; font-family: var(--mono); font-size: 0.88rem; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--code-bg); color: var(--ink); }
+input[type=number] { width: 5.5em; }
+input[type=text] { width: 100%; max-width: 520px; }
+.readout { font-family: var(--mono); font-size: 0.85rem; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; margin-top: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.readout .v { background: var(--mark); color: var(--mark-ink); padding: 0 3px; border-radius: 3px; }
+.readout .err { color: var(--c-bad); font-weight: 600; }
+svg { display: block; width: 100%; height: auto; }
+.scroll svg { min-width: 560px; }
+svg text { font-family: var(--mono); fill: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.82rem; color: var(--muted); margin-top: 8px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+.note { border-left: 3px solid var(--rule); padding: 4px 0 4px 14px; color: var(--muted); margin: 14px 0; }
+.warn { border-left: 3px solid var(--c-bad); padding: 6px 0 6px 14px; margin: 18px 0; }
+.big { font-family: var(--mono); font-size: 1.05rem; }
+.scroll { overflow-x: auto; max-width: 100%; }
+table { border-collapse: collapse; font-size: 0.85rem; }
+th, td { padding: 4px 10px; text-align: left; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font-weight: 600; }
+td.num, th.num { text-align: right; font-family: var(--mono); }
+tr.dim td { opacity: 0.4; }
+tr.hot td { background: color-mix(in srgb, var(--c-bad) 18%, transparent); }
+.cross { text-decoration: line-through; opacity: 0.5; }
+
+/* dataflow */
+.flow { display: grid; gap: 0; max-width: 720px; margin-top: 18px; }
+.flow .step { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: start; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; text-decoration: none; color: var(--ink); }
+.flow a.step:hover { border-color: var(--ink); }
+.flow .where { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); padding-top: 3px; }
+.flow .what { font-size: 0.95rem; }
+.flow .what small { display: block; color: var(--muted); font-size: 0.82rem; }
+.flow .arrow { text-align: center; color: var(--muted); line-height: 1.4; font-size: 0.9rem; }
+.flow .split3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.flow .split3 div { border-radius: 6px; padding: 6px 8px; font-size: 0.82rem; color: #fff; }
+@media (max-width: 560px) { .flow .step { grid-template-columns: 1fr; gap: 2px; } .flow .split3 { grid-template-columns: 1fr; } }
+
+/* islands */
+.isl .edge { stroke: var(--muted); stroke-width: 1.6; opacity: 0.55; }
+.isl .edge.lit { stroke: var(--c-hot); stroke-width: 3.2; opacity: 1; }
+.isl .box { fill: none; stroke-width: 1.6; stroke-dasharray: 5 4; }
+@media (prefers-reduced-motion: no-preference) { .isl .edge { transition: stroke 0.25s, stroke-width 0.25s, opacity 0.25s; } }
+
+.losstab input { width: 5em; }
+.twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 760px) { .twocol { grid-template-columns: 1fr; } }
+footer { padding: 30px 16px 60px; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); }
+</style>
+<style>
+.align { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; min-width: 560px; }
+.align .col h3 { margin: 0 0 6px; font-family: var(--mono); font-size: 0.82rem; font-weight: 500; }
+.align .col h3 .shape { background: var(--mark); color: var(--mark-ink); padding: 0 5px; border-radius: 3px; }
+.align .cell { font-family: var(--mono); font-size: 0.76rem; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 5px; margin-bottom: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--surface); }
+.align .cell.on { background: var(--mark); color: var(--mark-ink); border-color: var(--mark-ink); }
+.ty { display: inline-block; width: 1.4em; text-align: center; font-weight: 600; }
+.ty-process { color: var(--c-train); } .ty-file { color: var(--c-file); } .ty-net { color: var(--c-net); }
+table.mask td, table.mask th { font-family: var(--mono); font-size: 0.8rem; }
+table.mask td.kept { background: var(--mark); color: var(--mark-ink); font-weight: 500; }
+table.mask td.gone { opacity: 0.3; text-decoration: line-through; }
+table.mask td.flag { color: var(--c-bad); font-weight: 600; }
+.bytes { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.bytes span { font-family: var(--mono); font-size: 0.82rem; border: 1px solid var(--rule); border-radius: 5px; padding: 3px 8px; background: var(--code-bg); }
+.bytes span b { display: block; font-size: 0.7rem; color: var(--muted); font-weight: 400; }
+table.types { margin-top: 10px; }
+table.types td, table.types th { font-size: 0.8rem; white-space: normal; vertical-align: top; }
+table.types td:first-child, table.types td:nth-child(2) { font-family: var(--mono); white-space: nowrap; }
+.field { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 0.9rem; }
+@media (max-width: 520px) { .field { grid-template-columns: 1fr; gap: 2px; } }
+</style>
+</head>
+<body>
+
+<header class="hero wrap">
+  <h1>A score is just a number. Here is how it finds its node again.</h1>
+  <p class="lede">At inference time the models output one number per node. This page follows that number back to a real process, file or network endpoint: who decides the node type, why the row order is never lost, and how hex IDs turn back into <code>c:\windows\system32\wuuhext.dll</code>.</p>
+  <p class="prose">The short answer: <strong>identity never passes through the model.</strong> The converter fixes each node's type and ID when it reads the raw ETW event. After that, every array keeps the same row order as a node table, and the scores are joined back by ID.</p>
+  <p class="prose" style="font-size:0.9rem;color:var(--muted)">Real rows on this page come from live session <code>live-20261011T112141Z</code>, window <code>20261011T113000Z</code> (<code>src/live/sessions/</code>, not in git): 717 nodes (129 process, 396 file, 192 net), 7 flagged. Tags: <span class="tag paper">PAPER</span> stated in the OCR-APT paper. <span class="tag repo">AUTHOR CODE</span> verified in the authors' code. <span class="tag ours">OURS</span> what this project does. <span class="tag inf">INFERENCE</span> an interpretation, not verified.</p>
+</header>
+
+<!-- 1 ------------------------------------------------------------------ -->
+<section id="s1">
+  <div class="wrap">
+    <h2><span class="n">1</span>The path of one node</h2>
+    <div class="flow">
+      <a class="step" href="#s2"><span class="where">etw2nodlink.py</span><span class="what">ETW event → edge row with <code>source-type</code> / <code>destination-type</code>, node ID, and a lookup row in <code>node_attrs</code><small>Type and identity are decided here, once.</small></span></a>
+      <div class="arrow">↓</div>
+      <a class="step" href="#s3"><span class="where">build_graph</span><span class="what">Node table, row <i>i</i> = (ID, type). Features, embeddings and scores all use the same row order.</span></a>
+      <div class="arrow">↓</div>
+      <a class="step" href="#s4"><span class="where">score_edges</span><span class="what">3 models; each keeps its score only on rows of its own type, compared to its own τ</span></a>
+      <div class="arrow">↓</div>
+      <a class="step" href="#s5"><span class="where">engine.py</span><span class="what"><code>nodes["attr"] = nodes["node_uuid"].map(attrs)</code><small>Adds a name column to the <code>pd.DataFrame</code> by looking each ID up in a <code>dict[str, str]</code>. Hex ID → path, image name or ip:port. NET values are decoded for the screen only.</small></span></a>
+      <div class="arrow">↓</div>
+      <a class="step" href="#s8"><span class="where">alg1.py</span><span class="what">Flagged IDs + the same edge rows → subgraphs with names</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- 2 ------------------------------------------------------------------ -->
+<section id="s2">
+  <div class="wrap">
+    <h2><span class="n">2</span>The converter decides the type and the ID</h2>
+    <div class="prose">
+      <p><span class="tag ours">OURS</span> The node type comes from which ETW event created the node (<code>etw2nodlink.py</code>, <code>classify</code> at <code>:76</code>). The ID is built so the same thing gets the same ID in training, test and live (CLAUDE.md §9, node identity):</p>
+      <ul>
+        <li><strong>PROCESS</strong>: <code>p&lt;pid&gt;_&lt;start ms&gt;</code> from ProcessStart (<code>:199</code>). PIDs get reused, so the start time is part of the key. A process already running when capture began has no start event and gets <code>p&lt;pid&gt;_pre_&lt;run&gt;</code> (<code>:149-155</code>).</li>
+        <li><strong>FILE</strong>: <code>f</code> + the first 16 hex characters of SHA-1(lower-cased path) (<code>:157-158</code>, used by Load <code>:213</code> and Read/Write <code>:232</code>).</li>
+        <li><strong>NET</strong>: <code>n</code> + the first 16 hex characters of SHA-1(<code>daddr:dport</code>) as SilkETW writes them (<code>:247</code>).</li>
+      </ul>
+      <p>SHA-1 can't be reversed, so the converter also writes a lookup table, <code>node_attrs.csv</code> (<code>node, node_type, node_attr</code>, <code>:16</code>). Pick an event and edit it; the IDs are computed live with the same SHA-1.</p>
+    </div>
+    <div class="panel">
+      <div class="presets" id="evKinds">
+        <button class="btn on" data-kind="load">ImageLoad</button>
+        <button class="btn" data-kind="write">FileIO Write</button>
+        <button class="btn" data-kind="send">TcpIp Send</button>
+        <button class="btn" data-kind="pstart">ProcessStart</button>
+      </div>
+      <div class="field"><label for="fPid">acting pid</label><input type="number" id="fPid" value="5568" style="width:8em"></div>
+      <div class="field"><label for="fStart">its start (ms)</label><input type="text" id="fStart" value="1791718201999" style="max-width:16em"></div>
+      <div class="field" id="rowObj"><label for="fObj" id="lObj">image path</label><input type="text" id="fObj" value="C:\Windows\System32\wuuhext.dll"></div>
+      <div class="field"><label for="fT">event time (ms)</label><input type="text" id="fT" value="1791718202032" style="max-width:16em"></div>
+      <div class="readout" id="evOut"></div>
+      <p class="note" style="margin-bottom:0">Leave "its start" empty to see the <code>_pre_</code> ID of a process that started before the capture. The defaults reproduce real rows from the session: <code>p5568_1791718201999</code> (<code>wuauclt</code>) loading <code>feb89e175ed137cbd</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 ------------------------------------------------------------------ -->
+<section id="s3">
+  <div class="wrap">
+    <h2><span class="n">3</span>One node table, many arrays, the same row order</h2>
+    <div class="prose">
+      <p><code>build_graph</code> (<code>train_gnn_models.py:55-104</code>) builds the node table from the two ID columns of the edges, together with the type column next to each ID. Row <i>i</i> of that table is node <i>i</i>. The features are reindexed to that order (<code>score_window.py:98</code>), and the model returns embeddings and scores in that same order. Nothing ever re-sorts them. Click any cell: the same row lights up everywhere.</p>
+    </div>
+    <div class="panel">
+      <div class="scroll"><div class="align" id="alignBox"></div></div>
+      <div class="readout" id="alignOut"></div>
+    </div>
+    <div class="prose">
+      <p>A backend analogy: the arrays are projections of one table that keep its row order. The scores come back as an array; you zip it with the ID column, the way you'd zip a batch response with the batch request.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 4 ------------------------------------------------------------------ -->
+<section id="s4">
+  <div class="wrap">
+    <h2><span class="n">4</span>Three models, one mask each</h2>
+    <div class="prose">
+      <p>There is one OCRGCN per node type. In <code>score_edges</code> (<code>score_window.py:104-110</code>) each model runs its encoder on <strong>all</strong> nodes, because a file's embedding depends on the processes around it (<span class="tag paper">PAPER</span> §5.1.2). It then keeps only the scores on rows of its own type, using a True/False mask <code>is_t</code>:</p>
+    </div>
+    <div class="readout">score = np.full(N, np.nan)                         # np.ndarray[float] [N], all "missing" at first
+tau   = np.full(N, np.nan)                         # np.ndarray[float] [N]
+for ntype, model in run.models.items():            # ntype: str, model: OCRGCN
+    is_t = (nodes["node_type"] == ntype).to_numpy()   # np.ndarray[bool] [N]  True/False per row
+    emb  = model(x, edge_index, edge_type)         # torch.Tensor [N, 32]  all nodes
+    s    = model.score(emb).numpy()                # np.ndarray[float] [N]
+    score[is_t], tau[is_t] = s[is_t], run.tau[ntype]   # masked write: only True rows change
+out = nodes.assign(score=score, tau=tau)           # pd.DataFrame: node table + 2 new columns
+out["flagged"] = out["score"] > out["tau"]         # new pd.Series[bool] column (:113)</div>
+    <div class="scroll"><table class="types">
+      <thead><tr><th>expression</th><th>type</th><th>what to watch for</th></tr></thead>
+      <tbody>
+        <tr><td>run.models</td><td>dict[str, OCRGCN]</td><td><code>.items()</code> yields <code>(key, value)</code> pairs, like Java <code>map.entrySet()</code>.</td></tr>
+        <tr><td>nodes["node_type"] == ntype</td><td>pd.Series[bool]</td><td><code>==</code> on a column compares <em>every row</em> and returns a column of True/False, not one boolean.</td></tr>
+        <tr><td>x, edge_index, edge_type</td><td>torch.Tensor [N, 15], [2, 2E], [2E]</td><td>Features (float), edge endpoints and relation ids (int64).</td></tr>
+        <tr><td>s[is_t]</td><td>np.ndarray [rows of this type]</td><td><code>[]</code> with a bool array inside is a <strong>mask</strong>: it keeps only the True rows. Not indexing by position.</td></tr>
+        <tr><td>score[is_t] = …</td><td>in-place write</td><td>Assignment through a mask writes only those rows of the existing array, like a Java loop with <code>if (isT[i]) score[i] = s[i]</code>.</td></tr>
+        <tr><td>run.tau[ntype]</td><td>float</td><td>Plain dict lookup: one number, copied into every masked row.</td></tr>
+        <tr><td>out["flagged"] = …</td><td>DataFrame column write</td><td>Not a variable: it adds a column to the table (section 5).</td></tr>
+      </tbody>
+    </table></div>
+    <div class="panel">
+      <div class="presets">
+        <button class="btn" data-run="process">Run PROCESS model</button>
+        <button class="btn" data-run="file">Run FILE model</button>
+        <button class="btn" data-run="net">Run NET model</button>
+        <button class="btn" data-run="reset">Reset</button>
+      </div>
+      <div class="scroll"><table class="mask"><thead><tr><th>row</th><th>node</th><th>type</th><th class="num">PROCESS model</th><th class="num">FILE model</th><th class="num">NET model</th><th class="num">kept score</th><th class="num">τ of type</th><th>flagged</th></tr></thead><tbody id="maskBody"></tbody></table></div>
+      <div class="readout" id="maskOut"></div>
+      <p class="note" style="margin-bottom:0">Scores are toy numbers. The τ values are the real ones from <code>exp01</code> in this window: process 2.2895, file 0.2297, net −0.1540. A score is a distance minus a radius, so it and τ can be negative.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 5 ------------------------------------------------------------------ -->
+<section id="s5">
+  <div class="wrap">
+    <h2><span class="n">5</span>Join back to names</h2>
+    <div class="prose">
+      <p>The live engine collects <code>attrs</code> (<code>dict[str, str]</code>), a dictionary from node ID to its path, image name or ip:port, for every node in the window (<code>engine.py:305-309</code>). After scoring, one line joins it back (<code>:354</code>):</p>
+    </div>
+    <div class="readout">nodes["attr"] = nodes["node_uuid"].map(attrs)
+#  ^ DataFrame       ^ pd.Series[str]   ^ dict[str, str]
+#  column write      one column          {node_id: name}</div>
+    <div class="scroll"><table class="types">
+      <thead><tr><th>expression</th><th>type</th><th>what to watch for</th></tr></thead>
+      <tbody>
+        <tr><td>nodes</td><td>pd.DataFrame</td><td>A table: one row per node, named columns <code>node_uuid, node_type, score, tau, margin, flagged</code>. No name column yet.</td></tr>
+        <tr><td>attrs</td><td>dict[str, str]</td><td>Like Java <code>Map&lt;String, String&gt;</code>: <code>"feb89e175ed137cbd" → "c:\windows\system32\wuuhext.dll"</code>.</td></tr>
+        <tr><td>nodes["node_uuid"]</td><td>pd.Series[str]</td><td><code>[]</code> on a DataFrame reads a whole column, in row order (like a <code>List&lt;String&gt;</code>).</td></tr>
+        <tr><td>.map(attrs)</td><td>pd.Series[str]</td><td>Replaces each ID with <code>attrs[id]</code>, same length and order. A missing key gives <code>NaN</code>.</td></tr>
+        <tr><td>nodes["attr"] = …</td><td>DataFrame column write</td><td><strong>Not a normal assignment.</strong> It creates the column <code>attr</code> and fills every row, like <code>ALTER TABLE ADD COLUMN</code> + fill, or <code>row.setAttr(...)</code> on every row.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="panel">
+      <div class="presets">
+        <button class="btn on" data-join="raw">Scores only</button>
+        <button class="btn" data-join="joined">After .map(attrs)</button>
+      </div>
+      <div class="scroll"><table><thead><tr><th>node_uuid</th><th>node_type</th><th class="num">score</th><th class="num">tau</th><th>flagged</th><th id="attrHead">attr</th></tr></thead><tbody id="joinBody"></tbody></table></div>
+      <p class="note" style="margin-bottom:0">Real rows from <code>scores.csv</code> of the window. The 4 flagged FILE rows and one flagged NET row, plus two unflagged processes.</p>
+    </div>
+    <div class="prose">
+      <p>Nothing is guessed or reconstructed: if an ID is in the window's edges, its attribute is in <code>attrs</code>. When the converter never learned a name, the value is <code>"unknown"</code> (<code>engine.py:309</code>).</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 ------------------------------------------------------------------ -->
+<section id="s6">
+  <div class="wrap">
+    <h2><span class="n">6</span>NET values are decoded for the screen only</h2>
+    <div class="prose">
+      <p>SilkETW writes an IPv4 address and port as signed integers with thousands separators, for example <code>186,428,310:-17663</code>. <code>decode_net_attr</code> (<code>alg2.py:235-249</code>) turns them into <code>a.b.c.d:port</code>. The address is the 4 bytes of the integer read little-endian (lowest byte first); the port is 2 bytes in network order, so its bytes are swapped. The UI shows both values (<code>display_attrs</code>, <code>engine.py:112-117</code>); stored files and node IDs keep the raw value, so the hash still matches.</p>
+    </div>
+    <div class="panel">
+      <div class="presets">
+        <button class="btn" data-net="186,428,310:-17663">ncb7ca03… (MsMpEng Send)</button>
+        <button class="btn" data-net="251,789,322:-28195">n519e4d6… (flagged)</button>
+        <button class="btn" data-net="-1,707,025,385:-17663">engine selftest value</button>
+      </div>
+      <div class="field"><label for="netIn">raw daddr:dport</label><input type="text" id="netIn" value="186,428,310:-17663" style="max-width:20em"></div>
+      <div id="netBytes"></div>
+      <div class="readout" id="netOut"></div>
+    </div>
+    <div class="prose">
+      <p class="note"><code>10.0.2.15</code> is the VM's own address on the VirtualBox NAT network, so the flagged NET node above is a connection from the VM itself, not an outside host.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 ------------------------------------------------------------------ -->
+<section id="s7">
+  <div class="wrap">
+    <h2><span class="n">7</span>The model never sees the ID</h2>
+    <div class="prose">
+      <p>The ID only picks <em>which row</em> a node's features go in. The model's input is the 15 behaviour features and the edges, never the ID string. That's why a file whose hash never appeared in training can still be scored: its features say how it behaved in this window, and the model judges that behaviour.</p>
+      <p>Two edge cases on the way in:</p>
+      <ul>
+        <li>An edge whose (source type, action, destination type) triple never appeared in training has no learned weight, so it is dropped with a warning (<code>train_gnn_models.py:68-75</code>). It is counted as <code>edges_dropped_relation</code>.</li>
+        <li>A node that lost all its edges that way still keeps its row, with zero features (<code>score_window.py:99-100</code>), counted as <code>nodes_without_features</code>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 8 ------------------------------------------------------------------ -->
+<section id="s8">
+  <div class="wrap">
+    <h2><span class="n">8</span>From flagged IDs to an alert</h2>
+    <div class="prose">
+      <p>Alg. 1 (<code>alg1.py:77</code>, called at <code>engine.py:349</code>) starts from the flagged IDs, takes the edge rows of the same window that touch them (<code>:91-95</code>), and grows subgraphs. Because it works on the same IDs, every subgraph node already carries its type and its name. In this window the first subgraph is:</p>
+    </div>
+    <div class="readout">subgraph 0   seed fe62c25f6e22f0b29   score 2.0   level Minor   kept: no
+  process  wuauclt                               connector  (not flagged, links the two)
+  file     c:\windows\system32\wuauclt.exe       anomalous
+  file     c:\windows\system32\wuuhext.dll       anomalous</div>
+    <div class="prose">
+      <p>Read as a sentence: "<code>wuauclt</code> loaded <code>wuuhext.dll</code> and its own image, both unusual". With a score of 2.0 it stays below our Moderate cut-off of 30 (<span class="tag ours">OURS</span>, DEVIATIONS), so the window stays green. How subgraph scores and levels work is on the <a href="live-windows.html">live windows</a> page.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 9 ------------------------------------------------------------------ -->
+<section id="s9">
+  <div class="wrap">
+    <h2><span class="n">9</span>Where the mapping is weaker</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Processes started before capture</strong> have no start time, so their ID is <code>p&lt;pid&gt;_pre_&lt;run&gt;</code>: stable within one run, but not across runs.</li>
+        <li><strong>Missing names.</strong> A process seen only through its PID can have an empty name until an event supplies one; then <code>attr</code> is <code>"unknown"</code>.</li>
+        <li><strong>File I/O without a known path</strong> (file opened before capture) is not turned into an edge at all (<code>etw2nodlink.py:228-231</code>), so that node never exists.</li>
+        <li><strong>NET decoding is IPv4 only.</strong> Anything else is shown unchanged (<code>alg2.py:239-241</code>).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap">
+  Sources: <code>src/pipeline/etw2nodlink.py</code>, <code>src/pipeline/train_gnn_models.py</code>, <code>src/pipeline/score_window.py</code>, <code>src/live/engine.py</code>, <code>src/pipeline/alg1.py</code>, <code>src/pipeline/alg2.py</code>. Companion pages: <a href="edges-to-node-features.html">edges → node features</a>, <a href="training-windows.html">training on windows</a>, <a href="live-windows.html">live windows</a>.
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  // ---- SHA-1 (small, synchronous; hashes the UTF-8 bytes like Python's key.encode())
+  function sha1(str) {
+    var bytes = new TextEncoder().encode(str), n = bytes.length;
+    var words = new Array(((n + 8 >> 6) + 1) * 16).fill(0), i;
+    for (i = 0; i < n; i++) words[i >> 2] |= bytes[i] << (24 - (i % 4) * 8);
+    words[n >> 2] |= 0x80 << (24 - (n % 4) * 8);
+    words[words.length - 1] = n * 8;
+    var h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476, h4 = 0xC3D2E1F0, w = new Array(80);
+    function rol(x, k) { return (x << k) | (x >>> (32 - k)); }
+    for (var b = 0; b < words.length; b += 16) {
+      var a = h0, bb = h1, c = h2, d = h3, e = h4;
+      for (i = 0; i < 80; i++) {
+        w[i] = i < 16 ? words[b + i] : rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+        var f = i < 20 ? (bb & c) | (~bb & d) : i < 40 ? bb ^ c ^ d : i < 60 ? (bb & c) | (bb & d) | (c & d) : bb ^ c ^ d;
+        var k = i < 20 ? 0x5A827999 : i < 40 ? 0x6ED9EBA1 : i < 60 ? 0x8F1BBCDC : 0xCA62C1D6;
+        var t = (rol(a, 5) + f + e + k + w[i]) | 0;
+        e = d; d = c; c = rol(bb, 30); bb = a; a = t;
+      }
+      h0 = (h0 + a) | 0; h1 = (h1 + bb) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0;
+    }
+    return [h0, h1, h2, h3, h4].map(function (x) { return (x >>> 0).toString(16).padStart(8, "0"); }).join("");
+  }
+  // etw2nodlink.Graph.path: strip, lower-case, drop "\??\" (dos_map not simulated here)
+  function normPath(p) { var s = String(p).trim().toLowerCase(); if (s.indexOf("\\??\\") === 0) s = s.slice(4); return s; }
+
+  // ---- 2. event -> node builder
+  var KIND = {
+    load:   { obj: "image path", def: "C:\\Windows\\System32\\wuuhext.dll", etype: "Load", otype: "FILE", prefix: "f" },
+    write:  { obj: "file path (from FileCreate)", def: "C:\\Users\\vagrant\\Documents\\notes.txt", etype: "Write", otype: "FILE", prefix: "f" },
+    send:   { obj: "daddr:dport (raw)", def: "186,428,310:-17663", etype: "Send", otype: "NET", prefix: "n" },
+    pstart: { obj: "child image path", def: "C:\\Windows\\System32\\notepad.exe", etype: "Start", otype: "PROCESS", prefix: "p" }
+  };
+  var kind = "load";
+  function procId(pid, start) { return start.trim() ? "p" + pid + "_" + start.trim() : "p" + pid + "_pre_live-20261011T112141Z"; }
+  function evRender() {
+    var K = KIND[kind], pid = $("fPid").value || "0", start = $("fStart").value, t = $("fT").value.trim() || "0";
+    var obj = $("fObj").value, src = procId(pid, start), dst, key, lines = [];
+    if (kind === "pstart") {
+      var childPid = 9000;
+      dst = "p" + childPid + "_" + t; key = normPath(obj);
+      lines.push("child ID  = \"p\" + child pid + \"_\" + event time = <span class=v>" + esc(dst) + "</span>   (child pid " + childPid + ", toy)");
+    } else {
+      key = K.otype === "FILE" ? normPath(obj) : obj.trim();
+      var h = sha1(key);
+      dst = K.prefix + h.slice(0, 16);
+      lines.push("key       = " + "\"" + esc(key) + "\"" + (K.otype === "FILE" ? "   (trimmed, lower-cased)" : "   (raw, as SilkETW writes it)"));
+      lines.push("SHA-1     = " + h);
+      lines.push(K.otype + " ID   = \"" + K.prefix + "\" + first 16 hex = <span class=v>" + dst + "</span>");
+    }
+    lines.push("actor ID  = <span class=v>" + esc(src) + "</span>" + (start.trim() ? "" : "   (no ProcessStart seen: _pre_<run>)"));
+    lines.push("\nedge row (edges.csv)");
+    lines.push("source-id,source-type,destination-id,destination-type,edge-type,timestamp");
+    lines.push(esc(src) + ",PROCESS," + esc(dst) + "," + K.otype + "," + K.etype + "," + esc(t));
+    lines.push("\nlookup row (node_attrs.csv)");
+    lines.push(esc(dst) + "," + K.otype + "," + esc(key.indexOf(",") >= 0 ? "\"" + key + "\"" : key));
+    $("evOut").innerHTML = lines.join("\n");
+  }
+  document.querySelectorAll("[data-kind]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      kind = b.getAttribute("data-kind");
+      document.querySelectorAll("[data-kind]").forEach(function (x) { x.classList.toggle("on", x === b); });
+      $("lObj").textContent = KIND[kind].obj; $("fObj").value = KIND[kind].def;
+      if (kind === "send") { $("fPid").value = 3640; $("fStart").value = ""; $("fT").value = "1791718200019"; }
+      else if (kind === "load") { $("fPid").value = 5568; $("fStart").value = "1791718201999"; $("fT").value = "1791718202032"; }
+      evRender();
+    });
+  });
+  ["fPid", "fStart", "fObj", "fT"].forEach(function (id) { $(id).addEventListener("input", evRender); });
+
+  // ---- toy nodes for 3 and 4
+  var TOY = [
+    { id: "p9276_1791718467812", type: "process", name: "msedge" },
+    { id: "f7a398526836514d7", type: "file", name: "wscisvif.dll" },
+    { id: "ncb7ca03fac0a3ac6", type: "net", name: "150.171.28.11:443" },
+    { id: "fd41c0a2b6e19f377", type: "file", name: "cache.db" },
+    { id: "p9000_1791718468149", type: "process", name: "svchost" },
+    { id: "n519e4d63d6f7fc1c", type: "net", name: "10.0.2.15:56721" }
+  ];
+  var MODEL = {   // toy raw outputs of each model for ALL rows
+    process: [0.83, 1.70, 0.40, 2.10, 1.05, 0.90],
+    file:    [0.60, 0.53, 0.12, 0.05, 0.31, 0.44],
+    net:     [-0.40, 0.20, -0.30, 0.10, -0.25, 0.18]
+  };
+  var TAU = { process: 2.2895, file: 0.2297, net: -0.1540 };
+  var EMB = [[0.12, -0.40], [0.91, 0.07], [-0.33, 0.25], [0.05, 0.02], [0.18, -0.36], [-0.71, 0.44]];
+
+  // ---- 3. alignment
+  var sel = 1;
+  function alignRender() {
+    var cols = [
+      { h: "nodes[i]", shape: "[N]", f: function (n, i) { return "<span class='ty ty-" + n.type + "'>" + n.type[0].toUpperCase() + "</span>" + n.id; } },
+      { h: "x[i]", shape: "[N, 15]", f: function (n, i) { return "[" + (0.1 * (i + 1)).toFixed(2) + ", 0.00, " + (0.7 - 0.1 * i).toFixed(2) + ", …]"; } },
+      { h: "emb[i]", shape: "[N, 32]", f: function (n, i) { return "[" + EMB[i][0].toFixed(2) + ", " + EMB[i][1].toFixed(2) + ", …]"; } },
+      { h: "score[i]", shape: "[N]", f: function (n, i) { return MODEL[n.type][i].toFixed(2); } }
+    ];
+    var box = $("alignBox"); box.innerHTML = "";
+    cols.forEach(function (c) {
+      var col = document.createElement("div"); col.className = "col";
+      col.innerHTML = "<h3>" + c.h + " <span class=shape>" + c.shape + "</span></h3>";
+      TOY.forEach(function (n, i) {
+        var d = document.createElement("div"); d.className = "cell" + (i === sel ? " on" : ""); d.tabIndex = 0;
+        d.innerHTML = "<span style='color:var(--muted)'>" + i + "</span> " + c.f(n, i);
+        d.addEventListener("click", function () { sel = i; alignRender(); });
+        d.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sel = i; alignRender(); } });
+        col.appendChild(d);
+      });
+      box.appendChild(col);
+    });
+    var n = TOY[sel];
+    $("alignOut").innerHTML = "row " + sel + " → node_uuid <span class=v>" + n.id + "</span>, type " + n.type +
+      "\nx[" + sel + "], emb[" + sel + "] and score[" + sel + "] all belong to this node, because no step re-orders the rows." +
+      "\nscore[" + sel + "] = " + MODEL[n.type][sel].toFixed(2) + " comes from the " + n.type.toUpperCase() + " model (section 4).";
+  }
+
+  // ---- 4. masks
+  var ran = {};
+  function maskRender() {
+    var tb = $("maskBody"); tb.innerHTML = "";
+    var flagged = [];
+    TOY.forEach(function (n, i) {
+      var tr = document.createElement("tr"), cells = "<td>" + i + "</td><td>" + n.name + "</td><td><span class='ty ty-" + n.type + "'>" + n.type + "</span></td>";
+      ["process", "file", "net"].forEach(function (m) {
+        if (!ran[m]) { cells += "<td class=num>·</td>"; return; }
+        var keep = n.type === m;
+        cells += "<td class='num " + (keep ? "kept" : "gone") + "'>" + MODEL[m][i].toFixed(2) + "</td>";
+      });
+      var done = ran[n.type], s = MODEL[n.type][i], f = done && s > TAU[n.type];
+      if (f) flagged.push(n.name);
+      cells += "<td class=num>" + (done ? s.toFixed(2) : "–") + "</td><td class=num>" + (done ? TAU[n.type] : "–") + "</td><td class='" + (f ? "flag" : "") + "'>" + (done ? (f ? "yes" : "no") : "") + "</td>";
+      tr.innerHTML = cells; tb.appendChild(tr);
+    });
+    var lines = [];
+    ["process", "file", "net"].forEach(function (m) {
+      if (!ran[m]) return;
+      var mask = TOY.map(function (n) { return n.type === m ? "T" : "F"; }).join(", ");
+      lines.push(m.toUpperCase() + " model: is_t = [" + mask + "] → kept rows " + TOY.map(function (n, i) { return n.type === m ? i : null; }).filter(function (x) { return x !== null; }).join(", "));
+    });
+    if (ran.file) lines.push("\nwscisvif.dll: 0.53 > τ_file 0.2297 → flagged.   cache.db: 0.05 ≤ 0.2297 → not flagged.");
+    if (ran.process && ran.file && ran.net) lines.push("Every row now has exactly one score, from one model, compared with one τ. Flagged: " + (flagged.join(", ") || "none"));
+    else lines.push(lines.length ? "" : "Run a model to see its mask.");
+    $("maskOut").innerHTML = lines.join("\n").trim() || "Run a model to see its mask.";
+  }
+  document.querySelectorAll("[data-run]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var m = b.getAttribute("data-run");
+      if (m === "reset") ran = {}; else ran[m] = true;
+      document.querySelectorAll("[data-run]").forEach(function (x) { x.classList.toggle("on", !!ran[x.getAttribute("data-run")]); });
+      maskRender();
+    });
+  });
+
+  // ---- 5. join (real rows)
+  var REAL = [
+    ["feb89e175ed137cbd", "file", 0.5319, 0.2297, true, "c:\\windows\\system32\\wuuhext.dll"],
+    ["fe62c25f6e22f0b29", "file", 0.5319, 0.2297, true, "c:\\windows\\system32\\wuauclt.exe"],
+    ["f7a398526836514d7", "file", 0.4535, 0.2297, true, "c:\\windows\\system32\\wscisvif.dll"],
+    ["f62062fceb3e8afa0", "file", 0.3789, 0.2297, true, "c:\\windows\\system32\\curl.exe"],
+    ["n519e4d63d6f7fc1c", "net", 0.1825, -0.1540, true, "251,789,322:-28195  → 10.0.2.15:56721"],
+    ["p9000_1791718468149", "process", 1.0538, 2.2895, false, "svchost"],
+    ["p9276_1791718467812", "process", 0.8258, 2.2895, false, "msedge"]
+  ];
+  var joined = false;
+  function joinRender() {
+    var tb = $("joinBody"); tb.innerHTML = "";
+    REAL.forEach(function (r) {
+      var tr = document.createElement("tr");
+      if (r[4]) tr.className = "hot";
+      tr.innerHTML = "<td><code>" + r[0] + "</code></td><td>" + r[1] + "</td><td class=num>" + r[2].toFixed(4) + "</td><td class=num>" + r[3].toFixed(4) + "</td><td>" + (r[4] ? "True" : "False") + "</td><td>" + (joined ? "<code>" + esc(r[5]) + "</code>" : "<span style='color:var(--muted)'>?</span>") + "</td>";
+      tb.appendChild(tr);
+    });
+    document.querySelectorAll("[data-join]").forEach(function (b) { b.classList.toggle("on", (b.getAttribute("data-join") === "joined") === joined); });
+  }
+  document.querySelectorAll("[data-join]").forEach(function (b) { b.addEventListener("click", function () { joined = b.getAttribute("data-join") === "joined"; joinRender(); }); });
+
+  // ---- 6. NET decoder (alg2.decode_net_attr)
+  function netRender() {
+    var raw = $("netIn").value, m = raw.match(/^\s*(-?[\d,]+):(-?[\d,]+)\s*$/), out = $("netOut"), bx = $("netBytes");
+    if (!m) { bx.innerHTML = ""; out.innerHTML = "Not two signed integers: shown unchanged → " + esc(raw); return; }
+    var ip = parseInt(m[1].replace(/,/g, ""), 10), port = parseInt(m[2].replace(/,/g, ""), 10);
+    if (ip < -2147483648 || ip > 2147483647 || port < -32768 || port > 32767) { bx.innerHTML = ""; out.innerHTML = "Out of int32 / int16 range: shown unchanged → " + esc(raw); return; }
+    var u = ip >>> 0, b = [u & 255, (u >>> 8) & 255, (u >>> 16) & 255, (u >>> 24) & 255];
+    var p16 = port & 0xFFFF, lo = p16 & 255, hi = p16 >>> 8, realPort = (lo << 8) | hi;
+    bx.innerHTML = "<div class=bytes>" + b.map(function (x, i) { return "<span><b>byte " + i + "</b>0x" + x.toString(16).padStart(2, "0").toUpperCase() + " = " + x + "</span>"; }).join("") +
+      "<span><b>port bytes</b>0x" + hi.toString(16).padStart(2, "0").toUpperCase() + " 0x" + lo.toString(16).padStart(2, "0").toUpperCase() + "</span></div>";
+    out.innerHTML = "daddr " + ip + " as unsigned = " + u + " = 0x" + u.toString(16).toUpperCase().padStart(8, "0") +
+      "\n  lowest byte first → " + b.join(".") +
+      "\ndport " + port + " as unsigned 16-bit = " + p16 + " = 0x" + p16.toString(16).toUpperCase().padStart(4, "0") +
+      "\n  swap the two bytes → 0x" + realPort.toString(16).toUpperCase().padStart(4, "0") + " = " + realPort +
+      "\n\nshown: <span class=v>" + b.join(".") + ":" + realPort + "</span>   stored and hashed: " + esc(raw.trim());
+  }
+  $("netIn").addEventListener("input", netRender);
+  document.querySelectorAll("[data-net]").forEach(function (b) { b.addEventListener("click", function () { $("netIn").value = b.getAttribute("data-net"); netRender(); }); });
+
+  evRender(); alignRender(); maskRender(); joinRender(); netRender();
+})();
+</script>
+</body>
+</html>

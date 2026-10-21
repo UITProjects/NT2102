@@ -10,7 +10,7 @@
   2. capture     etwctl start -Split train -Run x-<UTC>  ->  settle  ->  06-benign-workload.ps1
                  -> etwctl stop (called from the workload's -BeforeLedger hook, so the ledger write
                  happens AFTER the capture and is not in the data)
-  3. collect     move the run's raw JSON into  <exp>\raw\train\x-<UTC>\
+  3. collect     copy the run's raw JSON into  <exp>\raw\train\x-<UTC>\  (Alloy has shipped it to Loki)
   4. convert     etw2nodlink.py on <exp>\raw only   ->  <exp>\converted\  (un-windowed, + _summary.json)
   5. window      etwwindow.py                        ->  <exp>\
                    SimulatedW10_train_edges.csv        pooled windows, node IDs prefixed w0007_  <- host: encode_to_features.py
@@ -30,7 +30,7 @@
   Run in an ELEVATED PowerShell inside the VM's RDP/console desktop (not vagrant powershell / WinRM).
   Elevation is needed for SilkService; the workload still starts apps through explorer.exe, so they run
   un-elevated with explorer as parent, like a real user.
-  Needs etwwindow.py, installed by 05-collect-for-20-minutes.ps1 (run it once with -WindowOnly if missing).
+  Needs etwwindow.py, installed by the win_collector Ansible role.
 #>
 [CmdletBinding()]
 param(
@@ -40,6 +40,7 @@ param(
     [ValidateRange(1, 120)]   [int] $StrideMinutes = 2,
     [ValidateRange(10, 3600)] [int] $MaxGapSeconds = 120,
     [ValidateRange(0, 600)]   [int] $SettleSeconds = 30,     # idle capture before the workload starts
+    [ValidateRange(0, 600)]   [int] $ShipWaitSeconds = 15,   # after the stop: let Alloy push the tail to Loki
     [switch] $IncludeUserPowerShell,
     [switch] $AllowFallbackLauncher,                         # accept powershell.exe as app parent (not advised)
     [switch] $KeepWorkDir,                                   # default: empty Documents\work so every run starts equal
@@ -211,9 +212,9 @@ function Invoke-Native([string]$Exe, [string[]]$ArgList, [int[]]$Ok = @(0)) {
 }
 
 # ---------------------------------------------------------------- config + tools
-$Cfg = Get-Content (Join-Path $LabDir 'etwlab.json') -Raw | ConvertFrom-Json   # written by 04-collector.ps1
+$Cfg = Get-Content (Join-Path $LabDir 'etwlab.json') -Raw | ConvertFrom-Json   # written by the win_collector role
 foreach ($p in @($Cfg.Python, $Cfg.Converter, $EtwctlPs1)) {
-    if (-not (Test-Path $p)) { throw "missing $p - re-run the collector provisioner" }
+    if (-not (Test-Path $p)) { throw "missing $p - re-run windows.yml (win_collector)" }
 }
 if (-not (Test-Path $WinPy)) { throw "missing $WinPy - run '05-collect-10-minutes-window.ps1 -WindowOnly' once to install it" }
 # install/refresh the checker only when its content changed (keeps the file's hash stable across runs)
@@ -256,7 +257,7 @@ function Complete-Experiment([string]$Exp, [System.Collections.IDictionary]$Reco
     Write-Json (Join-Path $Exp 'experiment.json') $Record
     if ($rc -ne 0) { throw "contract check FAILED - see $Exp\check.json (files kept for inspection)" }
     Log ("done     {0} windows, {1} edges, {2} node copies -> {3}" -f $t.windows, $t.edges_out, $t.node_window_copies, $Exp)
-    Log "next     w10_to_rdf.py on $Exp\${Graph}_${Split}_edges.csv"
+    Log "next     on the trainer: lab loop (Alloy has shipped this capture to Loki)"
 }
 
 if ($PostProcess) {
@@ -355,8 +356,12 @@ $src = Join-Path $Cfg.RawRoot "$Split\$run"
 $dst = Join-Path $exp "raw\$Split\$run"
 if (-not (Test-Path $src)) { throw "raw run folder not found: $src" }
 Log "collect  $src -> $dst"
-# robocopy /E /MOVE = rsync -a --remove-source-files + remove dirs; exit codes 0-7 mean success
-Invoke-Native 'robocopy.exe' @($src, $dst, '/E', '/MOVE', '/NFL', '/NDL', '/NJH', '/NJS', '/NP') -Ok (0..7) | Out-Null
+# COPY, not move: Grafana Alloy tails $src and ships it to Loki (the training source on the trainer); it
+# needs a few seconds after the stop for the last lines, and moving files it holds open would fail.
+Log "wait     ${ShipWaitSeconds}s for Alloy to ship the last lines to Loki"
+Start-Sleep -Seconds $ShipWaitSeconds
+# robocopy /E = cp -r (keep the source for Alloy); exit codes 0-7 mean success
+Invoke-Native 'robocopy.exe' @($src, $dst, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP') -Ok (0..7) | Out-Null
 $rec.capture.raw = $dst
 Write-Json (Join-Path $exp 'experiment.json') $rec
 

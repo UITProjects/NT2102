@@ -7,7 +7,7 @@ engine.py - live windowed OCR-APT scoring, no web code (live_server.py is the th
       -> reorder heap keyed (ts, stream, offset)        same tie order as etw2nodlink's heapq.merge
       -> released when ts < watermark = clock_ms - lateness
       -> LiveGraph = etw2nodlink.Graph (the SAME converter code that built the training edges,
-                     loaded from scripts/04-collector.ps1) + the shipper's own PID excluded
+                     loaded from src/pipeline/etw2nodlink.py) + the shipper's own PID excluded
       -> edge buffer (sorted by ts)
       -> window [start, start + w) closes when watermark >= end
       -> scoring thread: score_window.score_edges (train scaler + train relations)
@@ -51,26 +51,23 @@ import alg2  # noqa: E402
 import score_window as sw  # noqa: E402
 
 EDGE_HEADER = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
-DEFAULT_PS1 = os.path.join(SRC, "scripts", "04-collector.ps1")
+DEFAULT_CONVERTER = os.path.join(SRC, "pipeline", "etw2nodlink.py")
 MAX_FLAGGED_FOR_SUBGRAPHS = 300   # a broken model flags everything; keep the UI usable
 
 
 # --------------------------------------------------------------------------- converter reuse
-def load_converter(ps1_path: str = DEFAULT_PS1):
-    """Extract etw2nodlink.py from the $converter here-string in 04-collector.ps1 and import it.
+def load_converter(converter_path: str = DEFAULT_CONVERTER):
+    """Import etw2nodlink.py (src/pipeline) and return (module, sha256) for the converter-check.
 
-    The provisioner writes the here-string with LF endings and no trailing newline, UTF-8 without
-    BOM, so the sha256 of exactly that text equals `converter_sha256` / experiment.json tools.converter
-    when the VM ran the same version."""
-    text = open(ps1_path, encoding="utf-8").read().replace("\r\n", "\n")
-    m = re.search(r"^\$converter = @'\n(.*?)\n'@$", text, re.S | re.M)
-    if not m:
-        raise SystemExit(f"[engine] no $converter here-string in {ps1_path}")
-    code = m.group(1)
+    The sha is sha256 of the raw file bytes, no normalisation. Ansible copies this file to the VM
+    unchanged, so it equals Get-FileHash there, which is how 07-build-train-dataset.ps1 records
+    experiment.json tools.converter. .gitattributes pins the file to LF so every clone has the same
+    bytes. Edit the converter before a training capture, never after: any byte change gives a new sha."""
+    raw = open(converter_path, "rb").read()
     mod = types.ModuleType("etw2nodlink")
-    mod.__file__ = ps1_path + "::$converter"
-    exec(compile(code, mod.__file__, "exec"), mod.__dict__)
-    return mod, hashlib.sha256(code.encode("utf-8")).hexdigest()
+    mod.__file__ = converter_path
+    exec(compile(raw.decode("utf-8"), mod.__file__, "exec"), mod.__dict__)
+    return mod, hashlib.sha256(raw).hexdigest()
 
 
 class EdgeSink:
@@ -112,6 +109,14 @@ def _f(v):
     return None if v is None or (isinstance(v, float) and math.isnan(v)) else float(v)
 
 
+def display_attrs(attr, ntype: str) -> dict:
+    """UI only: NET attrs decoded from SilkETW's signed integers (alg2.display_attr), raw value kept in
+    attr_raw so a shown IP can be traced back to the raw line. Stored files and node IDs stay raw."""
+    shown = alg2.display_attr(attr, ntype)
+    raw = "" if attr is None or (isinstance(attr, float) and math.isnan(attr)) else str(attr)
+    return {"attr": shown} | ({"attr_raw": raw} if shown != raw else {})
+
+
 def utc_id(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
@@ -123,11 +128,11 @@ def utc_iso(ms: int) -> str:
 # --------------------------------------------------------------------------- engine
 class Engine:
     def __init__(self, run_dir, scaler_path, sessions_dir, window_min=5, stride_min=None, lateness_s=20,
-                 origin_ms=0, ps1_path=DEFAULT_PS1, experiment_json=None, allow_collapsed=False, top_k=20,
+                 origin_ms=0, converter_path=DEFAULT_CONVERTER, experiment_json=None, allow_collapsed=False, top_k=20,
                  n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None,
                  sg_moderate_from=alg1.MODERATE_FROM, llm_provider=None, llm_model=None, llm_base_url=None,
                  llm_client=None, llm_max_subgraphs=5):
-        self.conv, self.conv_sha = load_converter(ps1_path)
+        self.conv, self.conv_sha = load_converter(converter_path)
         self.conv_check = "not checked (no --experiment)"
         if experiment_json:
             want = json.load(open(experiment_json)).get("tools", {}).get("converter", "")
@@ -145,7 +150,7 @@ class Engine:
         self.lateness_ms = int(lateness_s * 1000)
         self.origin_ms = int(origin_ms)
         self.top_k = top_k
-        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate; [REPO] min_nodes 3;
+        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate; [AUTHOR CODE] min_nodes 3;
         # [OURS] Moderate from sg_score 30 (DEVIATIONS D8)
         self.sg = {"n_seed": n_seed, "min_nodes": min_nodes, "max_edges": max_edges,
                    "min_level": sg_min_level, "min_score": sg_min_score, "moderate_from": sg_moderate_from}
@@ -370,7 +375,7 @@ class Engine:
             top = {}
             for t, g in nodes.groupby("node_type"):
                 g = g.sort_values("margin", ascending=False).head(self.top_k)
-                top[t] = [{"id": r.node_uuid, "attr": r.attr, "score": _f(r.score), "tau": _f(r.tau),
+                top[t] = [{"id": r.node_uuid, **display_attrs(r.attr, t), "score": _f(r.score), "tau": _f(r.tau),
                            "margin": _f(r.margin), "flagged": bool(r.flagged)} for r in g.itertuples()]
             rec = S["by_id"][wid]
             fl = nodes[nodes["flagged"]]
@@ -380,7 +385,10 @@ class Engine:
                        **sg_sum, alert=sg_sum["subgraphs_kept"] > 0, scoring_ms=ms,
                        edges_dropped_relation=info["edges_dropped_relation"],
                        max_margin=_f(nodes["margin"].max()))
-            S["details"][wid] = {"top": top, "subgraphs": subgraphs[:25], "truncated": truncated,
+            # display copy: subgraphs.json and the LLM job keep the raw attrs
+            shown = [{**g, "nodes": [{**n, **display_attrs(n.get("attr"), n["type"])} for n in g["nodes"]]}
+                     for g in subgraphs[:25]]
+            S["details"][wid] = {"top": top, "subgraphs": shown, "truncated": truncated,
                                  "subgraphs_total": len(subgraphs), "alg1_stats": sg_stats}
             if rec["alert"] and self.llm:
                 self._queue_llm(S, rec, wdir, subgraphs, edges_norm)
@@ -541,6 +549,9 @@ def selftest():
                                   PID="200", daddr="93.184.216.34", dport="443"))
         streams["knet"].append(ev(kn, "KERNEL_NETWORK_TASK_TCPIP/Datasent.", 4, "System", t + 7,
                                   PID="999", daddr="10.21.2.1", dport="8000"))
+        # SilkETW's real format: signed little-endian ints (= 23.220.64.154:443), decoded for the UI only
+        streams["knet"].append(ev(kn, "KERNEL_NETWORK_TASK_TCPIP/Datasent.", 4, "System", t + 8,
+                                  PID="200", daddr="-1,707,025,385", dport="-17663"))
 
     def batches(stream, lines, start_line, n, offset):
         """lines[start_line:start_line+n] as one shipper batch with CRLF byte offsets."""
@@ -631,6 +642,10 @@ def selftest():
         assert raw_lines == len(streams["kfile"]), (raw_lines, len(streams["kfile"]))
         assert any(x["type"] == "window" for x in seen)
         assert eng.window_detail(w1)["top"], "no top nodes"
+        net = next(v for k, v in eng.window_detail(w1)["top"].items() if k.lower() == "net")
+        sil = [r for r in net if r["attr"] == "23.220.64.154:443"]
+        assert sil and sil[0]["attr_raw"] == "-1,707,025,385:-17663", net
+        assert attrs["node_attr"].eq("-1,707,025,385:-17663").any(), "node_attrs.csv must keep the raw attr"
         for w in wins:
             if w["status"] == "scored":
                 assert "subgraphs_kept" in w and w["alert"] == (w["subgraphs_kept"] > 0), w
