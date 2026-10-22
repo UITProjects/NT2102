@@ -197,14 +197,27 @@ class AnthropicClient:
         return "".join(b.text for b in r.content if b.type == "text")
 
 
-def make_client(provider: str, model: str | None = None, base_url: str | None = None):
+def _resolve_openai_key(api_key: str | None, base_url: str | None) -> str | None:
+    """[OURS] Pick the key for an OpenAI-compatible client: explicit flag > OPENAI_API_KEY env >
+    a harmless dummy when a custom base_url is set but no key was given (many self-hosted / proxy
+    endpoints are keyless, yet the openai SDK still requires a string) > None for the default endpoint."""
+    if api_key:
+        return api_key
+    env = os.environ.get("OPENAI_API_KEY")
+    if env:
+        return env
+    return "sk-noauth" if base_url else None
+
+
+def make_client(provider: str, model: str | None = None, base_url: str | None = None,
+                api_key: str | None = None):
     model = model or DEFAULT_MODELS[provider]
     if provider == "mock":
         return MockLLM(model=model)
-    if provider == "openai":
-        return OpenAICompatible(model, base_url)
+    if provider == "openai":                       # any OpenAI-compatible endpoint (--llm-base-url)
+        return OpenAICompatible(model, base_url, _resolve_openai_key(api_key, base_url))
     if provider == "ollama":
-        return OpenAICompatible(model, base_url or "http://localhost:11434/v1", api_key="ollama")
+        return OpenAICompatible(model, base_url or "http://localhost:11434/v1", api_key=api_key or "ollama")
     if provider == "anthropic":
         return AnthropicClient(model, base_url)
     raise SystemExit(f"[alg2] unknown provider {provider}")
@@ -543,6 +556,20 @@ def selftest():
         "powershell LOAD the file : c:\\windows\\system32\\amsi.dll on 2026-10-11 18:30."], doc["lines"]
     assert display_time("2026-10-11T11:25:00Z") == "2026-10-11 18:25"
     assert serialize(sg, edges, max_lines=2)["truncated"] == 1
+
+    # (b2) OpenAI-compatible key resolution [OURS]: flag > env > dummy(custom base_url) > None(default).
+    #      Tests the logic only, so no openai package / network is needed.
+    _saved_key = os.environ.pop("OPENAI_API_KEY", None)
+    try:
+        assert _resolve_openai_key("k", None) == "k"
+        assert _resolve_openai_key(None, "http://host:8000/v1") == "sk-noauth"
+        assert _resolve_openai_key(None, None) is None
+        os.environ["OPENAI_API_KEY"] = "envk"
+        assert _resolve_openai_key(None, "http://host:8000/v1") == "envk"
+    finally:
+        os.environ.pop("OPENAI_API_KEY", None)
+        if _saved_key is not None:
+            os.environ["OPENAI_API_KEY"] = _saved_key
     assert all("amsi" not in ln for ln in serialize(sg, edges, max_lines=2)["lines"]), "anomalous lines first"
 
     # (c) IOC parse + hallucination filter
@@ -652,7 +679,10 @@ def main():
     ap.add_argument("--serialize-only", action="store_true", help="print the documents, call no LLM")
     ap.add_argument("--llm-provider", choices=list(DEFAULT_MODELS), default=None)
     ap.add_argument("--llm-model", default=None, help="default per provider: " + str(DEFAULT_MODELS))
-    ap.add_argument("--llm-base-url", default=None)
+    ap.add_argument("--llm-base-url", default=None, help="OpenAI-compatible endpoint, e.g. http://host:8000/v1")
+    ap.add_argument("--llm-api-key", default=None,
+                    help="key for the OpenAI-compatible endpoint (else $OPENAI_API_KEY; keyless endpoints with "
+                         "--llm-base-url use a dummy)")
     ap.add_argument("--max-lines", type=int, default=400, help="[OURS] document cap per subgraph")
     ap.add_argument("--max-subgraphs", type=int, default=5, help="[OURS] kept subgraphs investigated per window")
     a = ap.parse_args()
@@ -667,7 +697,7 @@ def main():
     if a.session_dir and os.path.exists(os.path.join(a.session_dir, "session.json")):
         window_min = json.load(open(os.path.join(a.session_dir, "session.json"))).get("window_min", 5.0)
     wdirs = [a.window_dir] if a.window_dir else sorted(glob.glob(os.path.join(a.session_dir, "windows", "*")))
-    client = None if a.serialize_only else make_client(a.llm_provider, a.llm_model, a.llm_base_url)
+    client = None if a.serialize_only else make_client(a.llm_provider, a.llm_model, a.llm_base_url, a.llm_api_key)
     rows = []
     for w in wdirs:
         loaded = load_window(w, a.subgraphs_file, window_min)
