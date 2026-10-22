@@ -128,6 +128,17 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     on the attack window (that fits the threshold to the test).
   - The scale hides the updater false positive, it does not fix it (≥ 30 unseen DLLs would be red
     again). Wider benign training (PROGRESS) is the real fix.
+  - Calibration + attack result (2026-10-22, `exp03` on the 1-h kfile-fixed capture `x-20261022T140932Z`,
+    live session `live-20261022T155035Z`): a live DVWA→RCE kill chain scored **37.76** then **56.0**
+    (Moderate) in its window; the kept subgraph is the powershell cradle (powershell ×2 + ~26 .NET/
+    PowerShell assembly loads + RAS/proxy DLLs). Non-browser benign stayed **≤ 22** (Minor, green), so the
+    30 cut-off separated them. BUT a benign window with **Edge browsing hit 31.0** (Moderate, false alarm):
+    msedge spawns many short-lived processes, each a fresh node under PID+start-time keying (D4) and so
+    unseen in benign training, tripping the *same* "unfamiliar process+DLL burst" mechanism as the cradle.
+    This is a benign-**variety** gap, not a duration gap — more minutes of the same seeded workload do not
+    fix it; the fix is benign training that covers browsing. Honest reading: detection works, but the
+    attack/benign margin is narrow (56 vs 22 without the browser; 37.76 vs 31 with it) and both sides are
+    the same mechanism, so 30 is not yet a trustworthy clean separator. [[live-detector-benign-fp]]
 - Limits: shows near-live node scoring + Alg. 1 on our own data. No detection-quality claim until windows
   are labelled (D6); no claim about Alg. 1 precision; the cut-off (Moderate ≥ 30) is ours, set on one
   benign window, not the paper's.
@@ -155,6 +166,11 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   - Provider is pluggable (`--llm-provider anthropic|openai|ollama|mock`). [PAPER] used GPT-4o-mini
     (temperature 0) and LLaMA3-8B. The Anthropic backend sends no temperature (current models reject it),
     so its output is not deterministic. `mock` is a keyword rule for UI tests, not an LLM.
+  - Provider choice (user, 2026-10-22): **any OpenAI-compatible endpoint** — `--llm-provider openai
+    --llm-base-url <url>/v1 [--llm-model NAME] [--llm-api-key KEY]`. The key falls back to
+    `$OPENAI_API_KEY`; a keyless endpoint used with a custom `--llm-base-url` gets a harmless dummy key so
+    the SDK is satisfied ([OURS] `_resolve_openai_key`). Same flags on `live_server.py`, `rejudge.sh` and
+    `alg2.py`. This covers self-hosted (vLLM / LM Studio / Ollama) and hosted (OpenRouter / Groq) servers.
 - Why: the GNN alone cannot tell unseen-but-benign activity (the 11:25 `updater` window) from an attack;
   the demo needs a readable report for a real attack.
 - Impact: the GNN alert is never removed. An LLM `false_positive` shows as a struck-through badge on a
