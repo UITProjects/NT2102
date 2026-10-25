@@ -22,6 +22,8 @@ Usage (from the repo root)
     uv run python src/pipeline/alg2.py --selftest
     uv run python src/pipeline/alg2.py --session-dir src/live/sessions/<id> --serialize-only   # LLM input only
     uv run --group llm python src/pipeline/alg2.py --session-dir src/live/sessions/<id> --llm-provider anthropic
+    uv run --group llm python src/pipeline/alg2.py --session-dir src/live/sessions/<id> --llm-provider deepseek
+      (first run prompts for the API key, saved to ~/.config/nt2102/credentials.json; NT2102_LLM_DEBUG=1 = raw)
       -> <window>/llm/{sg<id>_doc.txt, triage.json, sg<id>_report.md, iocs.json, report_comprehensive.md,
                        calls.jsonl}, one summary row per window
 """
@@ -118,7 +120,12 @@ VERDICTS = ("attack", "benign", "uncertain")
 DEFAULT_MODELS = {"openai": "gpt-4o-mini",          # [PAPER] §7.5 main model
                   "ollama": "llama3:8b",            # [PAPER] §7.5 local model
                   "anthropic": "claude-opus-5-5",
+                  # [OURS] user choice 2026-10-25: DeepSeek API, alias served by DeepSeek-V4.1-Flash-1017
+                  "deepseek": "deepseek-flash",
                   "mock": "rule-mock"}
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"        # OpenAI format (api-docs.deepseek.com)
+# DeepSeek reasoning_effort low|high|max (default: thinking on, high); [OURS] "none" = thinking disabled
+REASONING_EFFORTS = ("none", "low", "high", "max")
 
 
 # --------------------------------------------------------------------------- LLM clients
@@ -158,22 +165,36 @@ def rule_mock_responder(system, messages):
 
 
 class OpenAICompatible:
-    """OpenAI chat completions; also Ollama through its OpenAI-compatible /v1 endpoint.
-    temperature 0 + fixed seed as [PAPER] §7.5 / [AUTHOR CODE] l.135."""
+    """OpenAI chat completions; also Ollama and DeepSeek through their OpenAI-compatible endpoints.
+    temperature 0 + fixed seed as [PAPER] §7.5 / [AUTHOR CODE] l.135 (DeepSeek ignores temperature while
+    thinking). extra: provider-specific request params (DeepSeek: reasoning_effort or thinking disabled);
+    http_client: selftest only (httpx.MockTransport, no network)."""
 
-    def __init__(self, model, base_url=None, api_key=None):
+    def __init__(self, model, base_url=None, api_key=None, extra=None, http_client=None):
         try:
             import openai
         except ImportError:
             raise SystemExit("[alg2] pip package 'openai' missing: uv sync --group llm")
         self.client = openai.OpenAI(base_url=base_url, api_key=api_key or os.environ.get("OPENAI_API_KEY"),
-                                    timeout=600)
+                                    timeout=600, http_client=http_client)
         self.model = model
+        self.extra = dict(extra or {})
 
     def complete(self, system, messages):
         r = self.client.chat.completions.create(model=self.model, temperature=0, seed=0,
-                                                messages=[{"role": "system", "content": system}, *messages])
-        return r.choices[0].message.content or ""
+                                                messages=[{"role": "system", "content": system}, *messages],
+                                                **self.extra)
+        self.last_raw = r.model_dump()            # --llm-debug: full response incl. reasoning_content, usage
+        if r.choices[0].finish_reason == "length":  # no output cap is sent; never truncate silently
+            print(f"[alg2] WARNING {self.model}: answer cut at the provider's output limit (finish_reason=length)",
+                  file=sys.stderr)
+        return strip_think(r.choices[0].message.content or "")
+
+
+def strip_think(text: str) -> str:
+    """[OURS] drop a leading <think>...</think> block some reasoning models put in `content`; otherwise the
+    greedy {...} / [...] parsers below would pick up braces from the reasoning text."""
+    return re.sub(r"^\s*<think>.*?</think>\s*", "", text, count=1, flags=re.S)
 
 
 class AnthropicClient:
@@ -191,6 +212,7 @@ class AnthropicClient:
     def complete(self, system, messages):
         r = self.client.beta.messages.create(model=self.model, max_tokens=16000, system=system, messages=messages,
                                              betas=["server-side-fallback-2026-07-01"], fallbacks="default")
+        self.last_raw = r.model_dump()
         if r.stop_reason == "refusal":
             cat = getattr(r.stop_details, "category", None) if r.stop_details else None
             raise LLMError(f"model refused (category {cat})")
@@ -209,13 +231,110 @@ def _resolve_openai_key(api_key: str | None, base_url: str | None) -> str | None
     return "sk-noauth" if base_url else None
 
 
+# --------------------------------------------------------------------------- saved credentials [OURS]
+# Project-prefixed env vars (user, 2026-10-25): a user's own DEEPSEEK_API_KEY etc. (~/.bashrc) are never read.
+DEEPSEEK_ENV = "NT2102_DEEPSEEK_API_KEY"
+
+
+def credentials_path() -> str:
+    """Per-user file outside the repo (never committed): $XDG_CONFIG_HOME/nt2102/credentials.json."""
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, "nt2102", "credentials.json")
+
+
+def _read_credentials(path: str) -> dict:
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"[alg2] {path} is not valid JSON ({e}); fix or delete it")
+    return data if isinstance(data, dict) else {}
+
+
+def _save_credentials(path: str, section: str, values: dict):
+    """Merge values into one section; other sections are kept. Dir 0700, file 0600, atomic replace."""
+    d = os.path.dirname(path)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    os.chmod(d, 0o700)
+    data = _read_credentials(path)
+    data.setdefault(section, {}).update(values)
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(data, fh, indent=1)
+    os.chmod(tmp, 0o600)                          # in case a stale .tmp existed with another mode
+    os.replace(tmp, path)
+
+
+def _tty_prompt(label: str, secret: bool) -> str | None:
+    """Ask in the terminal; None when not interactive (service, pipe), so the caller can fail clearly."""
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return None
+    if secret:
+        import getpass
+        return getpass.getpass(f"{label} (input hidden): ")
+    return input(f"{label}: ")
+
+
+def resolve_secret(section: str, field: str, flag_value: str | None, env: str, label: str, flag_name: str,
+                   prompt=_tty_prompt) -> str:
+    """One credential: flag > $env > saved file [section][field] > terminal prompt (then saved, mode 600).
+    Never prints the value."""
+    if flag_value or os.environ.get(env):
+        return flag_value or os.environ[env]
+    path = credentials_path()
+    saved = _read_credentials(path).get(section)
+    if isinstance(saved, dict) and saved.get(field):
+        print(f"[alg2] using {label} from {path}", file=sys.stderr)
+        return saved[field]
+    print(f"[alg2] {label} not found (no {flag_name}, no ${env}, not in {path})", file=sys.stderr)
+    v = ((prompt(label, True) if prompt else None) or "").strip()
+    if not v:
+        raise SystemExit(f"[alg2] {label} missing: pass {flag_name}, export {env}, or run once in a terminal "
+                         f"to be prompted (saved to {path})")
+    _save_credentials(path, section, {field: v})
+    print(f"[alg2] saved {label} to {path} (plain text, mode 600). Delete it from the file to forget it or "
+          f"re-enter; ${env} and {flag_name} take precedence.", file=sys.stderr)
+    return v
+
+
+def deepseek_extra(reasoning_effort: str | None) -> dict:
+    """--llm-reasoning-effort -> DeepSeek request params. None: send nothing (thinking on, high).
+    'none': thinking disabled, so temperature 0 applies again ([PAPER] §7.5 setting) and calls are fastest."""
+    if not reasoning_effort:
+        return {}
+    if reasoning_effort == "none":
+        return {"extra_body": {"thinking": {"type": "disabled"}}}
+    return {"reasoning_effort": reasoning_effort}
+
+
 def make_client(provider: str, model: str | None = None, base_url: str | None = None,
-                api_key: str | None = None):
+                api_key: str | None = None, reasoning_effort: str | None = None,
+                http_client=None, debug: bool = False):
+    """reasoning_effort applies to provider 'deepseek' only; http_client is for the selftest;
+    debug: print every raw provider response / error body to stderr (Recorder)."""
+    client = _make_client(provider, model, base_url, api_key, reasoning_effort, http_client)
+    client.debug = debug
+    return client
+
+
+def debug_default() -> bool:
+    """--llm-debug default from $NT2102_LLM_DEBUG (1/true/yes), so rejudge.sh / serve.sh need no new flag."""
+    return os.environ.get("NT2102_LLM_DEBUG", "").lower() in ("1", "true", "yes")
+
+
+def _make_client(provider, model, base_url, api_key, reasoning_effort, http_client):
     model = model or DEFAULT_MODELS[provider]
     if provider == "mock":
         return MockLLM(model=model)
+    if provider == "deepseek":
+        key = resolve_secret("deepseek", "api_key", api_key, DEEPSEEK_ENV, "DeepSeek API key", "--llm-api-key")
+        return OpenAICompatible(model, base_url or DEEPSEEK_BASE_URL, key, deepseek_extra(reasoning_effort),
+                                http_client)
     if provider == "openai":                       # any OpenAI-compatible endpoint (--llm-base-url)
-        return OpenAICompatible(model, base_url, _resolve_openai_key(api_key, base_url))
+        return OpenAICompatible(model, base_url, _resolve_openai_key(api_key, base_url), http_client=http_client)
     if provider == "ollama":
         return OpenAICompatible(model, base_url or "http://localhost:11434/v1", api_key=api_key or "ollama")
     if provider == "anthropic":
@@ -224,24 +343,37 @@ def make_client(provider: str, model: str | None = None, base_url: str | None = 
 
 
 class Recorder:
-    """Wraps a client; logs every call (full prompt + response + latency) for calls.jsonl."""
+    """Wraps a client; logs every call (full prompt + response + latency) for calls.jsonl.
+    client.debug (make_client(debug=True), --llm-debug): also print each call's raw provider response (or the
+    HTTP error body) to stderr and keep it as "raw" in calls.jsonl."""
 
     def __init__(self, client):
         self.client, self.calls = client, []
+        self.debug = getattr(client, "debug", False)
 
     def __call__(self, stage, system, messages):
         t0 = time.time()
-        err = out = None
+        err = out = raw = None
+        self.client.last_raw = None
         try:
             out = self.client.complete(system, messages)
             return out
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
+            resp = getattr(e, "response", None)               # openai / anthropic APIStatusError
+            raw = {"status_code": getattr(resp, "status_code", None), "body": getattr(resp, "text", None)} \
+                if resp is not None else None
             raise
         finally:
-            self.calls.append({"stage": stage, "model": getattr(self.client, "model", ""), "system": system,
-                               "messages": messages, "response": out, "error": err,
-                               "ms": int((time.time() - t0) * 1000)})
+            rec = {"stage": stage, "model": getattr(self.client, "model", ""), "system": system,
+                   "messages": messages, "response": out, "error": err, "ms": int((time.time() - t0) * 1000)}
+            if self.debug:
+                rec["raw"] = raw if err else getattr(self.client, "last_raw", None)
+                print(f"[alg2 debug] {stage} {rec['model']} {rec['ms']} ms "
+                      f"{'ERROR ' + err if err else 'OK'}\n"
+                      f"{json.dumps(rec['raw'], indent=1, default=str) if rec['raw'] is not None else out}",
+                      file=sys.stderr, flush=True)
+            self.calls.append(rec)
 
 
 # --------------------------------------------------------------------------- serialization (Alg. 2 l.3)
@@ -572,6 +704,70 @@ def selftest():
             os.environ["OPENAI_API_KEY"] = _saved_key
     assert all("amsi" not in ln for ln in serialize(sg, edges, max_lines=2)["lines"]), "anomalous lines first"
 
+    # (b3) saved credentials [OURS]: flag > $NT2102_DEEPSEEK_API_KEY > saved file > prompt (then saved, 0600);
+    #      the unprefixed DEEPSEEK_API_KEY is ignored. Temp XDG_CONFIG_HOME: the real user file is never touched.
+    import contextlib
+    import io
+    import stat
+    env_keys = ["XDG_CONFIG_HOME", DEEPSEEK_ENV, "DEEPSEEK_API_KEY"]
+    _saved_env = {k: os.environ.pop(k, None) for k in env_keys}
+
+    def no_tty(label, secret):
+        return None
+
+    def must_not_ask(label, secret):
+        raise AssertionError(f"prompted for {label}")
+
+    def ds_key(flag=None, prompt=must_not_ask):
+        return resolve_secret("deepseek", "api_key", flag, DEEPSEEK_ENV, "DeepSeek API key", "--llm-api-key", prompt)
+
+    try:
+        with tempfile.TemporaryDirectory() as cfg:
+            os.environ["XDG_CONFIG_HOME"] = cfg
+            os.environ["DEEPSEEK_API_KEY"] = "user-bashrc-key"           # the user's own var: never read
+            path = credentials_path()
+            assert path == os.path.join(cfg, "nt2102", "credentials.json"), path
+            err = io.StringIO()
+            # nothing set + not interactive -> clear error naming flag, env var and file; nothing written
+            try:
+                with contextlib.redirect_stderr(err):
+                    ds_key(prompt=no_tty)
+                raise AssertionError("expected SystemExit")
+            except SystemExit as e:
+                assert path in str(e) and DEEPSEEK_ENV in str(e) and "--llm-api-key" in str(e), e
+            assert not os.path.exists(path)
+            # prompt -> returned + saved (file 0600, dir 0700), other sections kept, key never printed
+            os.makedirs(os.path.dirname(path))
+            json.dump({"cloudflare": {"api_token": "old"}}, open(path, "w"))
+            asked = []
+
+            def prompt(label, secret):
+                asked.append((label, secret))
+                return " sk-secret "
+            with contextlib.redirect_stderr(err):
+                assert ds_key(prompt=prompt) == "sk-secret"
+            assert asked == [("DeepSeek API key", True)], asked
+            assert f"saved DeepSeek API key to {path}" in err.getvalue(), err.getvalue()
+            assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+            assert stat.S_IMODE(os.stat(os.path.dirname(path)).st_mode) == 0o700
+            assert json.load(open(path)) == {"cloudflare": {"api_token": "old"}, "deepseek": {"api_key": "sk-secret"}}
+            # second run reads the file, no prompt; env beats file; flag beats env
+            with contextlib.redirect_stderr(err):
+                assert ds_key() == "sk-secret"
+            assert f"using DeepSeek API key from {path}" in err.getvalue(), err.getvalue()
+            os.environ[DEEPSEEK_ENV] = "sk-env"
+            assert ds_key() == "sk-env" and ds_key("sk-flag") == "sk-flag"
+            assert "sk-secret" not in err.getvalue() and "sk-env" not in err.getvalue()
+    finally:
+        for k, v in _saved_env.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+    assert deepseek_extra(None) == {} and deepseek_extra("low") == {"reasoning_effort": "low"}
+    assert deepseek_extra("none") == {"extra_body": {"thinking": {"type": "disabled"}}}
+    assert strip_think('<think>maybe {"x": 1}</think>\n{"v": 1}') == '{"v": 1}'
+    assert strip_think("plain <think> text") == "plain <think> text"
+
     # (c) IOC parse + hallucination filter
     assert extract_ioc_list('```python\n["powershell", "10.21.2.1"]\n```') == ["powershell", "10.21.2.1"]
     assert extract_ioc_list("no list") == [] and extract_ioc_list("[oops") == []
@@ -644,9 +840,76 @@ def selftest():
         assert r["subgraphs_investigated"] == 0 and r["llm_calls"] == 0 and r["verdict"] == "uncertain"
         # (k) rule mock runs end to end (UI testing only)
         assert investigate([sg], edges, win, MockLLM())["verdict"] == "attack"
+
+    # (l) DeepSeek request shape through the real openai SDK, no network (httpx.MockTransport). Proves we send
+    #     what the DeepSeek API docs describe, not that DeepSeek accepts it or that the model triages well.
+    try:
+        import httpx
+        import openai  # noqa: F401
+    except ImportError:
+        sdk = "DeepSeek request shape SKIPPED (openai not installed: uv sync --group llm)"
+    else:
+        seen, finish = [], {"reason": "stop"}
+
+        def handler(req):
+            seen.append(req)
+            content = json.dumps({"verdict": "benign", "confidence": 0.7, "evidence": [doc["lines"][1]],
+                                  "attack_tactics": [], "rationale": "test"})
+            return httpx.Response(200, json={
+                "id": "x", "object": "chat.completion", "created": 0, "model": "m",
+                "choices": [{"index": 0, "finish_reason": finish["reason"],
+                             "message": {"role": "assistant", "content": content,
+                                         "reasoning_content": "thinking about {braces}"}}]})
+        hc = httpx.Client(transport=httpx.MockTransport(handler))
+        c = make_client("deepseek", api_key="sk-t", reasoning_effort="low", http_client=hc)
+        r = investigate([sg], edges, win, c)
+        assert r["verdict"] == "false_positive" and r["model"] == "deepseek-flash", r
+        req, body = seen[0], json.loads(seen[0].content)
+        assert str(req.url) == "https://api.deepseek.com/chat/completions", req.url
+        assert req.headers["authorization"] == "Bearer sk-t"
+        assert body["model"] == "deepseek-flash" and body["temperature"] == 0 and body["seed"] == 0, body
+        assert body["reasoning_effort"] == "low" and "thinking" not in body, body
+        assert body["messages"][0] == {"role": "system", "content": TRIAGE_SYSTEM}
+        # effort none -> thinking disabled in the body; no effort -> neither key (DeepSeek default)
+        seen.clear()
+        make_client("deepseek", api_key="sk-t", reasoning_effort="none", http_client=hc).complete(
+            "s", [{"role": "user", "content": "u"}])
+        body = json.loads(seen[0].content)
+        assert body["thinking"] == {"type": "disabled"} and "reasoning_effort" not in body, body
+        seen.clear()
+        make_client("deepseek", api_key="sk-t", http_client=hc).complete("s", [{"role": "user", "content": "u"}])
+        assert set(json.loads(seen[0].content)) == {"model", "temperature", "seed", "messages"}
+        # the plain openai provider sends exactly what it sent before
+        seen.clear()
+        make_client("openai", base_url="http://host:8000/v1", api_key="k", http_client=hc).complete(
+            "s", [{"role": "user", "content": "u"}])
+        assert set(json.loads(seen[0].content)) == {"model", "temperature", "seed", "messages"}
+        # --llm-debug: raw response (incl. reasoning_content the parser never sees) printed + kept in calls.jsonl
+        dbg = io.StringIO()
+        c = make_client("deepseek", api_key="sk-t", http_client=hc, debug=True)
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stderr(dbg):
+            investigate([sg], edges, win, c, out_dir=d)
+            call = json.loads(open(f"{d}/calls.jsonl").readline())
+        assert call["raw"]["choices"][0]["message"]["reasoning_content"] == "thinking about {braces}", call["raw"]
+        assert "[alg2 debug] triage" in dbg.getvalue() and "reasoning_content" in dbg.getvalue()
+        # finish_reason length -> warning on stderr
+        finish["reason"] = "length"
+        with contextlib.redirect_stderr(dbg):
+            make_client("deepseek", api_key="sk-t", http_client=hc).complete("s", [{"role": "user", "content": "u"}])
+        assert "finish_reason=length" in dbg.getvalue()
+        # HTTP error keeps status + body (401 = DeepSeek's bad-key answer shape)
+        bad = {"error": {"message": "Authentication Fails, Your api key is invalid", "type": "authentication_error"}}
+        hc401 = httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(401, json=bad)))
+        c = make_client("deepseek", api_key="sk-bad", http_client=hc401, debug=True)
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stderr(dbg):
+            r = investigate([sg], edges, win, c, out_dir=d)
+            call = json.loads(open(f"{d}/calls.jsonl").readline())
+        assert r["verdict"] == "uncertain" and "AuthenticationError" in r["subgraphs"][0]["triage"]["note"], r
+        assert call["raw"]["status_code"] == 401 and "invalid" in call["raw"]["body"], call["raw"]
+        sdk = "DeepSeek request shape + debug raw/HTTP-error capture via openai SDK"
     print("[SELFTEST OK] NET decode, repo document format + per-minute counts, truncation keeps anomalous lines, "
           "IOC parse + hallucination filter, evidence check, JSON retry, provider error, window verdict, "
-          "comprehensive report, output files")
+          f"comprehensive report, output files, DeepSeek key (flag/env/file/prompt), {sdk}")
 
 
 # --------------------------------------------------------------------------- cli (re-judge saved windows)
@@ -682,7 +945,14 @@ def main():
     ap.add_argument("--llm-base-url", default=None, help="OpenAI-compatible endpoint, e.g. http://host:8000/v1")
     ap.add_argument("--llm-api-key", default=None,
                     help="key for the OpenAI-compatible endpoint (else $OPENAI_API_KEY; keyless endpoints with "
-                         "--llm-base-url use a dummy)")
+                         "--llm-base-url use a dummy). deepseek: else $NT2102_DEEPSEEK_API_KEY, else the saved "
+                         "file, else a prompt (saved to ~/.config/nt2102/credentials.json)")
+    ap.add_argument("--llm-reasoning-effort", choices=REASONING_EFFORTS, default=None,
+                    help="deepseek: thinking effort; none = thinking off (fastest, temperature 0 applies); "
+                         "default: not sent = DeepSeek default (thinking, high)")
+    ap.add_argument("--llm-debug", action="store_true", default=debug_default(),
+                    help="print each call's raw provider response / HTTP error body to stderr and keep it as "
+                         "'raw' in calls.jsonl (default from $NT2102_LLM_DEBUG=1)")
     ap.add_argument("--max-lines", type=int, default=400, help="[OURS] document cap per subgraph")
     ap.add_argument("--max-subgraphs", type=int, default=5, help="[OURS] kept subgraphs investigated per window")
     a = ap.parse_args()
@@ -697,7 +967,8 @@ def main():
     if a.session_dir and os.path.exists(os.path.join(a.session_dir, "session.json")):
         window_min = json.load(open(os.path.join(a.session_dir, "session.json"))).get("window_min", 5.0)
     wdirs = [a.window_dir] if a.window_dir else sorted(glob.glob(os.path.join(a.session_dir, "windows", "*")))
-    client = None if a.serialize_only else make_client(a.llm_provider, a.llm_model, a.llm_base_url, a.llm_api_key)
+    client = None if a.serialize_only else make_client(a.llm_provider, a.llm_model, a.llm_base_url, a.llm_api_key,
+                                                       a.llm_reasoning_effort, debug=a.llm_debug)
     rows = []
     for w in wdirs:
         loaded = load_window(w, a.subgraphs_file, window_min)

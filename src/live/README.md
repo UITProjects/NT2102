@@ -86,13 +86,26 @@ uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train
   (writes `subgraphs_alg1.{json,csv}` per window).
 
 ### LLM verdict on red windows (`src/pipeline/alg2.py`, DEVIATIONS D9)
-- Off by default. `--llm-provider anthropic|openai|ollama` (first `uv sync --group llm`; keys from
+- Off by default. `--llm-provider anthropic|openai|ollama|deepseek` (first `uv sync --group llm`; keys from
   `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`; Ollama at `http://localhost:11434/v1` unless `--llm-base-url`).
   `mock` is a keyword rule for UI tests, not an LLM.
 - **Any OpenAI-compatible endpoint** (self-hosted vLLM / LM Studio / OpenRouter / Groq / a proxy):
   `--llm-provider openai --llm-base-url http://host:8000/v1 [--llm-model NAME] [--llm-api-key KEY]`.
   The key falls back to `$OPENAI_API_KEY`; a keyless endpoint used with `--llm-base-url` gets a harmless
   dummy key so the SDK is satisfied. Same flags on `rejudge.sh`/`alg2.py` directly.
+- **DeepSeek API** (chosen provider; model `deepseek-flash` = DeepSeek-V4.1-Flash-1017, at
+  `https://api.deepseek.com`): `--llm-provider deepseek [--llm-reasoning-effort none]`. Get a key at
+  platform.deepseek.com; usage and cost show at platform.deepseek.com/usage.
+  - Key: `--llm-api-key` > `$NT2102_DEEPSEEK_API_KEY` > `~/.config/nt2102/credentials.json` > a terminal
+    prompt (input hidden). Your own unprefixed `DEEPSEEK_API_KEY` is deliberately ignored.
+  - **The first prompt saves the key to `~/.config/nt2102/credentials.json` in plain text (mode 600, outside
+    the repo).** Delete its `deepseek` entry (or the file) to forget it or enter a new one. No terminal (for
+    example a service) → the start fails with a message instead of prompting.
+  - `--llm-reasoning-effort none|low|high|max`: not sent by default (DeepSeek thinks, effort high, and ignores
+    temperature). `none` turns thinking off: fastest, and temperature 0 applies, so use it for the live demo.
+- **Debug:** `--llm-debug` or `NT2102_LLM_DEBUG=1` (also through `rejudge.sh`) prints every call's raw
+  response (including DeepSeek's `reasoning_content`) or HTTP error body to stderr and keeps it as `raw` in
+  `calls.jsonl`. An answer cut at the provider's output limit always prints a warning.
 - Runs on its own thread: neutral triage (attack / benign / uncertain), then the paper's Alg. 2 prompts
   for attacks. The window stays red; the badge shows `LLM: attack`, `LLM: FP` (struck through), `LLM: ?`
   or `LLM: …`.

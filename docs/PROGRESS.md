@@ -70,7 +70,11 @@ OPEN (the real limitation):
   Runs on its own thread in `engine.py`, `--llm-provider` in `live_server.py`, badge + report card in the UI.
   Plumbing verified with the keyword mock on a replay of `live-20261011T112141Z` (before the scale
   change; now needs `--sg-moderate-from 10.0001`): 1 red window (11:25 `updater`), verdict attached,
-  `llm/` files written. No real LLM run yet (provider not chosen).
+  `llm/` files written. Provider chosen (user, 2026-10-25): DeepSeek API `deepseek-flash`
+  (`--llm-provider deepseek`, replaces the dropped Cloudflare attempt); code + offline selftest done.
+  First real run (user-verified 2026-10-25): re-judged replay `live-20261011T112141Z` 11:25 `updater` window
+  → `false_positive` (conf 0.88, 1 call, 3.1 s, 2159 tokens, default thinking). One benign window = one data
+  point, not a rate (D9).
 - Attack pack is now ONE attack: the RCE kill chain (`src/atomic-attack-pack/scenarios/rce-killchain.ps1`),
   delivered from a Kali attacker VM (`tools/launch_exploit.py`; local-only Vagrant box, pack mounted at
   `/opt/attack-pack`, not Ansible-managed). Kali exploits DVWA (OS command injection) and the RCE shell
@@ -136,8 +140,8 @@ OPEN (the real limitation):
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
   score_window.py / engine.py / etwship.py; a benign live run with `06-benign-workload.ps1`.
 - Test split capture, node labels, test scoring, NODLINK W10 detector baseline.
-- LLM: choose a provider (`uv sync --group llm`), re-judge the 11:25 window with
-  `./rejudge.sh <session> <p> --sg-moderate-from 10.0001`, then one Atomic scenario live. Alg. 2 l.16–25
+- LLM: DeepSeek on a red window from a real attack (the RCE kill chain live), to see the attack path
+  (triage → IOCs → report). Alg. 2 l.16–25
   not built.
 - SG-Det cut-off not checked against an attack: our scale (Moderate ≥ 30 ≈ at least 30 anomalous nodes
   in one subgraph) was set from one benign window; a small Atomic scenario may be filtered out.

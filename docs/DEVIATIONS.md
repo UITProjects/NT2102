@@ -163,7 +163,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     cut, keeping lines that touch anomalous nodes first (count recorded).
   - Left out: Alg. 2 l.16–25 (an LLM judge picks top IOCs, their context is pulled from the graph DB, the
     report is enriched).
-  - Provider is pluggable (`--llm-provider anthropic|openai|ollama|mock`). [PAPER] used GPT-4o-mini
+  - Provider is pluggable (`--llm-provider anthropic|openai|ollama|deepseek|mock`). [PAPER] used GPT-4o-mini
     (temperature 0) and LLaMA3-8B. The Anthropic backend sends no temperature (current models reject it),
     so its output is not deterministic. `mock` is a keyword rule for UI tests, not an LLM.
   - Provider choice (user, 2026-10-22): **any OpenAI-compatible endpoint** — `--llm-provider openai
@@ -171,6 +171,14 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     `$OPENAI_API_KEY`; a keyless endpoint used with a custom `--llm-base-url` gets a harmless dummy key so
     the SDK is satisfied ([OURS] `_resolve_openai_key`). Same flags on `live_server.py`, `rejudge.sh` and
     `alg2.py`. This covers self-hosted (vLLM / LM Studio / Ollama) and hosted (OpenRouter / Groq) servers.
+  - Model choice (user, 2026-10-25): [OURS] DeepSeek API `deepseek-flash` (= DeepSeek-V4.1-Flash-1017,
+    `--llm-provider deepseek`, OpenAI-compatible endpoint), not the paper's GPT-4o-mini / LLaMA3-8B. (Cloudflare
+    Workers AI was tried first and dropped: the account's Free plan refuses this model.) By default DeepSeek
+    thinks (effort high), and in thinking mode temperature has no effect, so verdicts and reports are not
+    reproducible between runs. `--llm-reasoning-effort none` turns thinking off; temperature 0 then applies, but
+    seed support is undocumented. No output cap is sent (DeepSeek's default is undocumented); a cut answer
+    (`finish_reason=length`) prints a warning. The key comes from `NT2102_DEEPSEEK_API_KEY` or a prompt saved to
+    `~/.config/nt2102/credentials.json` (mode 600).
 - Why: the GNN alone cannot tell unseen-but-benign activity (the 11:25 `updater` window) from an attack;
   the demo needs a readable report for a real attack.
 - Impact: the GNN alert is never removed. An LLM `false_positive` shows as a struck-through badge on a

@@ -131,7 +131,8 @@ class Engine:
                  origin_ms=0, converter_path=DEFAULT_CONVERTER, experiment_json=None, allow_collapsed=False, top_k=20,
                  n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None,
                  sg_moderate_from=alg1.MODERATE_FROM, llm_provider=None, llm_model=None, llm_base_url=None,
-                 llm_api_key=None, llm_client=None, llm_max_subgraphs=5):
+                 llm_api_key=None, llm_client=None, llm_max_subgraphs=5, llm_reasoning_effort=None,
+                 llm_debug=False):
         self.conv, self.conv_sha = load_converter(converter_path)
         self.conv_check = "not checked (no --experiment)"
         if experiment_json:
@@ -156,11 +157,14 @@ class Engine:
                    "min_level": sg_min_level, "min_score": sg_min_score, "moderate_from": sg_moderate_from}
 
         # LLM triage + report after SG-Det (alg2.py); None = off. Own thread: one alert can take tens of
-        # seconds of LLM calls and must not delay scoring of the next window.
-        self.llm = llm_client or (alg2.make_client(llm_provider, llm_model, llm_base_url, llm_api_key)
+        # seconds of LLM calls and must not delay scoring of the next window. Built here, on the main thread
+        # before the server starts, so a missing-credential prompt (deepseek) reaches the terminal.
+        self.llm = llm_client or (alg2.make_client(llm_provider, llm_model, llm_base_url, llm_api_key,
+                                                   llm_reasoning_effort, debug=llm_debug)
                                   if llm_provider else None)
         self.llm_cfg = {"provider": llm_provider or ("custom" if llm_client else None),
-                        "model": getattr(self.llm, "model", None), "max_subgraphs": llm_max_subgraphs}
+                        "model": getattr(self.llm, "model", None), "max_subgraphs": llm_max_subgraphs,
+                        "reasoning_effort": llm_reasoning_effort}
 
         self.lock = threading.RLock()
         self.listeners = []                       # callables(event_dict), called from any thread
