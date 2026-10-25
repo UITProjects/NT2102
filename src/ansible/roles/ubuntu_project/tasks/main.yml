@@ -16,7 +16,7 @@
 - name: uv sync (resolve torch, torch-geometric, fastapi, ...; + the llm group when live_llm_args is set)
   become: false
   # a plain `uv sync` removes packages of groups it was not asked for, so the llm group must be named here
-  ansible.builtin.command: "uv sync{{ ' --group llm' if live_llm_args else '' }}"
+  ansible.builtin.command: "uv sync{{ ' --group llm' if live_llm_args | default('') else '' }}"
   args:
     chdir: "{{ repo_dest }}"
   register: uv_sync

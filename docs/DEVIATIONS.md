@@ -136,9 +136,29 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     msedge spawns many short-lived processes, each a fresh node under PID+start-time keying (D4) and so
     unseen in benign training, tripping the *same* "unfamiliar process+DLL burst" mechanism as the cradle.
     This is a benign-**variety** gap, not a duration gap — more minutes of the same seeded workload do not
-    fix it; the fix is benign training that covers browsing. Honest reading: detection works, but the
+    fix it; the fix is benign training that covers browsing. Reading at the time: detection works, but the
     attack/benign margin is narrow (56 vs 22 without the browser; 37.76 vs 31 with it) and both sides are
     the same mechanism, so 30 is not yet a trustworthy clean separator. [[live-detector-benign-fp]]
+    **Superseded by the correction below.**
+  - **Correction (2026-10-25, verified): live windows have no file events, so no live result so far is a
+    valid detection result.** Every window of `live-20261022T155035Z` holds **zero Read/Write edges**
+    (exp03 training windows: ~14,000 Read + ~500 Write each). Cause, measured on `ws-etw`: SilkService
+    writes Kernel-File (`kfile`) events far behind real time. From a fresh run it falls behind at once
+    (event time advances at ~20–25 % of wall time; 9+ min behind after 25 min) with SilkService at ~1 CPU
+    core, and nearly all recent kfile events are SilkService's own writes to `kfile.json` plus Alloy's reads
+    of it (a self-feeding loop). Alloy and Loki pass the delay through (both ~real time for kproc/knet),
+    and the engine drops lines older than the watermark (newest event − 20 s) as late (`late_dropped`
+    ≈ all kfile lines). ETW reports `Buffers Lost: 0`, yet SilkService memory stays flat (~275 MB), so where
+    the backlog goes (and whether kfile events are also lost) is open [INFERENCE: lost at the real-time
+    layer]. Not explained yet: why the Oct 22 1-h training capture kept a full 77-min kfile span.
+    Rerun 2026-10-25 (`live-20261025T073042Z`, exp03, attack 14:45–14:47 local): the attack's processes
+    (httpd, cmd, powershell ×3, systeminfo, PING; images whoami/tasklist/ipconfig/net/schtasks) all reached
+    the graph, but **none was flagged** (closest: the cradle powershell, 0.004 below τ). The window went red
+    (33.87, Moderate) only because of a benign msedge launch at 14:49. Benign 14:35 / 14:40 stayed green
+    (12.0 / 21.0). A laptop replay of that session, which receives the kfile lines live dropped, scored the
+    14:35 benign window 3.0 instead of 12.0: one data point consistent with "missing file actions push live
+    features off the training distribution" [INFERENCE], not proof. Until the collector keeps up with kfile
+    (lag < lateness), live detection is unvalidated.
 - Limits: shows near-live node scoring + Alg. 1 on our own data. No detection-quality claim until windows
   are labelled (D6); no claim about Alg. 1 precision; the cut-off (Moderate ≥ 30) is ours, set on one
   benign window, not the paper's.
@@ -171,6 +191,12 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     `$OPENAI_API_KEY`; a keyless endpoint used with a custom `--llm-base-url` gets a harmless dummy key so
     the SDK is satisfied ([OURS] `_resolve_openai_key`). Same flags on `live_server.py`, `rejudge.sh` and
     `alg2.py`. This covers self-hosted (vLLM / LM Studio / Ollama) and hosted (OpenRouter / Groq) servers.
+  - First live run (2026-10-25, `ocr-live` with DeepSeek `deepseek-flash`, thinking off,
+    `live-20261025T073042Z`): the one red window (a benign msedge launch, sg 33.87) → `false_positive`
+    (confidence 0.9, 1 call, 3.1 s, 8/8 evidence lines found verbatim in the document): correct. A laptop
+    replay of the session gave the same verdict (0.9, then 0.95 on a second replay: not bit-reproducible).
+    The attack path (triage `attack` → IOCs → report) has **not** run live: the GNN produced no attack
+    subgraph (D8 correction). One window = one data point.
   - Model choice (user, 2026-10-25): [OURS] DeepSeek API `deepseek-flash` (= DeepSeek-V4.1-Flash-1017,
     `--llm-provider deepseek`, OpenAI-compatible endpoint), not the paper's GPT-4o-mini / LLaMA3-8B. (Cloudflare
     Workers AI was tried first and dropped: the account's Free plan refuses this model.) By default DeepSeek

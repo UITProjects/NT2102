@@ -6,28 +6,44 @@ Replace lines in place when status changes; no history. "Verified" = checked in 
 
 The "widen benign + calibrate" cycle ran on **1 HOUR** of benign data (not 2): kfile-fixed capture
 `x-20261022T140932Z` → `exp03` trained + promoted → live DVWA→RCE attack. Work is on branch
-**`collect-benign-data-for-1-hour`**. **Now (user, 2026-10-25): verify the full detection flow with LLM
-support** — live benign stays green, the live DVWA→RCE attack goes red AND the LLM (DeepSeek) judges it an
-attack with a report (Next 3 steps). The residual browser false positive stays open.
+**`collect-benign-data-for-1-hour`**. The full flow with LLM support ran live on 2026-10-25 (branch
+`make-sure-to-support-llm-investigator`) and exposed a **collector blocker**: SilkService writes Kernel-File
+events far behind real time, so the live engine drops every file event as late. **Now: fix the kfile lag**,
+then re-run the full flow (Next 3 steps). No live detection result so far is valid (DEVIATIONS D8 correction).
 
 DONE this session (2026-10-22, verified live):
 - **exp03** trained on the 1-h capture and **PROMOTED** (gate passed: 77-min kfile span, all 6 edge types
   non-zero, `emb_std ≠ 0` per type; Read 517,951 · Send 35,485 · Write 18,308 · Recv 10,109 · Load 4,474 ·
   Start 76). `ocr-live` restarted on exp03. The `0x380` kfile fix held at 1-h scale.
-- **Live attack detected** (session `live-20261022T155035Z`): DVWA→RCE kill chain scored **37.76** then
-  **56.0** (Moderate); kept subgraph = powershell cradle (powershell + .NET assembly loads + RAS/proxy
-  DLLs). Non-browser benign stayed green (10.0 / 12.45 / 22.0, Minor). DEVIATIONS D8.
+- ~~Live attack detected~~ (session `live-20261022T155035Z`, 37.76 / 56.0): **NOT valid** (verified
+  2026-10-25): its windows have zero Read/Write edges (training ~14k Read per window). DEVIATIONS D8.
 - **LLM investigator** (`alg2.py`, paper Alg. 2 l.3–15 incl. the serialize+reduce phase that collapses the
   DLL-load flood) already implemented; **added OpenAI-compatible support** (`--llm-api-key`, keyless-dummy
   for a custom `--llm-base-url`) across `alg2.py` / `engine.py` / `live_server.py`; selftest passes.
 
+DONE 2026-10-25 (verified live):
+- **Always-on live capture**: SYSTEM task `etwlab-live` runs the `start-live.ps1` watchdog at boot + every
+  5 min (rotate 6 h, raw `live-*` kept 1 day, `07` pauses it via a hold file). Verified: ws-etw reboot →
+  new run by itself; a tick during `-Pause` left it stopped; `-Resume` restarted in 11 s. The `07` hold
+  path is NOT yet exercised by a real train capture.
+- **LLM on `ocr-live`**: DeepSeek, thinking off, `--llm-debug`; key saved once on the trainer
+  (`alg2.py --ping`, no-TTY ping 0.8 s). Trainer root LV grown 31 → 61 GB; sessions pruned after 12 idle h
+  (`.keep` on `live-20261022T155035Z`); Loki retention 3 d.
+- **Full-flow run** `live-20261025T073042Z` (exp03, attack 14:45–14:47 local): benign 14:35 / 14:40 green;
+  attack window red (33.87) but ONLY from a benign msedge launch: the attack's processes reached the graph
+  and none was flagged. LLM judged that red window `false_positive` (0.9): correct. Laptop replay
+  (`replay-live-20261025T073042Z`, bundle with the model in `src/live/sessions/live-20261025T073042Z/model/`)
+  reproduces the live windows that were not affected by late kfile lines, and the same LLM verdict.
+
 OPEN (the real limitation):
+- **kfile lag (blocker)**: SilkService falls behind on Kernel-File at ~20–25 % of real time from a fresh
+  run, ~1 CPU core, most events are its own writes + Alloy's reads; the engine drops them as late.
+  DEVIATIONS D8 correction.
 - **Browser benign FP**: an Edge-browsing benign window hit **31.0** (Moderate, false alarm). msedge's
   many per-instance processes are unseen in benign training → the *same* mechanism as the cradle. The fix
   is benign **variety** (training that covers browsing), **not** more capture time. DEVIATIONS D8,
   [[live-detector-benign-fp]].
-- LLM: DeepSeek works offline-replayed (one benign window → `false_positive`, 2026-10-25) but has never run
-  inside the live server, and never on an attack window.
+- LLM attack path (triage `attack` → IOCs → report) never run live: no attack subgraph yet.
 - `06-benign-workload.ps1` **deadline-overrun bug** (the `while (now < deadline)` loop ran ~74 min for a
   60-min target because one scenario call blocked) — deferred, not yet debugged.
 
@@ -195,24 +211,20 @@ Repo hygiene:
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
-## Next 3 steps (verify the full detection flow with LLM support — user, 2026-10-25)
+## Next 3 steps (fix the kfile lag, then re-run the full flow — 2026-10-25)
 
-Goal: one live session where benign windows stay green, the DVWA→RCE attack window goes red, and the LLM
-investigator judges it `attack` with ATT&CK tactics + an IOC report in the UI. Model: exp03 (promoted).
-
-1. LLM on the live server (`ubuntu-trainer`): `uv sync --group llm` in the repo; save the DeepSeek key for the
-   service user ONCE interactively (`vagrant ssh ubuntu-trainer`, then e.g. `./rejudge.sh <session> deepseek`
-   → prompt → `~/.config/nt2102/credentials.json`, mode 600; `ocr-live` has no terminal, so it cannot prompt).
-   Add `--llm-provider deepseek --llm-reasoning-effort none` (+ `--llm-debug` for the first run) to the
-   `ocr-live` ExecStart via an Ansible var (key never in Ansible/repo; idempotent re-run), restart, and check
-   journalctl shows `[live] LLM {'provider': 'deepseek', ...}`.
-2. Benign live session (`start-live.ps1` + `06-benign-workload.ps1 -Seed 7`): windows stay green; any red
-   window (e.g. the browser FP) gets an LLM badge — record verdict, latency, calls (`llm_verdicts.csv`).
-3. Attack during the live session: `vagrant ssh kali -c 'python3 -I /opt/attack-pack/tools/launch_exploit.py
-   --target http://10.21.2.10:3000'`. Check (a) window ≥ Moderate with a kept subgraph of attack indicators
-   (httpd→cmd→powershell, tool images, attacker :8080); (b) triage = `attack` with evidence lines that are in
-   the document; (c) the report's IOCs survive the hallucination filter. Record in PROGRESS + DEVIATIONS D9
-   (one attack = one data point, not a detection rate).
+1. Diagnose the SilkService kfile lag on `ws-etw` (time-boxed A/B):
+   - stop Alloy for ~2 min: does SilkService catch up?
+   - count SilkService Write events per output line (self-amplification);
+   - check whether the exp03 training kfile also thinned out over time (Read per window across the 37 windows);
+   - read the real-time "events lost" counter.
+   Then propose a fix (e.g. keep the collector's own I/O out of the Kernel-File stream, or another consumer).
+2. Re-run the full flow once kfile keeps up (Loki kfile lag < 20 s, `late_dropped` ≈ 0). Check:
+   - benign stays green;
+   - the attack's own nodes are flagged;
+   - LLM triage `attack` + IOC report.
+   Replay it on the laptop as in 2026-10-25.
+3. Browser FP (benign variety in training) once live data is complete.
 
 Watch item: the first 15-min `07` run (`x-20261021T161810Z`) did not write `stopped_utc` (capture left
 running); the 5-min smoke stopped cleanly, so likely a one-off — but confirm `07` stops the service on the 2h run.

@@ -116,6 +116,8 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   (`src/live/`) exist, and Alg. 1 + the subgraph-score filter (SG-Det) decides the window alert. Immediate
   step (user, 2026-10-25): verify the full detection flow with LLM support (DeepSeek, `--llm-provider
   deepseek`) live: benign stays green, the DVWA→RCE attack goes red and gets an LLM attack verdict + report.
+  The first run (2026-10-25) is blocked by the collector: SilkService writes Kernel-File events minutes late,
+  so live windows have no file events (DEVIATIONS D8 correction). Fix that first, then re-run.
   Then: the browser false positive, the replay equivalence check, understanding the trainer (concepts 2–4).
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
