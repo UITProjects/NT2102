@@ -18,7 +18,8 @@ server_bind: "0.0.0.0"
 loki_port: 3100
 grafana_port: 3000            # on the Ubuntu host (vulnlab's 3000 is on the Windows host: no clash)
 loki_url: "http://{{ trainer_host }}:{{ loki_port }}"
-loki_retention: "720h"        # 30 d: how long raw ETW stays queryable (also the max age Loki accepts)
+loki_retention: "72h"         # 3 d (user, 2026-10-25: always-on capture ~2 GB/h): how long raw ETW stays
+                              # queryable, also the max age Loki accepts. Pull a training capture within 3 days.
 loki_image: "grafana/loki:3.7.8"
 grafana_image: "grafana/grafana:13.2.2"
 loki_stack_dir: "/opt/lokistack"
@@ -66,9 +67,22 @@ out_dir: 'C:\lab-out\etw'
 raw_root: 'C:\lab-out\etw\raw'
 service_name: "SilkService"
 
+# ---- always-on live capture (win_shipper: C:\scripts\start-live.ps1 run by a SYSTEM scheduled task) ----
+live_task_name: "etwlab-live"     # at boot + every live_watchdog_minutes: keep a test/live-<UTC> run capturing
+live_watchdog_minutes: 5
+live_rotate_hours: 6              # a new live run (= a new session in the UI) after this many hours
+live_keep_days: 1                 # raw test/live-* runs with no write for this long are deleted on the VM
+
 # ---- Ubuntu trainer -------------------------------------------------------------------------------
 repo_url: "https://github.com/UITProjects/NT2102.git"
 repo_branch: "main"
 repo_dest: "/home/{{ ansible_user | default('vagrant') }}/NT2102"
 # The model ocr-live loads is NOT set here: it is the repo's pointer src/artifacts/current.json, or
 # current.local.json on the trainer (`lab promote <run>`). No run_id / experiment_id to keep in sync.
+# Extra live_server.py LLM flags for ocr-live; empty = LLM off. Non-empty also installs the `llm` uv group.
+# The API key is NEVER set here: save it once on the trainer (alg2.py --ping prompts, src/live/README.md §5).
+live_llm_args: ""
+# Live sessions (src/live/sessions/live-*) with no write for this many hours are deleted hourly on the trainer
+# (each holds a raw copy of the capture, ~2 GB/h measured; replay-* folders and any session holding a .keep
+# file are never touched).
+live_session_keep_hours: 12

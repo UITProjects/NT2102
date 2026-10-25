@@ -5,7 +5,7 @@
   (NT2102 / OCR-APT POC, SimulatedW10 ETW lab VM).
 
 .DESCRIPTION
-  1. preflight   interactive desktop session, no capture running, tools present, workload self-test
+  1. preflight   interactive desktop session, no other capture running (the always-on live capture is paused automatically), tools present, workload self-test
                  (explorer.exe must be the launcher, otherwise benign apps get powershell.exe as parent)
   2. capture     etwctl start -Split train -Run x-<UTC>  ->  settle  ->  06-benign-workload.ps1
                  -> etwctl stop (called from the workload's -BeforeLedger hook, so the ledger write
@@ -278,14 +278,22 @@ if ($PostProcess) {
     return
 }
 
-# ---------------------------------------------------------------- 1. preflight (nothing is captured yet)
+# ---------------------------------------------------------------- 1. preflight (nothing goes into the train capture yet)
 if ((Get-Process -Id $PID).SessionId -eq 0) { throw 'session 0 (service/WinRM): run this from the RDP or console desktop' }
 if (-not (Test-Path $WorkloadScript)) { throw "workload script not found: $WorkloadScript" }
 if (-not (Get-Command $WorkloadScript).Parameters.ContainsKey('BeforeLedger')) {
     throw "$WorkloadScript has no -BeforeLedger parameter - apply the 2-line patch first"
 }
 $svc = Get-Service $Cfg.ServiceName
-if ($svc.Status -ne 'Stopped') { throw "$($Cfg.ServiceName) is $($svc.Status): another capture is running ('etwctl stop' first)" }
+# The always-on live capture (start-live.ps1 watchdog, test/live-*) is paused below, right before the train
+# capture starts. Any other running capture (train, or a hand-started test run) still stops us here.
+$StateFile = Join-Path $LabDir 'state.json'
+$HoldFile  = Join-Path $LabDir 'live.hold'
+$cur = if (Test-Path $StateFile) { Get-Content $StateFile -Raw | ConvertFrom-Json } else { $null }
+$liveRunning = $svc.Status -eq 'Running' -and $cur -and $cur.split -eq 'test' -and "$($cur.run)" -like 'live-*'
+if ($svc.Status -ne 'Stopped' -and -not $liveRunning) {
+    throw "$($Cfg.ServiceName) is $($svc.Status): another capture is running ('etwctl stop' first)"
+}
 $expected = [math]::Floor(($DurationMinutes - $WindowMinutes) / $StrideMinutes) + 1
 if ($expected -lt 1) { throw "-DurationMinutes $DurationMinutes is shorter than one $WindowMinutes-min window" }
 
@@ -332,7 +340,17 @@ $stopCapture = {
     }
 }.GetNewClosure()
 
+# Hold file: the start-live.ps1 watchdog (SYSTEM task, every few minutes) leaves SilkService alone while it
+# exists. Written BEFORE the live run is stopped, so a watchdog tick cannot restart live in between; removed
+# in the finally below, so live resumes within one tick after the train capture. Our $PID lets the watchdog
+# drop the hold if this PowerShell dies without running the finally.
+$hold = [ordered]@{ pid = $PID; by = '07-build-train-dataset.ps1'; since_utc = (Utc-Now) }
+Set-Content -Path $HoldFile -Value ($hold | ConvertTo-Json -Compress)
 try {
+    if ((Get-Service $Cfg.ServiceName).Status -ne 'Stopped') {
+        Log 'pause    the always-on live capture (start-live.ps1 resumes it after this capture)'
+        & $EtwctlPs1 stop | Out-Host
+    }
     $rec.capture.started_utc = Utc-Now
     $Cap.Started = $true                                 # set first: a half-started capture is still stopped
     $global:LASTEXITCODE = 0
@@ -349,6 +367,7 @@ finally {                                                # also runs on Ctrl+C o
     & $stopCapture
     $rec.capture.stopped_utc = $Cap.StoppedUtc
     Write-Json (Join-Path $exp 'experiment.json') $rec
+    Remove-Item $HoldFile -Force -ErrorAction SilentlyContinue   # live capture resumes at the next watchdog tick
 }
 
 # ---------------------------------------------------------------- 3. collect raw into the experiment

@@ -61,12 +61,41 @@ Expect `ALL MATCH`. Watch at http://127.0.0.1:8000. The dos-map is inferred from
 ## 5. Live (Alloy → Loki, the default)
 
 The trainer runs `ocr-live` (systemd, `src/ansible/roles/ubuntu_project`), which is
-`live_server.py ... --loki-url http://127.0.0.1:3100` with the current model (`lab promote <run>`). On the VM (elevated PowerShell, RDP session):
+`live_server.py ... --loki-url http://127.0.0.1:3100` with the current model (`lab promote <run>`) plus
+`live_llm_args` (the LLM flags; set in `inventory.local.ini`, empty = LLM off).
+
+**The capture is always on.** The SYSTEM scheduled task `etwlab-live` (win_shipper role) runs
+`C:\scripts\start-live.ps1` at boot and every 5 min: it keeps a `test/live-<UTC>` run capturing, starts a new
+run every 6 h, deletes raw `live-*` runs idle for 1 day, and leaves SilkService alone while a hold exists
+(`07-build-train-dataset.ps1` pauses it for a train capture and resumes it after). By hand, in an elevated
+PowerShell on the VM:
 ```
-C:\scripts\start-live.ps1                 # shell 1: capture test/live-<UTC>; Alloy ships it
-C:\scripts\06-benign-workload.ps1         # shell 2: benign activity, as in training
+C:\scripts\start-live.ps1 -Status     # service, current run, hold, task, last log lines
+C:\scripts\start-live.ps1 -Rotate     # fresh live run now = a clean session before a demo
+C:\scripts\start-live.ps1 -Pause      # stop live and keep it stopped;  -Resume undoes it
+C:\scripts\06-benign-workload.ps1     # benign activity, as in training (RDP desktop only; not automatic)
 ```
-The server follows the newest `split="test"` run, and a new run starts a new session.
+The server follows the newest `split="test"` run, and a new run starts a new session. Old `live-*` session
+folders on the trainer (each holds a raw copy, ~2 GB/h) are deleted after 12 idle hours (`live_session_keep_hours`; a
+session holding a `.keep` file is never deleted). Loki keeps 3 days (`loki_retention`): pull training captures within 3 days.
+
+**LLM on the live server.** `ocr-live` has no terminal, so it cannot prompt for the DeepSeek key. Save it
+once on the trainer, then let Ansible add the flags:
+```
+vagrant ssh ubuntu-trainer
+cd ~/NT2102 && uv run --group llm python src/pipeline/alg2.py --ping --llm-provider deepseek   # prompts, saves, answers OK
+```
+The key lands in `~/.config/nt2102/credentials.json` on the trainer (plain text, mode 600). With
+`--llm-debug` in `live_llm_args`, `journalctl -u ocr-live -f` shows every raw LLM response.
+
+**Replay a live session on the laptop** (to check it by hand): copy `src/live/sessions/live-<UTC>/` from the
+trainer and the model run folder into `src/live/sessions/live-<UTC>/model/`, then
+```
+RUN_DIR=src/live/sessions/live-<UTC>/model SCALER=<…>/feature_scaler.json EXPERIMENT=<…>/experiment.json \
+  ./serve.sh local --llm-provider deepseek --llm-reasoning-effort none --llm-debug   # terminal 1
+./replay.sh live-<UTC>                                                               # terminal 2
+```
+and compare `windows.csv` / `llm_verdicts.csv` of `replay-live-<UTC>` with the live session.
 - Clock: newest event time minus `--lateness-s`. After `--loki-idle-s` (default 2 × lateness) with no new
   lines, it follows host time, so the last window of a stopped capture still closes (DEVIATIONS D8).
 - UI tile "pipeline lag": host time minus the newest event.

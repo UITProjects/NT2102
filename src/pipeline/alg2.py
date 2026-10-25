@@ -840,6 +840,10 @@ def selftest():
         assert r["subgraphs_investigated"] == 0 and r["llm_calls"] == 0 and r["verdict"] == "uncertain"
         # (k) rule mock runs end to end (UI testing only)
         assert investigate([sg], edges, win, MockLLM())["verdict"] == "attack"
+        # (k2) --ping: 0 when the provider answers, 1 (no exception) when it fails
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            assert ping(MockLLM(lambda s, m: "OK")) == 0 and ping(MockLLM(boom)) == 1
+        assert "ping OK" in out.getvalue() and "ping FAILED" in out.getvalue(), out.getvalue()
 
     # (l) DeepSeek request shape through the real openai SDK, no network (httpx.MockTransport). Proves we send
     #     what the DeepSeek API docs describe, not that DeepSeek accepts it or that the model triages well.
@@ -932,6 +936,18 @@ def load_window(wdir: str, sg_file: str, window_min: float):
     return sgs, edges, win
 
 
+def ping(client) -> int:
+    """--ping: one tiny prompt through the Recorder (so --llm-debug shows the raw answer). 0 = answered."""
+    call = Recorder(client)
+    try:
+        out = call("ping", "Answer with one word.", [{"role": "user", "content": "Say OK."}])
+    except Exception as e:
+        print(f"[alg2] ping FAILED {getattr(client, 'model', '')}: {type(e).__name__}: {e}")
+        return 1
+    print(f"[alg2] ping OK {getattr(client, 'model', '')} {call.calls[-1]['ms']} ms: {out.strip()[:80]!r}")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true")
@@ -955,11 +971,20 @@ def main():
                          "'raw' in calls.jsonl (default from $NT2102_LLM_DEBUG=1)")
     ap.add_argument("--max-lines", type=int, default=400, help="[OURS] document cap per subgraph")
     ap.add_argument("--max-subgraphs", type=int, default=5, help="[OURS] kept subgraphs investigated per window")
+    ap.add_argument("--ping", action="store_true",
+                    help="one tiny prompt to --llm-provider and exit (0 = answered): checks the key + endpoint; "
+                         "on a terminal it also prompts for and saves a missing key")
     a = ap.parse_args()
     if a.selftest:
         return selftest()
+    if a.ping:
+        if not a.llm_provider:
+            ap.error("--ping needs --llm-provider")
+        client = make_client(a.llm_provider, a.llm_model, a.llm_base_url, a.llm_api_key, a.llm_reasoning_effort,
+                             debug=a.llm_debug)
+        sys.exit(ping(client))
     if not (a.window_dir or a.session_dir):
-        ap.error("one of --window-dir / --session-dir is required (or --selftest)")
+        ap.error("one of --window-dir / --session-dir is required (or --selftest / --ping)")
     if not a.serialize_only and not a.llm_provider:
         ap.error("--llm-provider is required unless --serialize-only")
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

@@ -131,7 +131,13 @@ ansible-playbook -i inventory.cloud.ini site.yml -e @group_vars/vault.yml --ask-
 **`repo_branch` must contain the Loki code.** The trainer clones `repo_url` at `repo_branch`
 (`group_vars/all.yml`, default `main`), and `ocr-live` starts `live_server.py --loki-url`. A branch
 without `src/live/loki_source.py` makes the service fail with an unknown-argument error. Push this branch
-and set `repo_branch` to it, or merge it first.
+and set `repo_branch` to it, or merge it first. One-off, without editing the file:
+`ansible-playbook -i inventory.local.ini ubuntu.yml --tags project -e repo_branch=<branch>`.
+
+**LLM on `ocr-live`: `live_llm_args`** (default empty = off; `inventory.local.ini` sets the DeepSeek flags).
+Non-empty also makes `uv sync` install the `llm` group. The API key is never an Ansible variable: save it once
+on the trainer (`alg2.py --ping`, `src/live/README.md` §5) BEFORE the flags are applied, or `ocr-live` exits
+at start (no terminal to prompt). `-e live_llm_args=` turns the LLM off for one run.
 
 After the Windows run, pin the download hashes the roles print (`silketw_sha256`, `python_embed_sha256` in
 `group_vars/all.yml`). `alloy_sha256` is already pinned from the release's `SHA256SUMS`.
@@ -176,9 +182,15 @@ is down.
 
 ```powershell
 C:\scripts\06-benign-workload.ps1 -SelfTest            # once per VM
-C:\scripts\start-live.ps1                              # window 1: capture test/live-<UTC>; Alloy ships it
-C:\scripts\06-benign-workload.ps1 -DurationMinutes 20  # window 2: benign activity (green windows)
+C:\scripts\start-live.ps1 -Rotate                      # optional: fresh live run = a clean session for the demo
+C:\scripts\06-benign-workload.ps1 -DurationMinutes 20  # benign activity (green windows)
 ```
+
+The live capture itself is **always on**: the SYSTEM scheduled task `live_task_name` (`etwlab-live`) runs
+`start-live.ps1` at boot and every `live_watchdog_minutes`; it keeps a `test/live-<UTC>` run capturing,
+rotates it every `live_rotate_hours`, deletes raw `live-*` runs idle for `live_keep_days`, and stays away
+while `C:\ProgramData\etwlab\live.hold` exists (`07` sets and clears it; `start-live.ps1 -Pause/-Resume` by
+hand). `start-live.ps1 -Status` shows the state and the last lines of `live-watchdog.log`.
 
 The vulnlab (DVWA) serves on `http://<windows>:3000/` from boot (XAMPP's Apache + MariaDB Windows
 services). Watch the live UI at `http://<ubuntu>:8000/`, and the raw lines in Grafana at
@@ -210,7 +222,7 @@ windows stay green; the teammate's attack turns its window red.
 5. `07` → `loki_pull.py --run x-<UTC> --yes --build` on the trainer. Its `SimulatedW10_train_edges.csv`
    should equal the VM's own `07` result, compared as multisets (sorted lines). The converter summary
    lists `alloy` under excluded edges, not as process nodes.
-6. `start-live.ps1` + `06`: the live UI shows `session live-<UTC> (loki, ws-etw)` and windows close.
+6. The `etwlab-live` task (or `start-live.ps1 -Rotate`) + `06`: the live UI shows `session live-<UTC> (loki, ws-etw)` and windows close.
    `converter_check: match` appears once `experiment.json` comes from a capture built with this converter.
 7. DVWA's login page answers on `http://<windows>:3000/login.php` (Apache + MariaDB services up).
 
@@ -224,12 +236,12 @@ roles/
   win_base        OS config: net profile, UTC+7, no-sleep, RDP, folders, Defender
   win_collector   SilkETW + VC++ + embeddable Python + etw2nodlink.py/etwwindow.py/etwship.py/etwctl + SilkService
   win_alloy       Grafana Alloy (native installer, service) + config.alloy -> Loki
-  win_shipper     start-live.ps1 (start/stop a live test capture)
+  win_shipper     start-live.ps1 watchdog + SYSTEM task etwlab-live (always-on live test capture)
   win_benign      06-benign-workload.ps1 + 07-build-train-dataset.ps1
   win_vulnlab     XAMPP (Apache + PHP + MariaDB) + DVWA, served on vulnlab_port (opt-in: vulnlab_enabled)
   ubuntu_base     UTC+7 + timesyncd, apt deps + uv + ufw rule for the live server
   ubuntu_loki     Docker + Loki + Grafana (compose, host network) + ufw (Loki from Windows, Grafana from admin_cidr)
-  ubuntu_project  git clone + uv sync + ocr-live systemd unit (--loki-url)
+  ubuntu_project  git clone + uv sync + ocr-live systemd unit (--loki-url + live_llm_args) + session cleanup cron
 ```
 
 The converter and windowing tool (`win_collector`) are deployed from `src/pipeline/`, the same files

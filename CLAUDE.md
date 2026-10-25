@@ -114,8 +114,9 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   reproduction.
 - Current focus: the live detection demo. A valid training run (`runs/exp01`) and the live path
   (`src/live/`) exist, and Alg. 1 + the subgraph-score filter (SG-Det) decides the window alert. Immediate
-  steps: wider benign training data + calibration, the replay equivalence check, one Atomic scenario
-  live, and understanding the trainer (concepts 2–4).
+  step (user, 2026-10-25): verify the full detection flow with LLM support (DeepSeek, `--llm-provider
+  deepseek`) live: benign stays green, the DVWA→RCE attack goes red and gets an LLM attack verdict + report.
+  Then: the browser false positive, the replay equivalence check, understanding the trainer (concepts 2–4).
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
@@ -180,7 +181,7 @@ history of earlier progress) and, if relevant, this section.
 
 - VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (SilkETW, `etwctl`,
   copies `src/pipeline/etw2nodlink.py` / `etwwindow.py` / `src/live/etwship.py`), `win_alloy`
-  (Alloy → Loki), `win_shipper` (`start-live.ps1`), `win_benign` (`src/scripts/06-benign-workload`,
+  (Alloy → Loki), `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture), `win_benign` (`src/scripts/06-benign-workload`,
   `07-build-train-dataset`), `win_vulnlab` (XAMPP + DVWA).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model

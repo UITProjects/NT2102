@@ -1,4 +1,4 @@
-# PROGRESS (status as of 2026-10-22)
+# PROGRESS (status as of 2026-10-25)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 
@@ -6,8 +6,9 @@ Replace lines in place when status changes; no history. "Verified" = checked in 
 
 The "widen benign + calibrate" cycle ran on **1 HOUR** of benign data (not 2): kfile-fixed capture
 `x-20261022T140932Z` → `exp03` trained + promoted → live DVWA→RCE attack. Work is on branch
-**`collect-benign-data-for-1-hour`**. Now: the LLM Attack Investigator (OpenAI-compatible) and the
-residual browser false positive.
+**`collect-benign-data-for-1-hour`**. **Now (user, 2026-10-25): verify the full detection flow with LLM
+support** — live benign stays green, the live DVWA→RCE attack goes red AND the LLM (DeepSeek) judges it an
+attack with a report (Next 3 steps). The residual browser false positive stays open.
 
 DONE this session (2026-10-22, verified live):
 - **exp03** trained on the 1-h capture and **PROMOTED** (gate passed: 77-min kfile span, all 6 edge types
@@ -25,8 +26,8 @@ OPEN (the real limitation):
   many per-instance processes are unseen in benign training → the *same* mechanism as the cradle. The fix
   is benign **variety** (training that covers browsing), **not** more capture time. DEVIATIONS D8,
   [[live-detector-benign-fp]].
-- A **real LLM run** still needs the user's OpenAI-compatible endpoint URL + key; serialize/mock path
-  verified without one.
+- LLM: DeepSeek works offline-replayed (one benign window → `false_positive`, 2026-10-25) but has never run
+  inside the live server, and never on an attack window.
 - `06-benign-workload.ps1` **deadline-overrun bug** (the `while (now < deadline)` loop ran ~74 min for a
   60-min target because one scenario call blocked) — deferred, not yet debugged.
 
@@ -194,23 +195,24 @@ Repo hygiene:
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
-## Next 3 steps (resume the paused cycle — full detail in `~/.claude/plans/i-want-you-to-splendid-naur.md`)
+## Next 3 steps (verify the full detection flow with LLM support — user, 2026-10-25)
 
-Pre-flight is already done (trainer on main + Loki ready + Kali selftest ok + kfile fix verified). Start here:
+Goal: one live session where benign windows stay green, the DVWA→RCE attack window goes red, and the LLM
+investigator judges it `attack` with ATT&CK tactics + an IOC report in the UI. Model: exp03 (promoted).
 
-1. Launch the benign capture on `ws-etw` (VirtualBox window, elevated PS):
-   `C:\scripts\07-build-train-dataset.ps1 -DurationMinutes 120 -Seed 42` (or 90). ~58 windows at 5-min/2-min.
-   Note the `x-<UTC>` run stamp. (Runs in the interactive desktop only — WinRM/session-0 is refused and would
-   mis-parent apps to powershell.)
-2. On the trainer: `lab loop --latest --split train --lookback 1d --model exp03 --seeds 3 --yes`. GATE before
-   promote: `lab status` shows kfile ≈ full span (fix holds at scale), all 6 edge types non-zero, `emb_std`
-   ≠ 0 for every type. Then `lab promote exp03` + `sudo systemctl restart ocr-live`.
-3. Honest calibrate + attack (both via `vagrant ssh` for the trainer/Kali; the Windows capture is manual):
-   benign live session first (`start-live.ps1` + `06-benign-workload.ps1 -Seed 7`), record max benign
-   `sg_score` (`alg1.py --session-dir`); set cut-off from benign only; THEN
-   `vagrant ssh kali -c 'python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000'`.
-   Attack window must reach ≥ cut-off while benign stays green; confirm the kept subgraph is ATTACK indicators
-   (httpd→cmd→powershell, tool images, attacker :8080), not NAT/powershell noise. Record in DEVIATIONS D8.
+1. LLM on the live server (`ubuntu-trainer`): `uv sync --group llm` in the repo; save the DeepSeek key for the
+   service user ONCE interactively (`vagrant ssh ubuntu-trainer`, then e.g. `./rejudge.sh <session> deepseek`
+   → prompt → `~/.config/nt2102/credentials.json`, mode 600; `ocr-live` has no terminal, so it cannot prompt).
+   Add `--llm-provider deepseek --llm-reasoning-effort none` (+ `--llm-debug` for the first run) to the
+   `ocr-live` ExecStart via an Ansible var (key never in Ansible/repo; idempotent re-run), restart, and check
+   journalctl shows `[live] LLM {'provider': 'deepseek', ...}`.
+2. Benign live session (`start-live.ps1` + `06-benign-workload.ps1 -Seed 7`): windows stay green; any red
+   window (e.g. the browser FP) gets an LLM badge — record verdict, latency, calls (`llm_verdicts.csv`).
+3. Attack during the live session: `vagrant ssh kali -c 'python3 -I /opt/attack-pack/tools/launch_exploit.py
+   --target http://10.21.2.10:3000'`. Check (a) window ≥ Moderate with a kept subgraph of attack indicators
+   (httpd→cmd→powershell, tool images, attacker :8080); (b) triage = `attack` with evidence lines that are in
+   the document; (c) the report's IOCs survive the hallucination filter. Record in PROGRESS + DEVIATIONS D9
+   (one attack = one data point, not a detection rate).
 
 Watch item: the first 15-min `07` run (`x-20261021T161810Z`) did not write `stopped_utc` (capture left
 running); the 5-min smoke stopped cleanly, so likely a one-off — but confirm `07` stops the service on the 2h run.

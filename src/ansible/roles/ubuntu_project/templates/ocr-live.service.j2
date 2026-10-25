@@ -11,7 +11,8 @@ WorkingDirectory={{ repo_dest }}
 Environment=PYTHONUNBUFFERED=1
 # Mirrors serve.sh, but binds {{ server_bind }} (all interfaces) so it listens on the subnet IP.
 # Model = the repo's current-model pointer (`lab promote <run>`, then `sudo systemctl restart ocr-live`).
-ExecStart=/usr/local/bin/uv run python src/live/live_server.py --bind {{ server_bind }} --port {{ server_port }} --loki-url http://127.0.0.1:{{ loki_port }}
+# LLM flags = live_llm_args (empty = LLM off); the key comes from ~/.config/nt2102/credentials.json.
+ExecStart=/usr/local/bin/uv run {{ '--group llm ' if live_llm_args else '' }}python src/live/live_server.py --bind {{ server_bind }} --port {{ server_port }} --loki-url http://127.0.0.1:{{ loki_port }}{{ ' ' + live_llm_args if live_llm_args else '' }}
 Restart=on-failure
 RestartSec=5
 
