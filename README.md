@@ -62,7 +62,7 @@ Defaults can be overridden with `RUN_DIR`, `SCALER`, `EXPERIMENT`, `PORT`. Next:
 |---|---|
 | `src/` | lab VM (Vagrant + PowerShell), host pipeline, live demo, trained artifacts, notebooks. Map in `src/README.md` |
 | `docs/` | `PROGRESS.md` (status), `DEVIATIONS.md` (differences from the paper), `reports/`, `notes/`, `explainers/` |
-| `presentation/` | Slidev deck of the report (`latex/`): `cd presentation && npm ci && npm run dev` |
+| `presentation/` | Slidev deck of the report (`latex/`): `cd presentation && npm ci && npm run dev`. Live at https://uitprojects.github.io/NT2102/, auto-deployed on push to `main` by `.github/workflows/slides.yml` |
 | `OCR-APT/` | git submodule: the authors' code ([CoDS-GCS/OCR-APT](https://github.com/CoDS-GCS/OCR-APT)) and the paper PDF |
 | `pyproject.toml`, `uv.lock` | Python dependencies, managed with [uv](https://docs.astral.sh/uv/) |
 | `CLAUDE.md` | project context for Claude Code sessions |

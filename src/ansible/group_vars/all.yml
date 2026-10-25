@@ -68,7 +68,7 @@ service_name: "SilkService"
 
 # ---- Ubuntu trainer -------------------------------------------------------------------------------
 repo_url: "https://github.com/UITProjects/NT2102.git"
-repo_branch: "ansible-two-vm-provisioning"   # TODO before merging: set back to "main"
+repo_branch: "main"
 repo_dest: "/home/{{ ansible_user | default('vagrant') }}/NT2102"
 # The model ocr-live loads is NOT set here: it is the repo's pointer src/artifacts/current.json, or
 # current.local.json on the trainer (`lab promote <run>`). No run_id / experiment_id to keep in sync.

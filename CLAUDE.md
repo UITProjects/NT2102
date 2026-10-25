@@ -208,7 +208,7 @@ history of earlier progress) and, if relevant, this section.
 - Deliverables (Vietnamese text, technical terms kept in English):
   - Report: `latex/` (`main.tex` title page + preamble, `contents.tex` body, `ref.bib`; build with
     `latexmk -pdf main.tex`).
-  - Slides: `presentation/` (Slidev; `slides.md`; Vue diagrams in `components/`: `RgcnLayer` one-layer
+  - Slides: `presentation/` (Slidev; published to GitHub Pages on push to `main` by `.github/workflows/slides.yml`, images in `images/` referenced as `./images/...` so the `/NT2102/` base applies; `slides.md`; Vue diagrams in `components/`: `RgcnLayer` one-layer
     animation, `HiddenLayers`, `Hypersphere`, `OurPipeline`, `Windows`, `AttackGraph`; Q&A backup in
     `note.txt`). `npm run dev` / `npx slidev build`; check layout with
     `npx slidev export --format png [--range N] [--with-clicks]`. Max 30 slides; the text cites slide

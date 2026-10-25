@@ -1,13 +1,34 @@
-# PROGRESS (status as of 2026-10-18)
+# PROGRESS (status as of 2026-10-22)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 
 ## Current focus
 
-Live detection demo: full Alg. 1 with the subgraph-score filter (SG-Det) now decides the window alert.
-On the benign replay, 0 windows are red at our scale (≥ 30), but the 11:25 `updater` window is only hidden
-(score 18), not fixed. Next: widen benign training data and calibrate, then prove the live path matches the offline pipeline (replay check), then run an Atomic
-scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 one-class) and Alg. 1.
+The "widen benign + calibrate" cycle ran on **1 HOUR** of benign data (not 2): kfile-fixed capture
+`x-20261022T140932Z` → `exp03` trained + promoted → live DVWA→RCE attack. Work is on branch
+**`collect-benign-data-for-1-hour`**. Now: the LLM Attack Investigator (OpenAI-compatible) and the
+residual browser false positive.
+
+DONE this session (2026-10-22, verified live):
+- **exp03** trained on the 1-h capture and **PROMOTED** (gate passed: 77-min kfile span, all 6 edge types
+  non-zero, `emb_std ≠ 0` per type; Read 517,951 · Send 35,485 · Write 18,308 · Recv 10,109 · Load 4,474 ·
+  Start 76). `ocr-live` restarted on exp03. The `0x380` kfile fix held at 1-h scale.
+- **Live attack detected** (session `live-20261022T155035Z`): DVWA→RCE kill chain scored **37.76** then
+  **56.0** (Moderate); kept subgraph = powershell cradle (powershell + .NET assembly loads + RAS/proxy
+  DLLs). Non-browser benign stayed green (10.0 / 12.45 / 22.0, Minor). DEVIATIONS D8.
+- **LLM investigator** (`alg2.py`, paper Alg. 2 l.3–15 incl. the serialize+reduce phase that collapses the
+  DLL-load flood) already implemented; **added OpenAI-compatible support** (`--llm-api-key`, keyless-dummy
+  for a custom `--llm-base-url`) across `alg2.py` / `engine.py` / `live_server.py`; selftest passes.
+
+OPEN (the real limitation):
+- **Browser benign FP**: an Edge-browsing benign window hit **31.0** (Moderate, false alarm). msedge's
+  many per-instance processes are unseen in benign training → the *same* mechanism as the cradle. The fix
+  is benign **variety** (training that covers browsing), **not** more capture time. DEVIATIONS D8,
+  [[live-detector-benign-fp]].
+- A **real LLM run** still needs the user's OpenAI-compatible endpoint URL + key; serialize/mock path
+  verified without one.
+- `06-benign-workload.ps1` **deadline-overrun bug** (the `while (now < deadline)` loop ran ~74 min for a
+  60-min target because one scenario call blocked) — deferred, not yet debugged.
 
 ## Done
 
@@ -78,6 +99,20 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
   promote; one run folder per model; current-model pointer read by the live server, `serve.sh`,
   `rejudge.sh` and `ocr-live`.
 - Concepts: provenance graphs; GNN message passing.
+- kfile-truncation root cause + fix (2026-10-21, verified): the old captures' `kfile 1/21m` was a Kernel-File
+  **FileName-rundown storm** — keyword `0x390` includes bit `0x10` (FILENAME), which makes ETW dump a Name
+  event for every already-open file handle at trace start (~1.35M events all stamped at t0 on this host),
+  starving the real-time consumer so genuine Create/Read/Write after the first minutes are lost. Fix: drop
+  `0x10` → kfile keyword **`0x380`** (Create+Read+Write) in `etwlab.json.j2:15` + the VM's live `etwlab.json`.
+  5-min smoke `x-20261021T164839Z`: kfile spans the full 5 min (`check.json` minutes 5.0), edge_types Read
+  23309 / Write 1703 / Load 1675 / Send 3403 / Recv 2795 / Start 52 (all non-zero); converter resolves FILE
+  names from Create events (721 FILE nodes). Cost = `unresolved Write 18090 / Read 10706` (files opened
+  before t0, now dropped) — recorded in DEVIATIONS D2. Converter name resolution: `etw2nodlink.py:214-232`
+  (`on_fcreate` fileobject→path; Read/Write resolve via `fobj` or `fkey`).
+- Trainer VM synced to `main` (2026-10-22): `repo_branch` flipped `ansible-two-vm-provisioning → main`
+  (`group_vars/all.yml:71`), `ansible-playbook -i inventory.local.ini ubuntu.yml` moved `/home/vagrant/NT2102`
+  to main @ 64d1f0b (canonical `loki_pull.py`/`build_experiment.py`), `uv sync`, `ocr-live` restarted. exp02
+  model + `current.local.json` pointer preserved (both untracked/gitignored).
 
 ## Invalid / needs redo
 
@@ -85,11 +120,10 @@ scenario live. In parallel: understand the trainer (concepts 2 GCN, 3 RGCN, 4 on
 
 ## Not done
 
-- Data check (verified 2026-10-17): in capture `20261009T145632Z`, `kfile.json` only covers 14:56:33–14:57:40
-  (67 s of a 20-min capture). FILE Read/Write edges come from that first minute. Check the next capture's
-  per-provider time span before training on it.
-- New benign train capture (07) pulled from Loki, retrain, and a new run replacing `exp01`. (The
-  Alloy→Loki path itself is now verified end to end — see Done, 2026-10-18.)
+- 2h (or 90-min) benign train capture (07) on `ws-etw`, pulled from Loki, retrain into `exp03`, promote,
+  calibrate, attack-test. NOT run yet; this is the paused cycle (see Current focus + Next 3 steps). The
+  kfile-truncation blocker that made earlier captures FILE-starved is now fixed (see Done 2026-10-21).
+  Still gate on `lab status` per-provider coverage (kfile ≈ full span) before trusting any new capture.
 
 - Run the RCE kill chain end to end against DVWA. DVWA provisioning is verified on `ws-etw`
   (`ansible-playbook -i inventory.local.ini windows.yml -e vulnlab_enabled=true` serves DVWA on :3000,
@@ -156,15 +190,23 @@ Repo hygiene:
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
-## Next 3 steps
+## Next 3 steps (resume the paused cycle — full detail in `~/.claude/plans/i-want-you-to-splendid-naur.md`)
 
-1. Widen benign training and calibrate (the 11:25 `updater` false positive is hidden by the ≥ 30
-   scale, not fixed; it needs coverage): 2–3 benign captures at different times (trigger background tasks such as the
-   Google updater and a Defender scan), retrain into `src/artifacts/runs/exp02`. Run benign live sessions
-   with `06-benign-workload.ps1` and re-judge them with `alg1.py --session-dir`; record max benign
-   `sg_score` per window, mean ± std over ~10 windows.
-2. Replay equivalence without the VM (`src/live/README.md` step 4, `--stride-min 2 --origin-ms
-   1791557793343`); `compare_replay.py` must print `ALL MATCH`.
-3. End goal: run the RCE kill chain (`launch_exploit.py` from Kali) during a live session. Check that its window
-   reaches ≥ Moderate (sg_score ≥ 30). If not, the cut-off must stay above the benign max from step 1;
-   record the outcome in DEVIATIONS D8 (decided on benign data, confirmed on the attack, not tuned to it).
+Pre-flight is already done (trainer on main + Loki ready + Kali selftest ok + kfile fix verified). Start here:
+
+1. Launch the benign capture on `ws-etw` (VirtualBox window, elevated PS):
+   `C:\scripts\07-build-train-dataset.ps1 -DurationMinutes 120 -Seed 42` (or 90). ~58 windows at 5-min/2-min.
+   Note the `x-<UTC>` run stamp. (Runs in the interactive desktop only — WinRM/session-0 is refused and would
+   mis-parent apps to powershell.)
+2. On the trainer: `lab loop --latest --split train --lookback 1d --model exp03 --seeds 3 --yes`. GATE before
+   promote: `lab status` shows kfile ≈ full span (fix holds at scale), all 6 edge types non-zero, `emb_std`
+   ≠ 0 for every type. Then `lab promote exp03` + `sudo systemctl restart ocr-live`.
+3. Honest calibrate + attack (both via `vagrant ssh` for the trainer/Kali; the Windows capture is manual):
+   benign live session first (`start-live.ps1` + `06-benign-workload.ps1 -Seed 7`), record max benign
+   `sg_score` (`alg1.py --session-dir`); set cut-off from benign only; THEN
+   `vagrant ssh kali -c 'python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000'`.
+   Attack window must reach ≥ cut-off while benign stays green; confirm the kept subgraph is ATTACK indicators
+   (httpd→cmd→powershell, tool images, attacker :8080), not NAT/powershell noise. Record in DEVIATIONS D8.
+
+Watch item: the first 15-min `07` run (`x-20261021T161810Z`) did not write `stopped_utc` (capture left
+running); the 5-min smoke stopped cleanly, so likely a one-off — but confirm `07` stops the service on the 2h run.

@@ -19,7 +19,7 @@ background: '#f6f8fd'
 ---
 
 <div class="flex items-center gap-4 mb-6">
-  <img src="/logo-uit.jpg" class="h-16" />
+  <img src="./images/logo-uit.jpg" class="h-16" />
   <div class="text-sm leading-tight muted">
     ĐẠI HỌC QUỐC GIA TP.HCM<br/>TRƯỜNG ĐẠI HỌC CÔNG NGHỆ THÔNG TIN
   </div>
@@ -168,7 +168,7 @@ clicks: 4
 # OCR-APT: log thô vào, báo cáo tấn công ra, qua 5 bước
 
 <div class="relative mt-2">
-  <img src="/paper-fig1.png" class="fig" />
+  <img src="./images/paper-fig1.png" class="fig" />
   <span class="num absolute" style="left:8.5%;top:16%">1</span>
   <span class="num absolute" style="left:10.3%;top:63%">2</span>
   <span class="num absolute" style="left:31.2%;top:67%">3</span>
@@ -416,7 +416,7 @@ $$s_i = \|\mathbf{z}_i - \mathbf{c}\|_2^2 - R^2$$
 
 # ③ Một mô hình riêng cho mỗi loại node
 
-<img src="/paper-fig2.png" class="fig mt-1" />
+<img src="./images/paper-fig2.png" class="fig mt-1" />
 <div class="src">Hình 2 của Aly et al., CCS 2025</div>
 
 <div class="small mt-2">
@@ -430,7 +430,7 @@ $$s_i = \|\mathbf{z}_i - \mathbf{c}\|_2^2 - R^2$$
 
 # ④ Từ node rời rạc thành subgraph có điểm (Alg. 1 + SG-Det)
 
-<img src="/paper-fig3.png" class="fig mt-1" />
+<img src="./images/paper-fig3.png" class="fig mt-1" />
 <div class="src">Hình 3 của Aly et al., CCS 2025: node bị gắn cờ → nối trực tiếp → lân cận 1 bước → subgraph</div>
 
 <div class="cmp small mt-2">
@@ -459,7 +459,7 @@ $$s_i = \|\mathbf{z}_i - \mathbf{c}\|_2^2 - R^2$$
 
 # ⑤ Điều tra bằng LLM: nhiều bước nhỏ, mỗi bước được kiểm tra
 
-<img src="/paper-fig4.png" class="fig mt-1" />
+<img src="./images/paper-fig4.png" class="fig mt-1" />
 <div class="src">Hình 4 của Aly et al., CCS 2025</div>
 
 <div class="cmp small mt-2">
@@ -683,7 +683,7 @@ class: text-center
 transition: fade
 ---
 
-<img src="/logo-uit.jpg" class="h-20 mx-auto mb-6" v-motion :initial="{ scale: 0.6, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 600 } }" />
+<img src="./images/logo-uit.jpg" class="h-20 mx-auto mb-6" v-motion :initial="{ scale: 0.6, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 600 } }" />
 
 <h1 v-motion :initial="{ y: 30, opacity: 0 }" :enter="{ y: 0, opacity: 1, transition: { duration: 700, delay: 200 } }" style="font-size:2.6rem;color:#1e3a8a">Cảm ơn thầy/cô và các bạn đã lắng nghe!</h1>
 

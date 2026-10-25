@@ -141,7 +141,10 @@ def main():
     g.add_argument("--llm-provider", choices=["anthropic", "openai", "ollama", "mock"], default=None,
                    help="off by default; only red windows are sent; the verdict never turns a red window green")
     g.add_argument("--llm-model", default=None, help="default per provider, see alg2.DEFAULT_MODELS")
-    g.add_argument("--llm-base-url", default=None, help="e.g. a remote Ollama http://host:11434/v1")
+    g.add_argument("--llm-base-url", default=None,
+                   help="OpenAI-compatible endpoint, e.g. http://host:8000/v1 (or a remote Ollama :11434/v1)")
+    g.add_argument("--llm-api-key", default=None,
+                   help="key for an OpenAI-compatible --llm-base-url (else $OPENAI_API_KEY; keyless endpoints use a dummy)")
     g.add_argument("--llm-max-subgraphs", type=int, default=5, help="kept subgraphs investigated per window")
     a = ap.parse_args()
     if not (a.run_dir and a.scaler):
@@ -166,7 +169,8 @@ def main():
                     n_seed=a.n_seed, min_nodes=a.min_nodes, max_edges=a.max_edges,
                     sg_min_level=a.sg_min_level, sg_min_score=a.sg_min_score,
                     sg_moderate_from=a.sg_moderate_from, llm_provider=a.llm_provider,
-                    llm_model=a.llm_model, llm_base_url=a.llm_base_url, llm_max_subgraphs=a.llm_max_subgraphs)
+                    llm_model=a.llm_model, llm_base_url=a.llm_base_url, llm_api_key=a.llm_api_key,
+                    llm_max_subgraphs=a.llm_max_subgraphs)
     print(f"[live] model {engine.run_dir}  tau={engine.run.tau}")
     print(f"[live] Alg. 1 {engine.sg}  train score range {engine.run.score_range}")
     print(f"[live] LLM {engine.llm_cfg}")

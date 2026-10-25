@@ -89,6 +89,10 @@ uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train
 - Off by default. `--llm-provider anthropic|openai|ollama` (first `uv sync --group llm`; keys from
   `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`; Ollama at `http://localhost:11434/v1` unless `--llm-base-url`).
   `mock` is a keyword rule for UI tests, not an LLM.
+- **Any OpenAI-compatible endpoint** (self-hosted vLLM / LM Studio / OpenRouter / Groq / a proxy):
+  `--llm-provider openai --llm-base-url http://host:8000/v1 [--llm-model NAME] [--llm-api-key KEY]`.
+  The key falls back to `$OPENAI_API_KEY`; a keyless endpoint used with `--llm-base-url` gets a harmless
+  dummy key so the SDK is satisfied. Same flags on `rejudge.sh`/`alg2.py` directly.
 - Runs on its own thread: neutral triage (attack / benign / uncertain), then the paper's Alg. 2 prompts
   for attacks. The window stays red; the badge shows `LLM: attack`, `LLM: FP` (struck through), `LLM: ?`
   or `LLM: …`.
