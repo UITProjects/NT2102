@@ -20,7 +20,7 @@
 - name: Register the always-on live capture task
   community.windows.win_scheduled_task:
     name: "{{ live_task_name }}"
-    description: "Keeps a live SilkETW capture running (C:\\scripts\\start-live.ps1; managed by Ansible win_shipper)"
+    description: "Keeps a live ETW capture running (C:\\scripts\\start-live.ps1; managed by Ansible win_shipper)"
     actions:
       - path: powershell.exe
         arguments: -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\scripts\start-live.ps1

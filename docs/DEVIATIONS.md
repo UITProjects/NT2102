@@ -12,7 +12,8 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - Limits: no claim about whole-log detection quality.
 
 ## D2. Own scripted Windows ETW data
-- What: [PAPER] NODLINK / DARPA TC3 / OpTC. [OURS] SilkETW Kernel-Process/File/Network on a W10 VM,
+- What: [PAPER] NODLINK / DARPA TC3 / OpTC. [OURS] ETW Kernel-Process/File/Network on a Windows VM (SilkETW
+  until 2026-10-26, then our own collector, D10),
   converted to the NODLINK SimulatedW10 schema; benign activity from a seeded scripted workload
   (`src/scripts/06-benign-workload.ps1`), plus background OS activity.
 - Why: own end-to-end pipeline for the live demo; dataset small enough to inspect.
@@ -159,6 +160,16 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     14:35 benign window 3.0 instead of 12.0: one data point consistent with "missing file actions push live
     features off the training distribution" [INFERENCE], not proof. Until the collector keeps up with kfile
     (lag < lateness), live detection is unvalidated.
+  - **Cause found (2026-10-26, SilkService source):** SilkService writes every event with
+    `File.AppendAllText` (open + write + close per line), so each line adds ≥ 1 Create + ≥ 1 Write of its
+    own to Kernel-File; Alloy's reads add more. In `live-20261025T073042Z`, 224k of the first 300k kfile
+    lines are SilkService's and 45k Alloy's. Fix: our own collector (D10).
+  - **NET attribution bug (verified 2026-10-26, `live-20261025T073042Z/raw/knet.json`):** in 77 % of knet
+    events (14,826 / 19,212) the header PID differs from the payload PID (header = Idle 0, System,
+    SilkService; payload = msedge, …). SilkETW stores the payload owner as `XmlEventData._PID` and the header
+    copy as `PID`; `etw2nodlink._net()` reads `pid`, so most NET edges of every capture so far (exp01–exp03
+    included) hang off the wrong process. D10 data writes the payload PID as `PID`; the converter will
+    prefer `_pid` so old captures are fixed on re-conversion.
 - Limits: shows near-live node scoring + Alg. 1 on our own data. No detection-quality claim until windows
   are labelled (D6); no claim about Alg. 1 precision; the cut-off (Moderate ≥ 30) is ours, set on one
   benign window, not the paper's.
@@ -215,3 +226,31 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   not fed back into training: log text (paths, process names) is attacker-controlled, so prompt injection
   is possible, and [PAPER] §3 assumes training logs free of attack traces. No claim about report quality
   vs the paper's Table 5.
+
+## D10. Own Python ETW collector (`src/etw-python`, `etwcollect`) instead of SilkETW + Alloy
+- What: [PAPER] the paper consumes existing audit datasets and names no collector. Until 2026-10-26 we used
+  SilkETW/SilkService v0.8 (Mandiant, archived) writing JSON lines to files, shipped to Loki by Grafana
+  Alloy. [OURS] (user decision 2026-10-26) one Python process, stdlib + ctypes only, run as the SYSTEM
+  task `etwlab-collector`:
+  - one real-time ETW session with the same 3 providers and keywords (Kernel-Process 0x50, Kernel-File
+    0x380, Kernel-Network 0x30); payload decoded via TDH schemas cached per event type;
+  - SilkETW's JSON line shape (top-level keys, `EventName` = task or task/opcode, payload in
+    `XmlEventData` under manifest names), but plain values: ints without thousands separators, IPv4 dotted,
+    ports in host order, UTC timestamps; no `FormattedMessage` and no TraceEvent header copies (`MSec`,
+    `PName`, `TID`, header `PID`) inside `XmlEventData`;
+  - exclusion **before** formatting, counted: events of its own PID; Read/Write on file objects whose
+    Create named a path under the raw output root (any process, incl. System lazy writes); knet events
+    whose payload PID is excluded. During the switch also Alloy's PID;
+  - one batched write per provider per second instead of one file open per event;
+  - it pushes its own files to Loki (saved offsets, retry), with the labels/metadata/timestamps Alloy used,
+    plus the dos-map line and the 07 workload ledger. Alloy is removed once this is verified.
+- Why: SilkService's per-event writes feed back into Kernel-File faster than it can drain them, and it has
+  no exclude filter (keep-only, one value) and no batching (`docs/notes/silkservice-kfile-lag.md`); live
+  windows had no file events (D8 correction). Own code is also fully explainable.
+- Impact: raw lines differ in formatting from earlier captures, and process names of short-lived
+  processes are real instead of `N/A`, so earlier experiments (exp01–exp03) are not comparable; a new
+  benign capture + retrain (exp04) is required. The converter output contract is unchanged. Excluded events
+  are gone from the raw data (counts in `collector-status.json`); an attacker binary named like the
+  collector's or Alloy's process is not affected (PID-based, not name-based, except Alloy during the switch).
+- Limits: collector correctness is shown only by the parity check against SilkService and the lag/lossless
+  checks (PROGRESS); no claim that it captures every kernel event (`EventsLost` is reported, not prevented).

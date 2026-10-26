@@ -116,8 +116,11 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   (`src/live/`) exist, and Alg. 1 + the subgraph-score filter (SG-Det) decides the window alert. Immediate
   step (user, 2026-10-25): verify the full detection flow with LLM support (DeepSeek, `--llm-provider
   deepseek`) live: benign stays green, the DVWA→RCE attack goes red and gets an LLM attack verdict + report.
-  The first run (2026-10-25) is blocked by the collector: SilkService writes Kernel-File events minutes late,
-  so live windows have no file events (DEVIATIONS D8 correction). Fix that first, then re-run.
+  The first run (2026-10-25) is blocked by the collector: SilkService writes Kernel-File events minutes late
+  (its own per-event file writes feed back into Kernel-File), so live windows have no file events (DEVIATIONS
+  D8 correction, `docs/notes/silkservice-kfile-lag.md`). Fix (user, 2026-10-26): replace SilkService AND
+  Alloy with our own Python ETW collector `src/etw-python` (it pushes to Loki itself); once verified, remove
+  both completely (D10). Then capture benign data with it, train exp04, re-run.
   Then: the browser false positive, the replay equivalence check, understanding the trainer (concepts 2–4).
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
@@ -141,16 +144,20 @@ history of earlier progress) and, if relevant, this section.
 - Environment: Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers. Docker is
   used only on the Ubuntu trainer for Loki + Grafana (installed by Ansible). No RDF / GraphDB (user,
   2026-10-17): edges stay CSV and Alg. 1 runs in memory.
-- Log transport (user, 2026-10-17): Grafana Alloy (native on the Windows VM) ships raw SilkETW lines,
-  unchanged, to Loki (Docker, host network) on the Ubuntu trainer. Labels: job, host, split, run, provider;
-  event/pid/process as structured metadata. Training pulls from Loki by run or time range
+- Log transport (user, 2026-10-26, superseding the 2026-10-17 Alloy decision): our collector
+  (`src/etw-python`, `etwcollect`) pushes its SilkETW-format JSON lines to Loki (Docker, host network) on
+  the Ubuntu trainer itself, from its own run files with saved offsets; Grafana Alloy is removed once the
+  collector is verified. Labels unchanged: job (`silketw`, it names the line format), host, split, run,
+  provider; event/pid/process as structured metadata. Training pulls from Loki by run or time range
   (`loki_pull.py`); the live server follows Loki (`--loki-url`). All conversion, windowing and scoring run on
   the trainer with the training converter code, scaler and relation list; the live clock is event time
   (newest event − lateness), with a host-clock fallback when idle (DEVIATIONS D8). The HTTP shipper
   (`etwship.py`) remains for replay only.
 - Collection lab: three VMs provisioned by Ansible (`src/ansible/`, cloud-portable via inventory): Windows
-  Server 2022 `ws-etw` (SilkETW/SilkService on Kernel-Process, Kernel-File, Kernel-Network + Alloy + the
-  DVWA vulnlab on XAMPP, no training), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
+  Server 2022 `ws-etw` (own Python ETW collector `etwcollect` on Kernel-Process, Kernel-File,
+  Kernel-Network, pushing to Loki, + the DVWA vulnlab on XAMPP, no training; user, 2026-10-26: replaces
+  SilkETW/SilkService v0.8, whose per-event file writes feed back into Kernel-File and which has no exclude
+  filter), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
   Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, same host-only subnet;
   LOCAL LAB ONLY and NOT Ansible-managed — it mounts `src/atomic-attack-pack` via a Vagrant synced
   folder). The Vagrantfile only
@@ -181,9 +188,11 @@ history of earlier progress) and, if relevant, this section.
 
 ### Pipeline map (where each stage lives)
 
-- VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (SilkETW, `etwctl`,
-  copies `src/pipeline/etw2nodlink.py` / `etwwindow.py` / `src/live/etwship.py`), `win_alloy`
-  (Alloy → Loki), `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture), `win_benign` (`src/scripts/06-benign-workload`,
+- VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (uv + `src/etw-python`
+  collector as SYSTEM task `etwlab-collector`, `etwctl`, copies `src/pipeline/etw2nodlink.py` /
+  `etwwindow.py` / `src/live/etwship.py`; the collector source is the Vagrant mount `C:\etw-python` locally
+  and a git clone on cloud; SilkETW and `win_alloy` stay installed only until the collector is verified),
+  `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture), `win_benign` (`src/scripts/06-benign-workload`,
   `07-build-train-dataset`), `win_vulnlab` (XAMPP + DVWA).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
@@ -226,6 +235,8 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
 
 - Windowed, near-live detection instead of the paper's offline whole-log prediction.
 - Own scripted Windows ETW data instead of NODLINK/DARPA datasets; benign activity is scripted.
+- Own Python ETW collector (`src/etw-python`) instead of SilkETW: SilkETW-format lines with plain values,
+  self/collector I/O excluded in the callback, pushes to Loki itself (D10).
 - Feature extraction: all 15 columns kept; idle scaler fit on train only; RDF skipped; per-window
   nodes give correlated rows.
 - Graph storage: no RDF/GraphDB; edges stay CSV and Alg. 1 runs in memory per window.

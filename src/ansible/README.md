@@ -4,7 +4,7 @@ Provisions the lab the Vagrantfile builds (or any two cloud VMs in one subnet):
 
 | host (group) | address | role |
 |---|---|---|
-| `ws-etw` (`windows`) | 10.21.2.10 | SilkETW collector, **Grafana Alloy** (ships raw ETW to Loki), benign workload, DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
+| `ws-etw` (`windows`) | 10.21.2.10 | ETW collector **`etwcollect`** (`src/etw-python`, SYSTEM task `etwlab-collector`; it also pushes to Loki), benign workload, DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
 | `ubuntu-trainer` (`ubuntu`) | 10.21.2.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
 
 > The lab also has a **Kali attacker VM** (`10.21.2.30`), but it is **not provisioned by Ansible** — it
@@ -12,13 +12,15 @@ Provisions the lab the Vagrantfile builds (or any two cloud VMs in one subnet):
 > folder (`src/Vagrantfile`), and runs the exploit launcher directly. See that pack's `README.md`.
 
 ```
-SilkService -> C:\lab-out\etw\raw\<split>\<run>\{kproc,kfile,knet}.json
-  -> Alloy (Windows service) -> Loki :3100 on the trainer  <- Grafana :3000 (browse / LogQL)
+etwcollect (SYSTEM task) -> C:\lab-out\etw\raw\<split>\<run>\{kproc,kfile,knet}.json
+  -> its shipper thread -> Loki :3100 on the trainer  <- Grafana :3000 (browse / LogQL)
        training:  loki_pull.py -> <exp>/raw/  -> build_experiment.py -> features -> train
        live:      live_server.py --loki-url (loki_source.py) -> windows -> UI :8000
 ```
 
-Loki keeps every SilkETW line exactly as written. Alloy only adds labels next to it:
+Until `etwcollect` was verified (2026-10-26, DEVIATIONS D10) SilkService wrote the files and Grafana Alloy
+shipped them; `collector: silketw` in `group_vars/all.yml` still selects that path until both are removed.
+The Loki contract did not change: Loki keeps every line exactly as written, with these labels next to it:
 
 | kind | keys | use |
 |---|---|---|
@@ -122,7 +124,7 @@ vagrant up                                   # from src/, builds both bare VMs
 ansible ubuntu -m ping
 ansible windows -m ansible.windows.win_ping  # use win_ping on Windows, NOT ping
 ansible-playbook site.yml --limit ubuntu     # Loki + Grafana + repo + ocr-live
-ansible-playbook site.yml --limit windows    # SilkETW + Alloy + scripts (+ vulnlab with -e vulnlab_enabled=true)
+ansible-playbook site.yml --limit windows    # etwcollect (uv) + scripts (+ vulnlab with -e vulnlab_enabled=true)
 
 # cloud (the vault supplies the Windows + Grafana creds):
 ansible-playbook -i inventory.cloud.ini site.yml -e @group_vars/vault.yml --ask-vault-pass
@@ -140,18 +142,24 @@ on the trainer (`alg2.py --ping`, `src/live/README.md` §5) BEFORE the flags are
 at start (no terminal to prompt). `-e live_llm_args=` turns the LLM off for one run.
 
 After the Windows run, pin the download hashes the roles print (`silketw_sha256`, `python_embed_sha256` in
-`group_vars/all.yml`). `alloy_sha256` is already pinned from the release's `SHA256SUMS`.
+`group_vars/all.yml`). `alloy_sha256` and `uv_sha256` are already pinned from the releases' checksum files.
+
+**Collector source (`etwpy_mode`).** Local lab: `inventory.local.ini` sets `etwpy_mode=mount`, and
+`src/Vagrantfile` shares `src/etw-python` as `C:\etw-python` (needs `vagrant reload ws-etw` once). A host
+edit is live after `etwctl stop; etwctl start`; re-run `--tags collector` only when `pyproject.toml` /
+`uv.lock` change. Cloud: the default `clone` git-clones `repo_url@repo_branch` to `C:\lab\NT2102`. Either way
+`uv sync --frozen` builds the venv at `C:\Tools\etw-python-venv` (never in the share).
 
 ## Rebuild training data (from scratch, through Loki)
 
 ```powershell
 # on ws-etw, elevated PowerShell in the RDP desktop session (not WinRM):
 C:\scripts\06-benign-workload.ps1 -SelfTest           # once per VM
-C:\scripts\07-build-train-dataset.ps1                 # 20-min benign capture, run x-<UTC>; Alloy ships it live
+C:\scripts\07-build-train-dataset.ps1                 # 20-min benign capture, run x-<UTC>; shipped to Loki live
 ```
-`07` still converts on the VM. That copy is now a cross-check; the training source is Loki. After the
-stop, `07` waits `-ShipWaitSeconds` (default 15) so Alloy can push the last lines, then **copies** the raw
-files into the experiment folder. It used to move them; copying leaves the files Alloy tails in place.
+`07` still converts on the VM. That copy is now a cross-check; the training source is Loki. `etwctl stop`
+waits until `etwcollect` has pushed its last lines, `07` then pushes the workload ledger
+(`etwcollect push-ledger`) and **copies** the raw files into the experiment folder.
 
 ```bash
 # on ubuntu-trainer (ssh in; LOKI_URL is set by /etc/profile.d/lokistack.sh):
@@ -211,17 +219,15 @@ windows stay green; the teammate's attack turns its window red.
 - `ufw status` shows 3100 only from the Windows `private_ip` and 3000 only from `admin_cidr`.
 
 **Windows (by hand, after `site.yml --limit windows`):**
-1. `Get-Service Alloy` shows Running.
+1. `etwctl status` shows `collector: task etwlab-collector`, and while a run captures: kfile lag of a few
+   seconds, `ETW lost: events 0`, `Loki: ... backlog` near 0. `etwcollect selftest --live` (elevated) passes.
 2. After `etwctl start -Split test`, the run folder has `dosmap.meta`: one JSON line such as
    `{"\\device\\harddiskvolume4":"c:"}`.
 3. Grafana Explore `{job="silketw", host="ws-etw"}` shows lines labelled with `split`, `run` and `provider`,
-   and the line details show `event`, `pid` and `process`. If `split`/`run` are missing, Alloy's
-   `filename` regex did not match the Windows path form: check `stage.regex` in `config.alloy`.
-4. A raw `TimeStamp` ends in `+07:00`, and the Loki time of a line equals its `TimeStamp`. The first
-   checks the zone; the second shows the timestamp stage works.
+   and the line details show `event`, `pid` and `process`.
+4. The Loki time of a line equals its `TimeStamp` (etwcollect writes UTC, `+00:00`; SilkETW wrote `+07:00`).
 5. `07` → `loki_pull.py --run x-<UTC> --yes --build` on the trainer. Its `SimulatedW10_train_edges.csv`
-   should equal the VM's own `07` result, compared as multisets (sorted lines). The converter summary
-   lists `alloy` under excluded edges, not as process nodes.
+   should equal the VM's own `07` result, compared as multisets (sorted lines).
 6. The `etwlab-live` task (or `start-live.ps1 -Rotate`) + `06`: the live UI shows `session live-<UTC> (loki, ws-etw)` and windows close.
    `converter_check: match` appears once `experiment.json` comes from a capture built with this converter.
 7. DVWA's login page answers on `http://<windows>:3000/login.php` (Apache + MariaDB services up).
@@ -234,8 +240,9 @@ inventory.local.ini  inventory.cloud.ini.example
 group_vars/   all.yml  windows.yml  ubuntu.yml  vault.yml.example
 roles/
   win_base        OS config: net profile, UTC+7, no-sleep, RDP, folders, Defender
-  win_collector   SilkETW + VC++ + embeddable Python + etw2nodlink.py/etwwindow.py/etwship.py/etwctl + SilkService
-  win_alloy       Grafana Alloy (native installer, service) + config.alloy -> Loki
+  win_collector   uv + etw-python venv + SYSTEM task etwlab-collector + embeddable Python + etw2nodlink.py/
+                  etwwindow.py/etwship.py/etwctl (+ SilkETW/SilkService until etwcollect is verified)
+  win_alloy       Grafana Alloy: stopped + disabled unless collector=silketw (removed after verification)
   win_shipper     start-live.ps1 watchdog + SYSTEM task etwlab-live (always-on live test capture)
   win_benign      06-benign-workload.ps1 + 07-build-train-dataset.ps1
   win_vulnlab     XAMPP (Apache + PHP + MariaDB) + DVWA, served on vulnlab_port (opt-in: vulnlab_enabled)

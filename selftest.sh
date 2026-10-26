@@ -38,5 +38,14 @@ for i in "${!steps[@]}"; do
     failed=1
   fi
 done
+# The ETW collector is its own uv project (src/etw-python), so it runs in its own environment.
+log="$log_dir/etwcollect.log"
+if (cd src/etw-python && UV_LINK_MODE=copy uv run etwcollect selftest) >"$log" 2>&1; then
+  echo "PASS  src/etw-python: etwcollect selftest"
+else
+  echo "FAIL  src/etw-python: etwcollect selftest   (last lines below, full log: $log)"
+  tail -n 15 "$log" | sed 's/^/      /'
+  failed=1
+fi
 [[ $failed -eq 0 ]] && rm -rf "$log_dir"
 exit $failed

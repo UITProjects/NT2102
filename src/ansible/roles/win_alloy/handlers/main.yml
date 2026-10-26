@@ -3,3 +3,4 @@
   ansible.windows.win_service:
     name: Alloy
     state: restarted
+  when: collector == 'silketw'

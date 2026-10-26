@@ -238,7 +238,10 @@ class Graph:
         self._file_io(t, d, hpid, hname, "Write")
 
     def _net(self, t, d, hpid, hname, etype):
-        pid = first(num(d.get("pid")), hpid)
+        # The owner is the PAYLOAD PID. The header PID of a network event is whatever thread ran (Idle, System,
+        # any process: 77 % mismatch on 2026-10-25). SilkETW wrote the payload field as `_PID` and a header copy
+        # as `PID`; etwcollect writes the payload field as `PID` (DEVIATIONS D8, D10).
+        pid = first(num(d.get("_pid")), num(d.get("pid")), hpid)
         daddr, dport = d.get("daddr"), num(d.get("dport"))
         proc = self.proc(pid, hname if pid == hpid else "")
         if proc is None or not daddr:
@@ -323,7 +326,10 @@ def selftest():
             ev(kf, "Read", 888, "alloy", "2026-10-07T10:00:02.3000000Z", FileObject="0xDD")],
         "knet.json": [
             ev(kn, "KERNEL_NETWORK_TASK_TCPIP/Datasent.", 4, "System", "2026-10-07T10:00:03.0000000Z",
-               PID="4321", daddr="93.184.216.34", dport="443", size="100")],
+               PID="4321", daddr="93.184.216.34", dport="443", size="100"),
+            # SilkETW's shape: header PID = Idle, `PID` = its header copy, `_PID` = the real owner
+            ev(kn, "KERNEL_NETWORK_TASK_TCPIP/Datareceived.", 0, "Idle", "2026-10-07T10:00:03.5000000Z",
+               PID="0", _PID="4,321", daddr="-1,707,025,385", dport="-17,663", size="64")],
     }
     with tempfile.TemporaryDirectory() as tmp:
         run = os.path.join(tmp, "raw", "train", "run1")
@@ -338,9 +344,12 @@ def selftest():
         with open(os.path.join(tmp, "out", "SelfTest_train_node_attrs.csv"), encoding="utf-8") as fh:
             attrs = fh.read()
     # excluded: SilkService's Write + Alloy's Read; the dos map turns \device\harddiskvolume2 into c:
-    ok = (s["edges"] == {"Start": 1, "Load": 1, "Write": 1, "Send": 1} and s["excluded"] == {"Write": 1, "Read": 1}
+    recv = [r for r in rows if r[4] == "Recv"]
+    ok = (s["edges"] == {"Start": 1, "Load": 1, "Write": 1, "Send": 1, "Recv": 1}
+          and s["excluded"] == {"Write": 1, "Read": 1}
           and "c:\\windows\\system32\\ntdll.dll" in attrs
-          and sum(s["unmapped_top"].values()) == 1 and rows[0] == EDGE_HEADER and len(rows) == 5)
+          and len(recv) == 1 and recv[0][0].startswith("p4321_")      # owner from _PID, not Idle's header PID
+          and sum(s["unmapped_top"].values()) == 1 and rows[0] == EDGE_HEADER and len(rows) == 6)
     print("selftest", "OK" if ok else "FAILED", json.dumps(s["edges"]))
     return 0 if ok else 1
 

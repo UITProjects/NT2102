@@ -45,11 +45,14 @@
     "C:\Program Files\GrafanaLabs\Alloy\alloy-windows-amd64.exe" fmt "C:\Program Files\GrafanaLabs\Alloy\config.alloy"
   changed_when: false
 
-- name: Alloy service automatic and running
+# collector=python (default): etwcollect pushes to Loki itself, so Alloy is stopped AND disabled (a reboot must not
+# bring it back to double-ship). collector=silketw: the old path, Alloy automatic and running. This whole role
+# is removed once etwcollect is verified (DEVIATIONS D10).
+- name: Alloy service (running only for collector=silketw)
   ansible.windows.win_service:
     name: Alloy
-    start_mode: auto
-    state: started
+    start_mode: "{{ 'auto' if collector == 'silketw' else 'disabled' }}"
+    state: "{{ 'started' if collector == 'silketw' else 'stopped' }}"
 
 - name: Restart now if the config changed (so the check below sees the new pipeline)
   ansible.builtin.meta: flush_handlers

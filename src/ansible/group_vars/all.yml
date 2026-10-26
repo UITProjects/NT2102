@@ -54,6 +54,11 @@ python_embed_version: "3.12.7"
 python_embed_url: "https://www.python.org/ftp/python/{{ python_embed_version }}/python-{{ python_embed_version }}-embed-amd64.zip"
 python_embed_sha256: "sha256:0d57bb6cb078b74d23dbfe91f77d6780d45bed328911609f1f7ee2ba1606bf44"
 
+# uv (Windows): builds the etw-python collector's venv and downloads its CPython (uv-managed, not the embed zip).
+uv_version: "0.9.3"
+uv_url: "https://github.com/astral-sh/uv/releases/download/{{ uv_version }}/uv-x86_64-pc-windows-msvc.zip"
+uv_sha256: "sha256:9f7595313b44e57dcaeef63fe4f3de9a0cf4f92a53302b429341f457f70ca3b9"   # release .sha256 file
+
 alloy_version: "1.20.1"
 alloy_url: "https://github.com/grafana/alloy/releases/download/v{{ alloy_version }}/alloy-installer-windows-amd64.exe"
 alloy_sha256: "sha256:23fcfe3755f02e8a6a83f27149851322ab2b66d584e76d239d9c031f50d3a8f0"   # release SHA256SUMS
@@ -66,6 +71,22 @@ silketw_dir: 'C:\Tools\SilkETW'
 out_dir: 'C:\lab-out\etw'
 raw_root: 'C:\lab-out\etw\raw'
 service_name: "SilkService"
+
+# ---- ETW collector: our own Python collector (src/etw-python, DEVIATIONS D10) --------------------------
+# collector: which collector etwctl drives. "python" = etwcollect (also pushes to Loki itself, so Alloy is
+# stopped and disabled); "silketw" = the old SilkService + Alloy path, kept ONLY until etwcollect is verified
+# (parity run, PROGRESS), then both are removed.
+collector: "python"
+collector_task: "etwlab-collector"     # SYSTEM scheduled task that runs `python -m etwcollect run`
+collector_session: "etwlab-collector"  # its ETW session name (etwcollect stop stops it by this name)
+# Where the collector source comes from: etwpy_mode = clone (cloud default: git clone repo_url@repo_branch to
+# etwpy_clone_dir) or mount (local Vagrant lab: src/Vagrantfile mounts src/etw-python at etwpy_src). etwpy_mode
+# and etwpy_src are deliberately NOT defined here (this file outranks the inventory's [windows:vars]); the
+# win_collector role reads them with | default(clone, <clone dir>\src\etw-python).
+etwpy_clone_dir: 'C:\lab\NT2102'
+uv_dir: 'C:\Tools\uv'                   # uv.exe, its cache and the CPython it downloads
+etwpy_venv: 'C:\Tools\etw-python-venv'  # on the VM's own disk: never inside the VirtualBox share
+etwpy_python: "{{ etwpy_venv }}\\Scripts\\python.exe"
 
 # ---- always-on live capture (win_shipper: C:\scripts\start-live.ps1 run by a SYSTEM scheduled task) ----
 live_task_name: "etwlab-live"     # at boot + every live_watchdog_minutes: keep a test/live-<UTC> run capturing

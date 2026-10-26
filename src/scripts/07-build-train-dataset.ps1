@@ -10,7 +10,7 @@
   2. capture     etwctl start -Split train -Run x-<UTC>  ->  settle  ->  06-benign-workload.ps1
                  -> etwctl stop (called from the workload's -BeforeLedger hook, so the ledger write
                  happens AFTER the capture and is not in the data)
-  3. collect     copy the run's raw JSON into  <exp>\raw\train\x-<UTC>\  (Alloy has shipped it to Loki)
+  3. collect     copy the run's raw JSON into  <exp>\raw\train\x-<UTC>\  (the collector has shipped it to Loki)
   4. convert     etw2nodlink.py on <exp>\raw only   ->  <exp>\converted\  (un-windowed, + _summary.json)
   5. window      etwwindow.py                        ->  <exp>\
                    SimulatedW10_train_edges.csv        pooled windows, node IDs prefixed w0007_  <- host: encode_to_features.py
@@ -28,7 +28,7 @@
 
 .NOTES
   Run in an ELEVATED PowerShell inside the VM's RDP/console desktop (not vagrant powershell / WinRM).
-  Elevation is needed for SilkService; the workload still starts apps through explorer.exe, so they run
+  Elevation is needed for the ETW collector; the workload still starts apps through explorer.exe, so they run
   un-elevated with explorer as parent, like a real user.
   Needs etwwindow.py, installed by the win_collector Ansible role.
 #>
@@ -40,7 +40,7 @@ param(
     [ValidateRange(1, 120)]   [int] $StrideMinutes = 2,
     [ValidateRange(10, 3600)] [int] $MaxGapSeconds = 120,
     [ValidateRange(0, 600)]   [int] $SettleSeconds = 30,     # idle capture before the workload starts
-    [ValidateRange(0, 600)]   [int] $ShipWaitSeconds = 15,   # after the stop: let Alloy push the tail to Loki
+    [ValidateRange(0, 600)]   [int] $ShipWaitSeconds = 15,   # after the stop: let the tail reach Loki
     [switch] $IncludeUserPowerShell,
     [switch] $AllowFallbackLauncher,                         # accept powershell.exe as app parent (not advised)
     [switch] $KeepWorkDir,                                   # default: empty Documents\work so every run starts equal
@@ -257,7 +257,7 @@ function Complete-Experiment([string]$Exp, [System.Collections.IDictionary]$Reco
     Write-Json (Join-Path $Exp 'experiment.json') $Record
     if ($rc -ne 0) { throw "contract check FAILED - see $Exp\check.json (files kept for inspection)" }
     Log ("done     {0} windows, {1} edges, {2} node copies -> {3}" -f $t.windows, $t.edges_out, $t.node_window_copies, $Exp)
-    Log "next     on the trainer: lab loop (Alloy has shipped this capture to Loki)"
+    Log "next     on the trainer: lab loop (the collector has shipped this capture to Loki)"
 }
 
 if ($PostProcess) {
@@ -284,15 +284,17 @@ if (-not (Test-Path $WorkloadScript)) { throw "workload script not found: $Workl
 if (-not (Get-Command $WorkloadScript).Parameters.ContainsKey('BeforeLedger')) {
     throw "$WorkloadScript has no -BeforeLedger parameter - apply the 2-line patch first"
 }
-$svc = Get-Service $Cfg.ServiceName
+# `etwctl running` exits 0 while a capture runs (etwcollect task or SilkService, whichever etwlab.json names).
+& $EtwctlPs1 running | Out-Null
+$capturing = ($LASTEXITCODE -eq 0)
 # The always-on live capture (start-live.ps1 watchdog, test/live-*) is paused below, right before the train
 # capture starts. Any other running capture (train, or a hand-started test run) still stops us here.
 $StateFile = Join-Path $LabDir 'state.json'
 $HoldFile  = Join-Path $LabDir 'live.hold'
 $cur = if (Test-Path $StateFile) { Get-Content $StateFile -Raw | ConvertFrom-Json } else { $null }
-$liveRunning = $svc.Status -eq 'Running' -and $cur -and $cur.split -eq 'test' -and "$($cur.run)" -like 'live-*'
-if ($svc.Status -ne 'Stopped' -and -not $liveRunning) {
-    throw "$($Cfg.ServiceName) is $($svc.Status): another capture is running ('etwctl stop' first)"
+$liveRunning = $capturing -and $cur -and $cur.split -eq 'test' -and "$($cur.run)" -like 'live-*'
+if ($capturing -and -not $liveRunning) {
+    throw "another capture is running ($($cur.split)/$($cur.run)): 'etwctl stop' first"
 }
 $expected = [math]::Floor(($DurationMinutes - $WindowMinutes) / $StrideMinutes) + 1
 if ($expected -lt 1) { throw "-DurationMinutes $DurationMinutes is shorter than one $WindowMinutes-min window" }
@@ -340,14 +342,15 @@ $stopCapture = {
     }
 }.GetNewClosure()
 
-# Hold file: the start-live.ps1 watchdog (SYSTEM task, every few minutes) leaves SilkService alone while it
+# Hold file: the start-live.ps1 watchdog (SYSTEM task, every few minutes) leaves the collector alone while it
 # exists. Written BEFORE the live run is stopped, so a watchdog tick cannot restart live in between; removed
 # in the finally below, so live resumes within one tick after the train capture. Our $PID lets the watchdog
 # drop the hold if this PowerShell dies without running the finally.
 $hold = [ordered]@{ pid = $PID; by = '07-build-train-dataset.ps1'; since_utc = (Utc-Now) }
 Set-Content -Path $HoldFile -Value ($hold | ConvertTo-Json -Compress)
 try {
-    if ((Get-Service $Cfg.ServiceName).Status -ne 'Stopped') {
+    & $EtwctlPs1 running | Out-Null
+    if ($LASTEXITCODE -eq 0) {
         Log 'pause    the always-on live capture (start-live.ps1 resumes it after this capture)'
         & $EtwctlPs1 stop | Out-Host
     }
@@ -370,16 +373,26 @@ finally {                                                # also runs on Ctrl+C o
     Remove-Item $HoldFile -Force -ErrorAction SilentlyContinue   # live capture resumes at the next watchdog tick
 }
 
+# ---------------------------------------------------------------- 2b. workload ledger -> Loki (etwcollect)
+# The ledger is written AFTER the capture stopped (-BeforeLedger), so the collector cannot ship it; Alloy used
+# to tail labels\*.csv. loki_pull.py on the trainer finds it as {job="workload-ledger", exp=<this id>}.
+if ("$($Cfg.Collector)" -ne 'silketw') {
+    Log "ledger   $(Join-Path $exp 'labels') -> Loki"
+    & $Cfg.EtwPython -m etwcollect push-ledger --exp $stamp --dir (Join-Path $exp 'labels') | Out-Host
+    if ($LASTEXITCODE) { Write-Warning "ledger push failed; re-run: & '$($Cfg.EtwPython)' -m etwcollect push-ledger --exp $stamp --dir '$(Join-Path $exp 'labels')'" }
+}
+
 # ---------------------------------------------------------------- 3. collect raw into the experiment
 $src = Join-Path $Cfg.RawRoot "$Split\$run"
 $dst = Join-Path $exp "raw\$Split\$run"
 if (-not (Test-Path $src)) { throw "raw run folder not found: $src" }
 Log "collect  $src -> $dst"
-# COPY, not move: Grafana Alloy tails $src and ships it to Loki (the training source on the trainer); it
-# needs a few seconds after the stop for the last lines, and moving files it holds open would fail.
-Log "wait     ${ShipWaitSeconds}s for Alloy to ship the last lines to Loki"
+# COPY, not move: the collector's shipper (or Alloy with collector=silketw) reads $src to ship it to Loki (the
+# training source on the trainer); etwctl stop already waited for etwcollect's final push, Alloy needs a few
+# seconds after the stop, and moving files that are still open would fail.
+Log "wait     ${ShipWaitSeconds}s for the last lines to reach Loki"
 Start-Sleep -Seconds $ShipWaitSeconds
-# robocopy /E = cp -r (keep the source for Alloy); exit codes 0-7 mean success
+# robocopy /E = cp -r (keep the source for the shipper); exit codes 0-7 mean success
 Invoke-Native 'robocopy.exe' @($src, $dst, '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP') -Ok (0..7) | Out-Null
 $rec.capture.raw = $dst
 Write-Json (Join-Path $exp 'experiment.json') $rec

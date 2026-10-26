@@ -34,22 +34,53 @@
         fail_msg: "A collector file is missing — run role win_collector"
         success_msg: "Converter, windowing, shipper, etwctl and embeddable Python all present"
 
+    - name: etw-python collector present (win_collector)
+      ansible.windows.win_stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ uv_dir }}\\{{ uv_version }}\\uv.exe"
+        - "{{ etwpy_python }}"
+        - "{{ etwpy_src | default(etwpy_clone_dir ~ '\\src\\etw-python') }}\\pyproject.toml"
+      register: etwpy_files
+    - ansible.builtin.assert:
+        that: etwpy_files.results | map(attribute='stat.exists') | min
+        fail_msg: "uv, the collector venv or its source is missing — run role win_collector (mount mode: vagrant reload ws-etw)"
+        success_msg: "uv, collector venv and source present"
+
+    - name: Collector task registered (win_collector)
+      ansible.windows.win_powershell:
+        script: |
+          $Ansible.Changed = $false
+          $t = Get-ScheduledTask -TaskName '{{ collector_task }}' -ErrorAction SilentlyContinue
+          if ($t) { "$($t.State)|$($t.Principal.UserId)|$($t.Actions[0].Execute)" } else { 'missing' }
+      register: coll_task
+    - ansible.builtin.assert:
+        that: coll_task.output[0] != 'missing'
+        fail_msg: "task {{ collector_task }} not registered — run role win_collector"
+        success_msg: "task {{ collector_task }}: {{ coll_task.output[0] }}"
+
+    - name: Collector selftest (proves it runs; not that it captures)
+      ansible.windows.win_command: '"{{ etwpy_python }}" -m etwcollect selftest'
+      environment:
+        ETW2NODLINK: "{{ lab_home }}\\etw2nodlink.py"
+      changed_when: false
+
     - name: Converter selftest (proves it runs)
       ansible.windows.win_command: >-
         "{{ tools_dir }}\python-embed\{{ python_embed_version }}\python.exe" "{{ lab_home }}\etw2nodlink.py" --selftest
       changed_when: false
 
     # ---------- win_alloy ----------
-    - name: Alloy service running (win_alloy)
+    - name: Alloy service state (win_alloy; running only for collector=silketw)
       ansible.windows.win_service_info:
         name: Alloy
       register: alloy_svc
     - ansible.builtin.assert:
         that:
           - alloy_svc.services | length == 1
-          - alloy_svc.services[0].state == 'started'
-        fail_msg: "Alloy not running — run role win_alloy"
-        success_msg: "Alloy service running"
+          - alloy_svc.services[0].state == ('started' if collector == 'silketw' else 'stopped')
+        fail_msg: "Alloy is {{ alloy_svc.services[0].state | default('missing') }}, expected {{ 'started' if collector == 'silketw' else 'stopped (etwcollect pushes to Loki itself)' }} — run role win_alloy"
+        success_msg: "Alloy {{ alloy_svc.services[0].state }} (collector={{ collector }})"
 
     - name: Alloy config present (win_alloy)
       ansible.windows.win_stat:

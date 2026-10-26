@@ -1,4 +1,4 @@
-# PROGRESS (status as of 2026-10-25)
+# PROGRESS (status as of 2026-10-26)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 
@@ -8,8 +8,11 @@ The "widen benign + calibrate" cycle ran on **1 HOUR** of benign data (not 2): k
 `x-20261022T140932Z` → `exp03` trained + promoted → live DVWA→RCE attack. Work is on branch
 **`collect-benign-data-for-1-hour`**. The full flow with LLM support ran live on 2026-10-25 (branch
 `make-sure-to-support-llm-investigator`) and exposed a **collector blocker**: SilkService writes Kernel-File
-events far behind real time, so the live engine drops every file event as late. **Now: fix the kfile lag**,
-then re-run the full flow (Next 3 steps). No live detection result so far is valid (DEVIATIONS D8 correction).
+events far behind real time, so the live engine drops every file event as late. Cause found 2026-10-26: its
+per-event file writes feed back into Kernel-File (`docs/notes/silkservice-kfile-lag.md`). **Now (user,
+2026-10-26): build our own Python collector `src/etw-python` that also pushes to Loki, verify it, then remove
+SilkService and Alloy completely** (DEVIATIONS D10, plan in Next 3 steps). No live detection result so far is
+valid (DEVIATIONS D8 correction).
 
 DONE this session (2026-10-22, verified live):
 - **exp03** trained on the 1-h capture and **PROMOTED** (gate passed: 77-min kfile span, all 6 edge types
@@ -36,9 +39,13 @@ DONE 2026-10-25 (verified live):
   reproduces the live windows that were not affected by late kfile lines, and the same LLM verdict.
 
 OPEN (the real limitation):
-- **kfile lag (blocker)**: SilkService falls behind on Kernel-File at ~20–25 % of real time from a fresh
-  run, ~1 CPU core, most events are its own writes + Alloy's reads; the engine drops them as late.
-  DEVIATIONS D8 correction.
+- **kfile lag (blocker)**: SilkService falls behind on Kernel-File from a fresh run (9+ min behind after
+  25 min; the "~20–25 % of real time" figure does not fit that, re-measure), ~1 CPU core; cause verified in
+  its source: `File.AppendAllText` per event → ≥ 2 Kernel-File events of its own per line (224k of 300k kfile
+  lines are SilkService's, 45k Alloy's). Fix in progress: own collector (D10).
+- **NET attribution bug** (verified 2026-10-26): 77 % of knet events have header PID ≠ payload PID;
+  `etw2nodlink._net()` uses the header copy (`XmlEventData.PID`), not the owner (`_PID`). Every capture so
+  far, exp03 included, has mostly wrong NET edges. Converter fix (prefer `_pid`) is part of the D10 work.
 - **Browser benign FP**: an Edge-browsing benign window hit **31.0** (Moderate, false alarm). msedge's
   many per-instance processes are unseen in benign training → the *same* mechanism as the cradle. The fix
   is benign **variety** (training that covers browsing), **not** more capture time. DEVIATIONS D8,
@@ -141,10 +148,9 @@ OPEN (the real limitation):
 
 ## Not done
 
-- 2h (or 90-min) benign train capture (07) on `ws-etw`, pulled from Loki, retrain into `exp03`, promote,
-  calibrate, attack-test. NOT run yet; this is the paused cycle (see Current focus + Next 3 steps). The
-  kfile-truncation blocker that made earlier captures FILE-starved is now fixed (see Done 2026-10-21).
-  Still gate on `lab status` per-provider coverage (kfile ≈ full span) before trusting any new capture.
+- Benign train capture (07) with the NEW collector (D10), pulled from Loki, train `exp04`, promote,
+  calibrate, attack-test. Blocked on the collector. Gate on `lab status` per-provider coverage (kfile ≈ full
+  span) and Read/Write per window before trusting it.
 
 - Run the RCE kill chain end to end against DVWA. DVWA provisioning is verified on `ws-etw`
   (`ansible-playbook -i inventory.local.ini windows.yml -e vulnlab_enabled=true` serves DVWA on :3000,
@@ -211,20 +217,21 @@ Repo hygiene:
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
-## Next 3 steps (fix the kfile lag, then re-run the full flow — 2026-10-25)
+## Next 3 steps (own collector, then re-run the full flow — 2026-10-26)
 
-1. Diagnose the SilkService kfile lag on `ws-etw` (time-boxed A/B):
-   - stop Alloy for ~2 min: does SilkService catch up?
-   - count SilkService Write events per output line (self-amplification);
-   - check whether the exp03 training kfile also thinned out over time (Read per window across the 37 windows);
-   - read the real-time "events lost" counter.
-   Then propose a fix (e.g. keep the collector's own I/O out of the Kernel-File stream, or another consumer).
-2. Re-run the full flow once kfile keeps up (Loki kfile lag < 20 s, `late_dropped` ≈ 0). Check:
-   - benign stays green;
-   - the attack's own nodes are flagged;
-   - LLM triage `attack` + IOC report.
-   Replay it on the laptop as in 2026-10-25.
-3. Browser FP (benign variety in training) once live data is complete.
+1. Build `src/etw-python` (`etwcollect`, uv, stdlib + ctypes): ETW session + TDH decode, self-exclusion,
+   batched writer, Loki shipper (replaces Alloy), ledger push; Linux `selftest`. Ansible: uv, mount
+   `C:\etw-python` locally / clone on cloud, SYSTEM task `etwlab-collector`, `etwctl` switch.
+2. Verify on `ws-etw` with SilkService + Alloy still installed:
+   - `etwcollect selftest --live`;
+   - parity vs SilkService (3 min side by side, `tools/parity.py`);
+   - ≥ 30 min alone with the benign workload: Loki kfile lag < 20 s, `EventsLost` 0, CPU well under a core,
+     Loki counts = file lines, backlog recovers after a Loki outage;
+   - a 5-min build: all 6 edge types, Read/Write per window in the exp03 range; live `late_dropped` ≈ 0.
+   Then remove SilkService and Alloy completely (Ansible cleanup, docs, deliverables) + the converter
+   `_pid` fix.
+3. 07 benign capture with the new collector → `exp04` → promote → full flow (benign green, attack nodes
+   flagged, LLM `attack` + report; laptop replay). Browser FP (benign variety) after that.
 
 Watch item: the first 15-min `07` run (`x-20261021T161810Z`) did not write `stopped_utc` (capture left
 running); the 5-min smoke stopped cleanly, so likely a one-off — but confirm `07` stops the service on the 2h run.
