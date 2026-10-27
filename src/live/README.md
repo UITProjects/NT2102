@@ -1,8 +1,8 @@
 # Live demo: VM → Loki → trainer scoring → browser
 
 ```
-VM  SilkService → raw\test\live-<UTC>\{kfile,knet,kproc}.json      (start-live.ps1)
-    Grafana Alloy (service) tails them ──push──► Loki :3100 on the trainer
+VM  etwcollect (SYSTEM task) → raw\test\live-<UTC>\{kfile,knet,kproc}.json      (start-live.ps1)
+    its shipper thread ──push──► Loki :3100 on the trainer      (src/etw-python; SilkService + Alloy before 2026-10-26)
 trainer  live_server.py --loki-url → loki_source.py (poll the newest test run, 1 s)
      → engine.py: reorder by event time → etw2nodlink.Graph (same code as training,
      src/pipeline/etw2nodlink.py) → 5-min windows → train scaler + train relations →
@@ -13,7 +13,7 @@ trainer  live_server.py --loki-url → loki_source.py (poll the newest test run,
 | file | role |
 |---|---|
 | `loki_source.py` | follows Loki: newest test run → engine payloads (synthetic offsets, dos map from `etw-meta`) |
-| `loki_push.py` | test feed: pushes a recorded run into Loki in Alloy's shape (`--shift-to-now --speed N` for live) |
+| `loki_push.py` | test feed: pushes a recorded run into Loki in the collector's shape (`--shift-to-now --speed N` for live) |
 | `etwship.py` | stdlib HTTP shipper: `--replay` on the host (compare_replay), `--print-dos-map` on the VM (etwctl) |
 | `engine.py` | ingest, reorder buffer, windows, scoring thread, calls Alg. 1 and the LLM thread |
 | `live_server.py` | FastAPI: `/ingest`, `/api/*`, SSE `/api/stream`, UI at `/` |
@@ -58,7 +58,7 @@ uv run python src/live/compare_replay.py --session src/live/sessions/replay-x-20
 Expect `ALL MATCH`. Watch at http://127.0.0.1:8000. The dos-map is inferred from the raw paths
 (`\device\harddiskvolume4` → `c:` on this VM). Replay speed: 120 works; 0 hangs, 600 times out.
 
-## 5. Live (Alloy → Loki, the default)
+## 5. Live (etwcollect → Loki, the default)
 
 The trainer runs `ocr-live` (systemd, `src/ansible/roles/ubuntu_project`), which is
 `live_server.py ... --loki-url http://127.0.0.1:3100` with the current model (`lab promote <run>`) plus
@@ -66,7 +66,7 @@ The trainer runs `ocr-live` (systemd, `src/ansible/roles/ubuntu_project`), which
 
 **The capture is always on.** The SYSTEM scheduled task `etwlab-live` (win_shipper role) runs
 `C:\scripts\start-live.ps1` at boot and every 5 min: it keeps a `test/live-<UTC>` run capturing, starts a new
-run every 6 h, deletes raw `live-*` runs idle for 1 day, and leaves SilkService alone while a hold exists
+run every 6 h, deletes raw `live-*` runs idle for 1 day, and leaves the collector alone while a hold exists
 (`07-build-train-dataset.ps1` pauses it for a train capture and resumes it after). By hand, in an elevated
 PowerShell on the VM:
 ```

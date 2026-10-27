@@ -18,9 +18,8 @@ etwcollect (SYSTEM task) -> C:\lab-out\etw\raw\<split>\<run>\{kproc,kfile,knet}.
        live:      live_server.py --loki-url (loki_source.py) -> windows -> UI :8000
 ```
 
-Until `etwcollect` was verified (2026-10-26, DEVIATIONS D10) SilkService wrote the files and Grafana Alloy
-shipped them; `collector: silketw` in `group_vars/all.yml` still selects that path until both are removed.
-The Loki contract did not change: Loki keeps every line exactly as written, with these labels next to it:
+Before 2026-10-26 SilkService wrote the files and Grafana Alloy shipped them; `win_collector` now removes
+both (DEVIATIONS D10). The Loki contract did not change: Loki keeps every line exactly as written, with these labels next to it:
 
 | kind | keys | use |
 |---|---|---|
@@ -64,13 +63,13 @@ sum by (provider) (count_over_time({job="silketw", run="live-20261017T040000Z"}[
 > node, so run these playbooks from your Linux host (or WSL2 on a Windows machine). Windows is only
 > ever a *managed* target here, over WinRM. Never install Ansible or run `ansible-playbook` on Windows.
 
-## Status (2026-10-17)
+## Status (2026-10-26)
 
 | level | state |
 |---|---|
-| it runs (static) | `--syntax-check` passes for every playbook; `alloy fmt` (v1.20.1) accepts the rendered `config.alloy`; 14/14 `./selftest.sh` steps pass |
+| it runs (static) | `--syntax-check` passes for every playbook; 15/15 `./selftest.sh` steps pass (incl. `etwcollect selftest`) |
 | Ubuntu side | provisioned on the local `ubuntu-trainer`; a second run reports no changes except the `ocr-live` start (see `repo_branch` below). Verified with the recorded capture `20261009T145632Z` fed through `loki_push.py`: (1) pulled lines = original files (count + sha256 of sorted lines, all 3 providers); (2) `build_experiment.py` edges, node attributes and windows identical to the VM-built ones, line for line; (3) live via `--loki-url`: `compare_replay.py` ALL MATCH, 8/8 windows |
-| Windows side | **not run yet**: `win_alloy` and the `etwctl` dos-map change are untested on `ws-etw`. Use the checklist below |
+| Windows side | verified on `ws-etw` (2026-10-26): `windows.yml` 2nd run `changed=0`, `verify-windows.yml` passes, `etwcollect selftest --live` passes, 32-min live run lossless into Loki (counts = file lines) with kfile lag within ±4 s and 0 lost events (PROGRESS) |
 | model | being rebuilt from scratch from Loki-pulled data. `exp01` (Win10 data, older converter) shows `converter_check: MISMATCH`, which is expected |
 
 ## Addresses are inventory-driven (cloud-ready)
@@ -78,7 +77,7 @@ sum by (provider) (count_over_time({job="silketw", run="live-20261017T040000Z"}[
 Nothing hardcodes an IP. Each host has two addresses:
 
 - `ansible_host`: how Ansible connects (WinRM 5985 / SSH 22). Public IP/DNS on cloud.
-- `private_ip`: the subnet/VPC IP the VMs use to reach each other (Alloy → Loki).
+- `private_ip`: the subnet/VPC IP the VMs use to reach each other (etwcollect → Loki).
 
 `trainer_host` defaults to the Ubuntu host's `private_ip`, and `loki_url` = `http://<trainer_host>:3100`.
 The trainer also needs `admin_cidr` (who may open Grafana) and `grafana_admin_password`. Both are in
@@ -119,7 +118,7 @@ continues.
 ## Run
 
 ```bash
-# local lab (default inventory.local.ini, no vault needed). Ubuntu FIRST: Alloy needs Loki to push to.
+# local lab (default inventory.local.ini, no vault needed). Ubuntu FIRST: etwcollect needs Loki to push to.
 vagrant up                                   # from src/, builds both bare VMs
 ansible ubuntu -m ping
 ansible windows -m ansible.windows.win_ping  # use win_ping on Windows, NOT ping
@@ -141,8 +140,8 @@ Non-empty also makes `uv sync` install the `llm` group. The API key is never an 
 on the trainer (`alg2.py --ping`, `src/live/README.md` §5) BEFORE the flags are applied, or `ocr-live` exits
 at start (no terminal to prompt). `-e live_llm_args=` turns the LLM off for one run.
 
-After the Windows run, pin the download hashes the roles print (`silketw_sha256`, `python_embed_sha256` in
-`group_vars/all.yml`). `alloy_sha256` and `uv_sha256` are already pinned from the releases' checksum files.
+`python_embed_sha256` and `uv_sha256` in `group_vars/all.yml` are pinned (the latter from the release's
+checksum file).
 
 **Collector source (`etwpy_mode`).** Local lab: `inventory.local.ini` sets `etwpy_mode=mount`, and
 `src/Vagrantfile` shares `src/etw-python` as `C:\etw-python` (needs `vagrant reload ws-etw` once). A host
@@ -241,8 +240,7 @@ group_vars/   all.yml  windows.yml  ubuntu.yml  vault.yml.example
 roles/
   win_base        OS config: net profile, UTC+7, no-sleep, RDP, folders, Defender
   win_collector   uv + etw-python venv + SYSTEM task etwlab-collector + embeddable Python + etw2nodlink.py/
-                  etwwindow.py/etwship.py/etwctl (+ SilkETW/SilkService until etwcollect is verified)
-  win_alloy       Grafana Alloy: stopped + disabled unless collector=silketw (removed after verification)
+                  etwwindow.py/etwship.py/etwctl; removes the old SilkService + Grafana Alloy
   win_shipper     start-live.ps1 watchdog + SYSTEM task etwlab-live (always-on live test capture)
   win_benign      06-benign-workload.ps1 + 07-build-train-dataset.ps1
   win_vulnlab     XAMPP (Apache + PHP + MariaDB) + DVWA, served on vulnlab_port (opt-in: vulnlab_enabled)

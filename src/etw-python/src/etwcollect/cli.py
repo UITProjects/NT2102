@@ -133,8 +133,8 @@ def main(argv=None) -> int:
     r.add_argument("--out-dir", help="write here instead of the run folder in state.json")
     r.add_argument("--status", help="status file (default: collector-status.json next to etwlab.json)")
     r.add_argument("--no-push", action="store_true", help="files only, nothing to Loki")
-    r.add_argument("--exclude-image", action="append", default=["alloy"],
-                   help="also drop the I/O of processes whose image starts with this (default: alloy)")
+    r.add_argument("--exclude-image", action="append", default=[],
+                   help="also drop the I/O of processes whose image name starts with this (repeatable)")
     r.add_argument("--drain-s", type=float, default=30.0, help="seconds to finish shipping after a stop")
     s = sub.add_parser("stop")
     s.add_argument("--wait", type=float, default=60.0)

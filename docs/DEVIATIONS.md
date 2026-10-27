@@ -240,17 +240,32 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     `PName`, `TID`, header `PID`) inside `XmlEventData`;
   - exclusion **before** formatting, counted: events of its own PID; Read/Write on file objects whose
     Create named a path under the raw output root (any process, incl. System lazy writes); knet events
-    whose payload PID is excluded. During the switch also Alloy's PID;
+    whose payload PID is excluded; Read/Write on ETW's own real-time spill file for the session (System writes it);
   - one batched write per provider per second instead of one file open per event;
   - it pushes its own files to Loki (saved offsets, retry), with the labels/metadata/timestamps Alloy used,
-    plus the dos-map line and the 07 workload ledger. Alloy is removed once this is verified.
+    plus the dos-map line and the 07 workload ledger. SilkService and Alloy were removed from `ws-etw` the
+    same day, after the checks below (`win_collector` uninstalls them).
+  - Verified on `ws-etw` (2026-10-26):
+    - parity: SilkService and etwcollect side by side, 20 s window: kproc 620/620, kfile 88,612/88,612 (the 76
+      SilkETW-only lines are our own process), knet 26/26 events matched, 0 field mismatches after undoing
+      SilkETW's formatting (`tools/parity.py`); our timestamps are 0.13–0.18 ms earlier than TraceEvent's;
+    - 32-min live run with generated activity (~1,300 kfile events/s): kfile lag within ±4 s throughout
+      (negative values = ETW timestamps a few seconds ahead of the system clock), `EventsLost` 0, collector CPU
+      ~9–11 % of one core; Loki stopped for 2 min mid-run: 69 MB backlog, shipped within ~7 min of the
+      restart; Loki per-provider counts = file line counts exactly (2,629,621 lines); the live engine got
+      ~374k Read edges per 5-min window (SilkService runs: 0).
 - Why: SilkService's per-event writes feed back into Kernel-File faster than it can drain them, and it has
   no exclude filter (keep-only, one value) and no batching (`docs/notes/silkservice-kfile-lag.md`); live
   windows had no file events (D8 correction). Own code is also fully explainable.
 - Impact: raw lines differ in formatting from earlier captures, and process names of short-lived
   processes are real instead of `N/A`, so earlier experiments (exp01–exp03) are not comparable; a new
   benign capture + retrain (exp04) is required. The converter output contract is unchanged. Excluded events
-  are gone from the raw data (counts in `collector-status.json`); an attacker binary named like the
-  collector's or Alloy's process is not affected (PID-based, not name-based, except Alloy during the switch).
-- Limits: collector correctness is shown only by the parity check against SilkService and the lag/lossless
-  checks (PROGRESS); no claim that it captures every kernel event (`EventsLost` is reported, not prevented).
+  are gone from the raw data (counts in `collector-status.json`); exclusion is by PID and by our own file
+  paths, not by name, so a binary named like the collector is still recorded. Anything written under the raw
+  output root (`C:\lab-out\etw\raw`) by any process is dropped: an attacker hiding files there is invisible.
+  Fields the manifest marks as hex (IOSize, ByteOffset, CreateOptions) are written as `0x..`. Live: a Loki
+  outage longer than the engine's idle fallback makes the backlog arrive after its windows closed (dropped as
+  late, D8); the files and Loki still hold every line.
+- Limits: collector correctness is shown by the parity check against SilkService (one 20 s window) and the
+  lag/lossless checks on one 32-min run with generated (not workload) activity; no claim that it captures
+  every kernel event (`EventsLost` is reported, not prevented).

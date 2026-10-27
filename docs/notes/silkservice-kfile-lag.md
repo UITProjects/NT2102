@@ -1,9 +1,8 @@
 # Live windows have no file events: the SilkService kfile lag
 
-Status as of 2026-10-26: cause found in the code. **Decision (user, 2026-10-26): replace SilkService and
-Alloy with our own Python collector `src/etw-python`** (see "Decision" below, DEVIATIONS D10); not built yet. Measurements are from `ws-etw` on
-2026-10-25 (DEVIATIONS D8 correction, PROGRESS "OPEN"). This note explains why the events go missing.
-Fix options are at the end.
+Status as of 2026-10-26: **resolved.** Our own Python collector `src/etw-python` (`etwcollect`) replaced
+SilkService and Alloy, was verified on `ws-etw` and both were removed (DEVIATIONS D10; results in "Outcome"
+at the end). Measurements of the problem are from `ws-etw` on 2026-10-25 (DEVIATIONS D8 correction).
 
 Tags: [OURS] what this project does · [INFERENCE] a guess · **SilkService code** = mandiant/SilkETW tag
 `v0.8` (the version we deploy, `src/ansible/group_vars/all.yml:48`), file `SilkService/ETWCollector.cs`
@@ -227,3 +226,14 @@ does this today, so it isn't new, but it belongs in DEVIATIONS.
 2. Check that `late_dropped` in `/api/status` stays ≈ 0.
 3. Check that each live window's Read/Write counts are in the range of the exp03 training windows.
 4. Check that SilkService's CPU is well below 1 core.
+
+## Outcome (2026-10-26, verified on `ws-etw`)
+
+- Parity with SilkService (both recording the same 20 s): every event matched (kproc 620, kfile 88,612, knet 26),
+  0 field mismatches; the only SilkETW-only events were the collector's own.
+- 32-minute live run at ~1,300 kfile events/s: kfile lag within ±4 s the whole time, `EventsLost` 0, collector
+  ~10 % of one core (SilkService: 1 core and minutes behind). Loki stopped for 2 minutes: the backlog was
+  shipped within ~7 minutes, and Loki's counts equal the file line counts exactly.
+- The live engine received ~374k Read edges per 5-minute window, where SilkService runs gave 0.
+- Remaining effect: a Loki outage longer than the live engine's idle fallback still makes the live windows of
+  the outage thin (late lines dropped, D8); the files and Loki are complete.

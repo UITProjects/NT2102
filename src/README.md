@@ -59,7 +59,7 @@ trained model is never overwritten.
 |---|---|---|---|
 | `Vagrantfile`, `setup-virtualbox.sh` | builds the two bare lab VMs (Windows collector + Ubuntu trainer) | host | yes |
 | `etw-python/` | the ETW collector `etwcollect` (uv project, stdlib + ctypes): ETW -> SilkETW-format lines -> Loki; mounted at `C:\etw-python` locally, cloned on cloud | VM | yes |
-| `ansible/` | provisions both VMs (Windows: etw-python collector, vulnlab, SilkETW + Alloy until verified; Ubuntu: Loki/Grafana, repo, `ocr-live`); cloud-portable via inventory | control node | yes |
+| `ansible/` | provisions both VMs (Windows: etw-python collector, vulnlab; Ubuntu: Loki/Grafana, repo, `ocr-live`); cloud-portable via inventory | control node | yes |
 | `lab/` | the `lab` CLI (the loop above) | trainer / host | yes |
 | `pipeline/` | stage scripts: Loki pull, convert, window, features, training, scoring, Alg. 1/2 | trainer / host | yes |
 | `live/` | live demo: server, engine, Loki source, web UI, replay tools | trainer | yes (`sessions/` no) |

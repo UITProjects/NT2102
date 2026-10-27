@@ -13,8 +13,8 @@ server_port: 8000
 # The Ubuntu server binds all interfaces so it listens on the subnet IP whatever it is.
 server_bind: "0.0.0.0"
 
-# ---- log pipeline: Alloy (Windows, native) -> Loki + Grafana (Docker, host network, on the trainer) --
-# Alloy pushes to loki_url; the live server and loki_pull.py read Loki on the trainer itself (127.0.0.1).
+# ---- log pipeline: etwcollect (Windows) -> Loki + Grafana (Docker, host network, on the trainer) -------
+# etwcollect pushes to loki_url; the live server and loki_pull.py read Loki on the trainer itself (127.0.0.1).
 loki_port: 3100
 grafana_port: 3000            # on the Ubuntu host (vulnlab's 3000 is on the Windows host: no clash)
 loki_url: "http://{{ trainer_host }}:{{ loki_port }}"
@@ -27,7 +27,7 @@ loki_stack_dir: "/opt/lokistack"
 # (local inventory for the lab; vault for cloud). Loki itself only accepts the Windows host's private_ip.
 
 # ---- lab clock ------------------------------------------------------------------------------------
-# Both VMs run on UTC+7. Safe for the pipeline: SilkETW writes the offset into every TimeStamp
+# Both VMs run on UTC+7. Safe for the pipeline: every TimeStamp carries its offset (etwcollect writes UTC)
 # (e.g. "...+07:00"), labels/ledger/window IDs use UTC explicitly, so epoch ms do not depend on the zone.
 tz_windows: "SE Asia Standard Time"   # Windows ID: (UTC+07:00) Bangkok, Hanoi, Jakarta
 tz_linux: "Asia/Ho_Chi_Minh"          # IANA name, UTC+7, no DST
@@ -45,11 +45,6 @@ dvwa_db_password: "p@ssw0rd" # lab-only DB password on a host-only network; DVWA
 # gets the attack pack via a synced-folder mount (src/Vagrantfile). No attacker vars here.
 
 # ---- pinned tool versions -------------------------------------------------------------------------
-silketw_tag: "v0.8"
-# v0.8 release asset. Pin the sha256 after the first download (printed by the role) to make it immutable.
-silketw_url: "https://github.com/mandiant/SilkETW/releases/download/v0.8/SilkETW_SilkService_v8.zip"
-silketw_sha256: "sha256:6c612c406844c72cde51bcd0660ca6bb704656549043cb5a8b8bbba5fe3d8dc3"
-
 python_embed_version: "3.12.7"
 python_embed_url: "https://www.python.org/ftp/python/{{ python_embed_version }}/python-{{ python_embed_version }}-embed-amd64.zip"
 python_embed_sha256: "sha256:0d57bb6cb078b74d23dbfe91f77d6780d45bed328911609f1f7ee2ba1606bf44"
@@ -59,24 +54,15 @@ uv_version: "0.9.3"
 uv_url: "https://github.com/astral-sh/uv/releases/download/{{ uv_version }}/uv-x86_64-pc-windows-msvc.zip"
 uv_sha256: "sha256:9f7595313b44e57dcaeef63fe4f3de9a0cf4f92a53302b429341f457f70ca3b9"   # release .sha256 file
 
-alloy_version: "1.20.1"
-alloy_url: "https://github.com/grafana/alloy/releases/download/v{{ alloy_version }}/alloy-installer-windows-amd64.exe"
-alloy_sha256: "sha256:23fcfe3755f02e8a6a83f27149851322ab2b66d584e76d239d9c031f50d3a8f0"   # release SHA256SUMS
 
 # ---- Windows lab paths ----------------------------------------------------------------------------
 graph_name: "SimulatedW10"   # the repo asserts the host name against a fixed list; keep this name
 tools_dir: 'C:\Tools'
 lab_home: 'C:\ProgramData\etwlab'
-silketw_dir: 'C:\Tools\SilkETW'
 out_dir: 'C:\lab-out\etw'
 raw_root: 'C:\lab-out\etw\raw'
-service_name: "SilkService"
 
 # ---- ETW collector: our own Python collector (src/etw-python, DEVIATIONS D10) --------------------------
-# collector: which collector etwctl drives. "python" = etwcollect (also pushes to Loki itself, so Alloy is
-# stopped and disabled); "silketw" = the old SilkService + Alloy path, kept ONLY until etwcollect is verified
-# (parity run, PROGRESS), then both are removed.
-collector: "python"
 collector_task: "etwlab-collector"     # SYSTEM scheduled task that runs `python -m etwcollect run`
 collector_session: "etwlab-collector"  # its ETW session name (etwcollect stop stops it by this name)
 # Where the collector source comes from: etwpy_mode = clone (cloud default: git clone repo_url@repo_branch to

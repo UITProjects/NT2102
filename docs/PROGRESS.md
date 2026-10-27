@@ -8,11 +8,12 @@ The "widen benign + calibrate" cycle ran on **1 HOUR** of benign data (not 2): k
 `x-20261022T140932Z` → `exp03` trained + promoted → live DVWA→RCE attack. Work is on branch
 **`collect-benign-data-for-1-hour`**. The full flow with LLM support ran live on 2026-10-25 (branch
 `make-sure-to-support-llm-investigator`) and exposed a **collector blocker**: SilkService writes Kernel-File
-events far behind real time, so the live engine drops every file event as late. Cause found 2026-10-26: its
-per-event file writes feed back into Kernel-File (`docs/notes/silkservice-kfile-lag.md`). **Now (user,
-2026-10-26): build our own Python collector `src/etw-python` that also pushes to Loki, verify it, then remove
-SilkService and Alloy completely** (DEVIATIONS D10, plan in Next 3 steps). No live detection result so far is
-valid (DEVIATIONS D8 correction).
+events far behind real time, so the live engine drops every file event as late. Cause: its per-event file
+writes feed back into Kernel-File (`docs/notes/silkservice-kfile-lag.md`). **Fixed 2026-10-26: our own Python
+collector `src/etw-python` (`etwcollect`, pushes to Loki itself) is verified on `ws-etw`, and SilkService +
+Alloy are removed** (DEVIATIONS D10, Done below). The always-on live capture now runs on it. **Now:** a benign
+train capture with the new collector (07, from the RDP desktop) → `exp04` → full flow (Next 3 steps). No live
+detection result so far is valid (DEVIATIONS D8 correction); exp03 does not match the new data (D10).
 
 DONE this session (2026-10-22, verified live):
 - **exp03** trained on the 1-h capture and **PROMOTED** (gate passed: 77-min kfile span, all 6 edge types
@@ -39,13 +40,14 @@ DONE 2026-10-25 (verified live):
   reproduces the live windows that were not affected by late kfile lines, and the same LLM verdict.
 
 OPEN (the real limitation):
-- **kfile lag (blocker)**: SilkService falls behind on Kernel-File from a fresh run (9+ min behind after
-  25 min; the "~20–25 % of real time" figure does not fit that, re-measure), ~1 CPU core; cause verified in
-  its source: `File.AppendAllText` per event → ≥ 2 Kernel-File events of its own per line (224k of 300k kfile
-  lines are SilkService's, 45k Alloy's). Fix in progress: own collector (D10).
-- **NET attribution bug** (verified 2026-10-26): 77 % of knet events have header PID ≠ payload PID;
-  `etw2nodlink._net()` uses the header copy (`XmlEventData.PID`), not the owner (`_PID`). Every capture so
-  far, exp03 included, has mostly wrong NET edges. Converter fix (prefer `_pid`) is part of the D10 work.
+- **exp03 vs new data**: exp03 was trained on SilkService captures (wrong NET owners, `N/A` process names,
+  thinned kfile). On etwcollect data every live window is red (sg 62–96 during generated DLL-hashing load, not
+  a detection result). Needs a new benign capture + `exp04` (Next 3 steps).
+- Live engine vs Loki outages: after a Loki outage longer than `--loki-idle-s`, the backlog reaches the engine
+  after its windows closed and is dropped as late (522k lines after a 2-min outage on 2026-10-26). Files and
+  Loki keep every line, so a re-build/replay is complete; only the live windows of the outage are thin.
+- etwcollect lag values go to −3.6 s over 32 min: ETW event timestamps run a few seconds ahead of the system
+  clock (status compares against wall time). Harmless for windows; not investigated further.
 - **Browser benign FP**: an Edge-browsing benign window hit **31.0** (Moderate, false alarm). msedge's
   many per-instance processes are unseen in benign training → the *same* mechanism as the cradle. The fix
   is benign **variety** (training that covers browsing), **not** more capture time. DEVIATIONS D8,
@@ -55,6 +57,24 @@ OPEN (the real limitation):
   60-min target because one scenario call blocked) — deferred, not yet debugged.
 
 ## Done
+
+- **Own ETW collector `etwcollect`** (`src/etw-python`, 2026-10-26, verified on `ws-etw`, DEVIATIONS D10):
+  stdlib + ctypes, one real-time session (Kernel-Process 0x50 / File 0x380 / Network 0x30), TDH decode, own
+  I/O dropped in the callback, 1 s batched writes, Loki shipper with saved offsets (replaces Alloy), ledger push
+  for 07. SYSTEM task `etwlab-collector` started/stopped by `etwctl`; local source = Vagrant mount `C:\etw-python`,
+  cloud = git clone. Checks:
+  - `etwcollect selftest` (any OS) + `selftest --live` on ws-etw (struct sizes, child process + canary file +
+    curl network event captured, nothing from our PID written, converter gives Start/Load/Read/Write/Send/Recv);
+  - parity vs SilkService side by side (20 s): 100 % of events matched for kproc 620, kfile 88,612, knet 26, 0
+    field mismatches; SilkETW-only = our own 76 events;
+  - 32-min live run (~1,300 kfile ev/s generated activity): kfile lag within ±4 s, `EventsLost` 0, CPU ~10 %
+    of a core; Loki down 2 min → 69 MB backlog shipped within ~7 min; Loki counts = file lines (2,629,621);
+    live engine `late_dropped` 0 outside the outage, ~374k Read edges per window;
+  - Ansible: SilkService + Alloy uninstalled, `win_alloy` role deleted, 2nd `windows.yml` run `changed=0`,
+    `verify-windows.yml` passes (DVWA too). Repo-wide `./selftest.sh` 15/15.
+- **NET attribution fix** (2026-10-26): 77 % of knet events have header PID ≠ payload PID; the converter now
+  takes the owner from `_PID` (SilkETW) / `PID` (etwcollect), selftest case added. Old captures are fixed on
+  re-conversion; models trained before (exp01–exp03) used the wrong owners.
 
 - Windows 10 ETW lab VM + collector + converter, end to end (Ansible, `src/ansible/`) + `src/scripts/06, 07`.
 - Benign train dataset, experiment `20261009T145632Z` (verified, `src/out/etw/experiments/20261009T145632Z/`):
@@ -149,7 +169,7 @@ OPEN (the real limitation):
 ## Not done
 
 - Benign train capture (07) with the NEW collector (D10), pulled from Loki, train `exp04`, promote,
-  calibrate, attack-test. Blocked on the collector. Gate on `lab status` per-provider coverage (kfile ≈ full
+  calibrate, attack-test (Next 3 steps; the collector is ready). Gate on `lab status` per-provider coverage (kfile ≈ full
   span) and Read/Write per window before trusting it.
 
 - Run the RCE kill chain end to end against DVWA. DVWA provisioning is verified on `ws-etw`
@@ -217,21 +237,15 @@ Repo hygiene:
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
-## Next 3 steps (own collector, then re-run the full flow — 2026-10-26)
+## Next 3 steps (new collector in place — 2026-10-26)
 
-1. Build `src/etw-python` (`etwcollect`, uv, stdlib + ctypes): ETW session + TDH decode, self-exclusion,
-   batched writer, Loki shipper (replaces Alloy), ledger push; Linux `selftest`. Ansible: uv, mount
-   `C:\etw-python` locally / clone on cloud, SYSTEM task `etwlab-collector`, `etwctl` switch.
-2. Verify on `ws-etw` with SilkService + Alloy still installed:
-   - `etwcollect selftest --live`;
-   - parity vs SilkService (3 min side by side, `tools/parity.py`);
-   - ≥ 30 min alone with the benign workload: Loki kfile lag < 20 s, `EventsLost` 0, CPU well under a core,
-     Loki counts = file lines, backlog recovers after a Loki outage;
-   - a 5-min build: all 6 edge types, Read/Write per window in the exp03 range; live `late_dropped` ≈ 0.
-   Then remove SilkService and Alloy completely (Ansible cleanup, docs, deliverables) + the converter
-   `_pid` fix.
-3. 07 benign capture with the new collector → `exp04` → promote → full flow (benign green, attack nodes
-   flagged, LLM `attack` + report; laptop replay). Browser FP (benign variety) after that.
+1. Benign train capture with etwcollect: `07-build-train-dataset.ps1` from the RDP desktop (the first real use
+   of `etwctl` start/stop by 07 and of `etwcollect push-ledger`; check the ledger reaches Loki). Gate on
+   `lab status` coverage and Read/Write per window. Include browsing in the workload (browser FP).
+2. `lab loop` → `exp04` → `lab promote exp04`; `ocr-live` restarts on it. Benign live windows should be green.
+3. Full flow: DVWA→RCE from Kali during a live session: attack nodes flagged, LLM triage `attack` + report;
+   laptop replay as on 2026-10-25.
 
 Watch item: the first 15-min `07` run (`x-20261021T161810Z`) did not write `stopped_utc` (capture left
-running); the 5-min smoke stopped cleanly, so likely a one-off — but confirm `07` stops the service on the 2h run.
+running); the 5-min smoke stopped cleanly, so likely a one-off — but confirm `07` stops the collector task
+(`etwctl running` exits 1 afterwards) on the 2h run.

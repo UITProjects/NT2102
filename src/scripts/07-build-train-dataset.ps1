@@ -284,7 +284,7 @@ if (-not (Test-Path $WorkloadScript)) { throw "workload script not found: $Workl
 if (-not (Get-Command $WorkloadScript).Parameters.ContainsKey('BeforeLedger')) {
     throw "$WorkloadScript has no -BeforeLedger parameter - apply the 2-line patch first"
 }
-# `etwctl running` exits 0 while a capture runs (etwcollect task or SilkService, whichever etwlab.json names).
+# `etwctl running` exits 0 while a capture runs (the etwcollect task).
 & $EtwctlPs1 running | Out-Null
 $capturing = ($LASTEXITCODE -eq 0)
 # The always-on live capture (start-live.ps1 watchdog, test/live-*) is paused below, right before the train
@@ -376,20 +376,17 @@ finally {                                                # also runs on Ctrl+C o
 # ---------------------------------------------------------------- 2b. workload ledger -> Loki (etwcollect)
 # The ledger is written AFTER the capture stopped (-BeforeLedger), so the collector cannot ship it; Alloy used
 # to tail labels\*.csv. loki_pull.py on the trainer finds it as {job="workload-ledger", exp=<this id>}.
-if ("$($Cfg.Collector)" -ne 'silketw') {
-    Log "ledger   $(Join-Path $exp 'labels') -> Loki"
-    & $Cfg.EtwPython -m etwcollect push-ledger --exp $stamp --dir (Join-Path $exp 'labels') | Out-Host
-    if ($LASTEXITCODE) { Write-Warning "ledger push failed; re-run: & '$($Cfg.EtwPython)' -m etwcollect push-ledger --exp $stamp --dir '$(Join-Path $exp 'labels')'" }
-}
+Log "ledger   $(Join-Path $exp 'labels') -> Loki"
+& $Cfg.EtwPython -m etwcollect push-ledger --exp $stamp --dir (Join-Path $exp 'labels') | Out-Host
+if ($LASTEXITCODE) { Write-Warning "ledger push failed; re-run: & '$($Cfg.EtwPython)' -m etwcollect push-ledger --exp $stamp --dir '$(Join-Path $exp 'labels')'" }
 
 # ---------------------------------------------------------------- 3. collect raw into the experiment
 $src = Join-Path $Cfg.RawRoot "$Split\$run"
 $dst = Join-Path $exp "raw\$Split\$run"
 if (-not (Test-Path $src)) { throw "raw run folder not found: $src" }
 Log "collect  $src -> $dst"
-# COPY, not move: the collector's shipper (or Alloy with collector=silketw) reads $src to ship it to Loki (the
-# training source on the trainer); etwctl stop already waited for etwcollect's final push, Alloy needs a few
-# seconds after the stop, and moving files that are still open would fail.
+# COPY, not move: the collector's shipper reads $src to ship it to Loki (the training source on the trainer);
+# etwctl stop already waited for its final push, and a backlog left by a Loki outage is shipped at the next start.
 Log "wait     ${ShipWaitSeconds}s for the last lines to reach Loki"
 Start-Sleep -Seconds $ShipWaitSeconds
 # robocopy /E = cp -r (keep the source for the shipper); exit codes 0-7 mean success

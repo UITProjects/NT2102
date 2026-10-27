@@ -9,10 +9,10 @@
 
 _on_event() per event (cheap first, so excluded events cost little):
     1. which provider? (header GUID)            unknown -> count, return
-    2. kproc from an excluded PID?              drop before decoding (rule a)
+    2. kproc from an excluded PID?              drop before decoding (rule a; ProcessStart is decoded first)
     3. schema (cached) + decode the payload
     4. kfile rules (a)+(b) / knet rule (c)      drop our own I/O
-    5. ProcessStart -> remember the child's name (and exclude it if it is Alloy, during the switch)
+    5. ProcessStart -> remember the child's name (and exclude it if its image matches --exclude-image)
     6. build the SilkETW-format line, hand it to the writer
 """
 from __future__ import annotations
@@ -49,7 +49,7 @@ class Config:
     loki_url: str | None = None       # None or push=False: write files only
     push: bool = True
     session: str = SESSION
-    exclude_images: tuple = ("alloy",)
+    exclude_images: tuple = ()
     drain_s: float = 30.0
     extra_own_paths: tuple = field(default_factory=tuple)
 

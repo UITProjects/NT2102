@@ -118,10 +118,18 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   deepseek`) live: benign stays green, the DVWA→RCE attack goes red and gets an LLM attack verdict + report.
   The first run (2026-10-25) is blocked by the collector: SilkService writes Kernel-File events minutes late
   (its own per-event file writes feed back into Kernel-File), so live windows have no file events (DEVIATIONS
-  D8 correction, `docs/notes/silkservice-kfile-lag.md`). Fix (user, 2026-10-26): replace SilkService AND
-  Alloy with our own Python ETW collector `src/etw-python` (it pushes to Loki itself); once verified, remove
-  both completely (D10). Then capture benign data with it, train exp04, re-run.
-  Then: the browser false positive, the replay equivalence check, understanding the trainer (concepts 2–4).
+  D8 correction, `docs/notes/silkservice-kfile-lag.md`). Fixed (user, 2026-10-26): our own Python ETW collector
+  `src/etw-python` (`etwcollect`, pushes to Loki itself) replaced SilkService AND Alloy, verified on `ws-etw` and
+  both removed (D10, PROGRESS). exp03 does not match the new data (other collector, fixed NET owners), so
+  live windows are red until a new model exists; that is not a detection result.
+- Next step (user, 2026-10-27), in order; details and gates in PROGRESS "Next 3 steps":
+  1. Benign train capture with etwcollect: `07-build-train-dataset.ps1` from the RDP desktop, browsing
+     included (browser FP). First real use of `etwctl` by 07 and of `etwcollect push-ledger`: check the
+     ledger reaches Loki. Gate on `lab status` coverage and Read/Write per window.
+  2. `lab loop` → `exp04` → `lab promote exp04`; `ocr-live` restarts on it; benign live windows stay green.
+  3. Full flow: DVWA→RCE from Kali during a live session → attack window red, LLM triage `attack` + report
+     (DeepSeek); laptop replay.
+  Then: the replay equivalence check, understanding the trainer (concepts 2–4).
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
@@ -146,8 +154,7 @@ history of earlier progress) and, if relevant, this section.
   2026-10-17): edges stay CSV and Alg. 1 runs in memory.
 - Log transport (user, 2026-10-26, superseding the 2026-10-17 Alloy decision): our collector
   (`src/etw-python`, `etwcollect`) pushes its SilkETW-format JSON lines to Loki (Docker, host network) on
-  the Ubuntu trainer itself, from its own run files with saved offsets; Grafana Alloy is removed once the
-  collector is verified. Labels unchanged: job (`silketw`, it names the line format), host, split, run,
+  the Ubuntu trainer itself, from its own run files with saved offsets (Grafana Alloy removed 2026-10-26). Labels unchanged: job (`silketw`, it names the line format), host, split, run,
   provider; event/pid/process as structured metadata. Training pulls from Loki by run or time range
   (`loki_pull.py`); the live server follows Loki (`--loki-url`). All conversion, windowing and scoring run on
   the trainer with the training converter code, scaler and relation list; the live clock is event time
@@ -191,7 +198,7 @@ history of earlier progress) and, if relevant, this section.
 - VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (uv + `src/etw-python`
   collector as SYSTEM task `etwlab-collector`, `etwctl`, copies `src/pipeline/etw2nodlink.py` /
   `etwwindow.py` / `src/live/etwship.py`; the collector source is the Vagrant mount `C:\etw-python` locally
-  and a git clone on cloud; SilkETW and `win_alloy` stay installed only until the collector is verified),
+  and a git clone on cloud; it also removes the old SilkETW/SilkService and Grafana Alloy),
   `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture), `win_benign` (`src/scripts/06-benign-workload`,
   `07-build-train-dataset`), `win_vulnlab` (XAMPP + DVWA).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`

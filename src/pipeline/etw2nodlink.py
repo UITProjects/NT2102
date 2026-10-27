@@ -20,8 +20,9 @@ NODE_HEADER = ["node", "node_type", "node_attr"]
 #   awk -F, 'NR>1 {print $5, $2"->"$4}' SimulatedW10_train_edges.csv | sort | uniq -c
 DIRECTION = {"Load": "fwd", "Read": "fwd", "Write": "fwd", "Send": "fwd", "Recv": "fwd"}
 
-# The collector writes its own output file, and the log shipper (Grafana Alloy) reads it, so Kernel-File
-# sees both: drop their edges (feedback loop). Raw lines stay complete; only edges are dropped.
+# Captures before 2026-10-26: SilkService wrote its own output file and Grafana Alloy read it, so Kernel-File
+# saw both: drop their edges (feedback loop). etwcollect drops its own I/O before writing (DEVIATIONS D10); the
+# names stay for old captures and replays. Raw lines stay complete; only edges are dropped.
 EXCLUDE_IMAGES = {"silkservice", "alloy"}
 
 _FRAC = re.compile(r"(\.\d{6})\d+")

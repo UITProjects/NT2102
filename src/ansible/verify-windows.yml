@@ -9,14 +9,15 @@
   tasks:
 
     # ---------- win_collector ----------
-    - name: SilkService service is registered (win_collector)
+    - name: Old collector removed (SilkService + Alloy, replaced by etwcollect)
       ansible.windows.win_service_info:
-        name: "{{ service_name }}"
-      register: silksvc
+        name: "{{ item }}"
+      loop: [SilkService, Alloy]
+      register: old_svcs
     - ansible.builtin.assert:
-        that: silksvc.services | length == 1
-        fail_msg: "SilkService not registered — run role win_collector"
-        success_msg: "SilkService registered (start_mode={{ silksvc.services[0].start_mode }})"
+        that: (old_svcs.results | map(attribute='services') | sum(start=[]) | length) == 0
+        fail_msg: "SilkService or Alloy is still installed — run role win_collector (it removes them)"
+        success_msg: "SilkService and Alloy are gone"
 
     - name: Collector files present (win_collector)
       ansible.windows.win_stat:
@@ -69,26 +70,6 @@
       ansible.windows.win_command: >-
         "{{ tools_dir }}\python-embed\{{ python_embed_version }}\python.exe" "{{ lab_home }}\etw2nodlink.py" --selftest
       changed_when: false
-
-    # ---------- win_alloy ----------
-    - name: Alloy service state (win_alloy; running only for collector=silketw)
-      ansible.windows.win_service_info:
-        name: Alloy
-      register: alloy_svc
-    - ansible.builtin.assert:
-        that:
-          - alloy_svc.services | length == 1
-          - alloy_svc.services[0].state == ('started' if collector == 'silketw' else 'stopped')
-        fail_msg: "Alloy is {{ alloy_svc.services[0].state | default('missing') }}, expected {{ 'started' if collector == 'silketw' else 'stopped (etwcollect pushes to Loki itself)' }} — run role win_alloy"
-        success_msg: "Alloy {{ alloy_svc.services[0].state }} (collector={{ collector }})"
-
-    - name: Alloy config present (win_alloy)
-      ansible.windows.win_stat:
-        path: 'C:\Program Files\GrafanaLabs\Alloy\config.alloy'
-      register: alloy_cfg
-    - ansible.builtin.assert:
-        that: alloy_cfg.stat.exists
-        fail_msg: "config.alloy missing — run role win_alloy"
 
     # ---------- win_shipper / win_benign ----------
     - name: Shipper + benign scripts present (win_shipper, win_benign)

@@ -1,5 +1,5 @@
 ---
-# Windows Server 2022 collector VM: capture ETW, Alloy ships it to Loki (no training) + the DVWA vulnlab.
+# Windows Server 2022 collector VM: capture ETW, etwcollect ships it to Loki (no training) + the DVWA vulnlab.
 - name: Configure the Windows collector VM
   hosts: windows
   gather_facts: true
@@ -7,12 +7,11 @@
   # Cloud mode supplies them from the vault: add `-e @group_vars/vault.yml --ask-vault-pass`.
   # Each role carries a tag so a single stage can be run alone, e.g.
   #   ansible-playbook windows.yml --tags vulnlab -e vulnlab_enabled=true     # only DVWA
-  #   ansible-playbook windows.yml --tags collector,alloy                     # only those two
+  #   ansible-playbook windows.yml --tags collector,shipper                   # only those two
   # Running with no --tags still does everything (unchanged default).
   roles:
     - { role: win_base,      tags: [base] }       # OS config: network profile, UTC+7 clock, no-sleep, RDP, folders, Defender
-    - { role: win_collector, tags: [collector] }  # SilkETW/SilkService + embeddable Python + converter + etwctl + etwship
-    - { role: win_alloy,     tags: [alloy] }       # Grafana Alloy (native): raw SilkETW lines -> Loki on the trainer
-    - { role: win_shipper,   tags: [shipper] }     # start-live.ps1: start/stop a live (test) capture; Alloy ships it
+    - { role: win_collector, tags: [collector] }  # etwcollect (uv; ETW -> files -> Loki) + embeddable Python + converter + etwctl
+    - { role: win_shipper,   tags: [shipper] }     # start-live.ps1: start/stop a live (test) capture; etwcollect ships it
     - { role: win_benign,    tags: [benign] }      # scripted benign workload generator (green windows for the demo)
     - { role: win_vulnlab,   tags: [vulnlab], when: vulnlab_enabled | bool }   # XAMPP + DVWA on {{ vulnlab_port }}; -e vulnlab_enabled=true

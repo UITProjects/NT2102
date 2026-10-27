@@ -556,7 +556,7 @@ Phòng lab gồm hai máy ảo được dựng bằng Ansible (cấu hình theo 
 \toprule
 \textbf{Máy} & \textbf{Hệ điều hành} & \textbf{Vai trò} \\
 \midrule
-\texttt{ws-etw} & Windows Server 2022 & Thu thập kernel log bằng SilkETW \cite{silketw} (Kernel-Process, Kernel-File, Kernel-Network); Grafana Alloy đẩy nguyên văn từng dòng log về Loki; benign workload có seed; dịch vụ web chưa vá làm mục tiêu tấn công. Không huấn luyện. \\
+\texttt{ws-etw} & Windows Server 2022 & Thu thập kernel log bằng collector Python tự viết \texttt{etwcollect} (Kernel-Process, Kernel-File, Kernel-Network) và tự đẩy nguyên văn từng dòng log về Loki; collector này thay SilkETW \cite{silketw} + Grafana Alloy, vì SilkETW ghi mỗi event bằng một lần mở file riêng nên tự sinh thêm Kernel-File event của chính nó (vòng lặp làm log file đến trễ nhiều phút); benign workload có seed; dịch vụ web chưa vá làm mục tiêu tấn công. Không huấn luyện. \\
 \texttt{ubuntu-trainer} & Ubuntu 24.04 & Loki + Grafana \cite{grafana_loki}; chuyển đổi, cắt window, trích feature, huấn luyện; máy chủ demo trực tiếp (FastAPI + giao diện web). \\
 \bottomrule
 \end{tabularx}
@@ -568,8 +568,8 @@ Phòng lab gồm hai máy ảo được dựng bằng Ansible (cấu hình theo 
 \centering
 \begin{tikzpicture}[node distance=0.8cm and 0.9cm]
   % máy Windows: thu thập
-  \node[prep] (etw)   at (0,0)    {SilkETW\\ \scriptsize kernel log (process, file, mạng)};
-  \node[prep] (alloy) at (0,-1.8) {Grafana Alloy\\ \scriptsize gửi nguyên văn từng dòng};
+  \node[prep] (etw)   at (0,0)    {etwcollect (Python)\\ \scriptsize kernel log (process, file, mạng)};
+  \node[prep] (alloy) at (0,-1.8) {Shipper của etwcollect\\ \scriptsize gửi nguyên văn từng dòng};
   % máy Ubuntu: xử lý, phát hiện, hiển thị
   \node[prep] (loki) at (3.6,0)    {Loki\\ \scriptsize kho log};
   \node[prep] (s1)   at (7.0,0)    {Chuyển sang đồ thị + cắt window 5 phút};
@@ -648,7 +648,7 @@ LLM & Alg.~2 đầy đủ & Thêm bước phân loại (tấn công / benign / c
 
 \tagpaper{} OCR-APT được đánh giá trên các bộ dữ liệu công bố. \tagours{} Đồ án dùng dữ liệu tự thu thập vì mục tiêu là demo trực tiếp trên một máy thật:
 \begin{itemize}
-    \item \textbf{Thu thập:} SilkETW ghi ba kernel provider (process, file, mạng) dưới dạng JSON. Alloy đẩy nguyên văn từng dòng về Loki, gắn nhãn theo lần chạy và provider, nên dữ liệu huấn luyện có thể kéo lại theo lần chạy hoặc khoảng thời gian.
+    \item \textbf{Thu thập:} \texttt{etwcollect} (collector Python tự viết) ghi ba kernel provider (process, file, mạng) dưới dạng JSON theo định dạng dòng của SilkETW, bỏ I/O của chính nó trước khi ghi, và tự đẩy nguyên văn từng dòng về Loki, gắn nhãn theo lần chạy và provider, nên dữ liệu huấn luyện có thể kéo lại theo lần chạy hoặc khoảng thời gian.
     \item \textbf{Chuyển đổi:} một bộ chuyển đổi đưa sự kiện ETW về đúng lược đồ NODLINK Windows 10 mà mã gốc yêu cầu (3 loại node, 6 loại edge, mốc thời gian epoch mili-giây). Đồ thị được đặt tên \texttt{SimulatedW10} vì mã gốc kiểm tra tên host.
     \item \textbf{Định danh node:} process được khoá bằng PID + thời điểm khởi động, vì Windows tái sử dụng PID và nếu chỉ dùng PID thì hai process khác nhau sẽ bị gộp, làm sai thống kê thời gian nghỉ. File và luồng mạng được khoá bằng băm của đường dẫn / IP:cổng, nên định danh ổn định giữa huấn luyện và kiểm thử.
     \item \textbf{Benign workload:} một bộ sinh hoạt động có seed (mở trình duyệt, soạn thảo, truy cập mạng, \ldots). Ứng dụng được khởi chạy qua \texttt{explorer} (Shell COM) thay vì PowerShell, để mô hình không học ``PowerShell là cha bình thường của mọi thứ'', vì công cụ tấn công thường đi qua PowerShell.

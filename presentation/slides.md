@@ -489,7 +489,7 @@ $$s_i = \|\mathbf{z}_i - \mathbf{c}\|_2^2 - R^2$$
 <OurPipeline />
 
 <div class="grid grid-cols-2 gap-4 small mt-1">
-  <div class="card neutral !py-2"><b><code>ws-etw</code></b> · Windows Server 2022: SilkETW (ghi ETW ra JSON; Kernel-Process, -File, -Network) + <b>Grafana Alloy</b> (agent thu log) gửi nguyên văn từng dòng; benign workload có seed; dịch vụ web chưa vá. <b>Không huấn luyện.</b></div>
+  <div class="card neutral !py-2"><b><code>ws-etw</code></b> · Windows Server 2022: <b>etwcollect</b> (collector Python tự viết: ghi ETW ra JSON; Kernel-Process, -File, -Network) tự gửi nguyên văn từng dòng về Loki; benign workload có seed; dịch vụ web chưa vá. <b>Không huấn luyện.</b></div>
   <div class="card neutral !py-2"><b><code>ubuntu-trainer</code></b> · Ubuntu 24.04: <b>Loki</b> (kho lưu log) + <b>Grafana</b> (dashboard); chuyển đổi, cắt window, feature, huấn luyện; máy chủ demo (FastAPI + web UI). Cả hai máy dựng bằng <b>Ansible</b>, chuyển lên cloud được.</div>
 </div>
 
@@ -656,7 +656,7 @@ transition: fade
 <div class="text-left inline-block small mt-2">
 
 ```powershell
-# ws-etw (PowerShell quyền admin): bắt đầu một lần thu thập live; Alloy tự gửi về Loki
+# ws-etw (PowerShell quyền admin): bắt đầu một lần thu thập live; etwcollect tự gửi về Loki
 C:\scripts\start-live.ps1 -Minutes 30
 
 # Song song: benign workload (khởi chạy ứng dụng qua explorer)

@@ -7,12 +7,11 @@
     etwctl convert -Split train|test                 raw\<split>\*\*.json -> <Graph>_<split>_*.csv
   Settings come from C:\ProgramData\etwlab\etwlab.json (written by the win_collector role).
 
-  Collector (etwlab.json "Collector"): "python" = etwcollect (src/etw-python), run by the SYSTEM scheduled task
-  CollectorTask, pushes to Loki itself (DEVIATIONS D10). "silketw" = the old SilkService Windows service, kept
-  only until etwcollect is verified.
+  The collector is etwcollect (src/etw-python), run by the SYSTEM scheduled task CollectorTask; it pushes the
+  run's lines to Loki itself (DEVIATIONS D10; it replaced SilkService + Grafana Alloy on 2026-10-26).
 
   PowerShell notes: Get-ScheduledTask / Start-ScheduledTask read / start a Task Scheduler task (its .State is
-  Ready, Running, ...); Get-Service reads a Windows service; `& $exe args` runs a program; $LASTEXITCODE is the
+  Ready, Running, ...); `& $exe args` runs a program; $LASTEXITCODE is the
   exit code of the last program; ConvertFrom-Json turns JSON text into an object with properties.
 #>
 param(
@@ -26,30 +25,21 @@ $Cfg    = Get-Content "$Home_\etwlab.json" -Raw | ConvertFrom-Json
 $State  = "$Home_\state.json"
 $Status = "$Home_\collector-status.json"
 $Utf8   = New-Object System.Text.UTF8Encoding($false)   # UTF-8 without BOM
-$Py     = ("$($Cfg.Collector)" -ne "silketw")           # [bool]: anything but "silketw" = etwcollect
 
 function Get-State { if (Test-Path $State) { Get-Content $State -Raw | ConvertFrom-Json } else { $null } }
 function Set-State($obj) { [IO.File]::WriteAllText($State, ($obj | ConvertTo-Json), $Utf8) }
 
-function Test-CollectorRunning {
-    if ($Py) { return ((Get-ScheduledTask -TaskName $Cfg.CollectorTask).State -eq "Running") }
-    return ((Get-Service $Cfg.ServiceName).Status -ne "Stopped")
-}
+function Test-CollectorRunning { return ((Get-ScheduledTask -TaskName $Cfg.CollectorTask).State -eq "Running") }
 
 function Show-Status {
     $st = Get-State
-    if ($Py) {
-        Write-Host "collector: task $($Cfg.CollectorTask) = $((Get-ScheduledTask -TaskName $Cfg.CollectorTask).State)"
-    } else {
-        $svc = Get-Service $Cfg.ServiceName
-        Write-Host "service : $($svc.Name) = $($svc.Status)"
-    }
+    Write-Host "collector: task $($Cfg.CollectorTask) = $((Get-ScheduledTask -TaskName $Cfg.CollectorTask).State)"
     if ($st) {
         Write-Host "run     : $($st.split)/$($st.run)  started $($st.started_utc)  stopped $($st.stopped_utc)"
         Get-ChildItem $st.dir -Filter *.json -ErrorAction SilentlyContinue |
             ForEach-Object { "{0,-12} {1,10:N0} KB" -f $_.Name, ($_.Length / 1KB) } | Write-Host
     }
-    if ($Py -and (Test-Path $Status)) {
+    if (Test-Path $Status) {
         $c = Get-Content $Status -Raw | ConvertFrom-Json
         Write-Host "status  : $($c.state) (pid $($c.pid), updated $($c.updated_utc))"
         foreach ($p in $c.providers.PSObject.Properties) {          # one line per provider: kproc, kfile, knet
@@ -80,27 +70,8 @@ switch ($Command) {
 
         Set-State ([ordered]@{ split = $Split; run = $Run; dir = $dir;
                                started_utc = (Get-Date).ToUniversalTime().ToString("o"); stopped_utc = $null })
-        if ($Py) {
-            # The task runs `python -m etwcollect run`, which reads the run folder from state.json (written above).
-            Start-ScheduledTask -TaskName $Cfg.CollectorTask
-        } else {
-            # SilkService reads SilkServiceConfig.xml from its own folder, once, at service start.
-            $sb = New-Object System.Text.StringBuilder
-            [void]$sb.AppendLine("<SilkServiceConfig>")
-            foreach ($c in $Cfg.Collectors) {
-                [void]$sb.AppendLine("  <ETWCollector>")
-                [void]$sb.AppendLine("    <Guid>$($c.Guid)</Guid>")
-                [void]$sb.AppendLine("    <CollectorType>user</CollectorType>")
-                [void]$sb.AppendLine("    <ProviderName>$($c.Provider)</ProviderName>")
-                [void]$sb.AppendLine("    <UserKeywords>$($c.Keywords)</UserKeywords>")
-                [void]$sb.AppendLine("    <OutputType>file</OutputType>")
-                [void]$sb.AppendLine("    <Path>$dir\$($c.Stem).json</Path>")
-                [void]$sb.AppendLine("  </ETWCollector>")
-            }
-            [void]$sb.AppendLine("</SilkServiceConfig>")
-            [IO.File]::WriteAllText((Join-Path $Cfg.SilkServiceDir "SilkServiceConfig.xml"), $sb.ToString(), $Utf8)
-            Start-Service $Cfg.ServiceName
-        }
+        # The task runs `python -m etwcollect run`, which reads the run folder from state.json (written above).
+        Start-ScheduledTask -TaskName $Cfg.CollectorTask
 
         # Canary: a process start + image loads + file reads we know must show up.
         Start-Sleep -Seconds 5
@@ -113,29 +84,24 @@ switch ($Command) {
         } while ($missing.Count -gt 0 -and (Get-Date) -lt $deadline)
         if ($missing.Count -gt 0) {
             Write-Warning "no events yet in: $($missing -join ', ')"
-            if ($Py) { Write-Warning "check $Status (last_error) and: & '$($Cfg.EtwPython)' -m etwcollect status" }
-            else     { Write-Warning "check the service log in $($Cfg.SilkServiceDir) and the Application event log" }
+            Write-Warning "check $Status (last_error) and: & '$($Cfg.EtwPython)' -m etwcollect status"
             exit 1
         }
         Write-Host "[etwctl] capturing $Split/$Run -> $dir"
         Show-Status
     }
     "stop" {
-        if ($Py) {
+        if (Test-CollectorRunning) {
+            # etwcollect stop: stops the ETW session; the collector then writes its last lines, ships them
+            # to Loki (bounded) and exits. It waits for that itself (--wait).
+            & $Cfg.EtwPython -m etwcollect stop --wait 120 | Out-Host
+            $deadline = (Get-Date).AddSeconds(30)
+            while ((Test-CollectorRunning) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
             if (Test-CollectorRunning) {
-                # etwcollect stop: stops the ETW session; the collector then writes its last lines, ships them
-                # to Loki (bounded) and exits. It waits for that itself (--wait).
-                & $Cfg.EtwPython -m etwcollect stop --wait 120 | Out-Host
-                $deadline = (Get-Date).AddSeconds(30)
-                while ((Test-CollectorRunning) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
-                if (Test-CollectorRunning) {
-                    # Last resort: kills the process (no final flush); the next start ships what is on disk.
-                    Write-Warning "collector task still running after stop; ending it with Stop-ScheduledTask"
-                    Stop-ScheduledTask -TaskName $Cfg.CollectorTask
-                }
+                # Last resort: kills the process (no final flush); the next start ships what is on disk.
+                Write-Warning "collector task still running after stop; ending it with Stop-ScheduledTask"
+                Stop-ScheduledTask -TaskName $Cfg.CollectorTask
             }
-        } else {
-            Stop-Service $Cfg.ServiceName -ErrorAction SilentlyContinue
         }
         $st = Get-State
         if ($st -and -not $st.stopped_utc) {
