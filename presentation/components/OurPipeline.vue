@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Our live pipeline, redrawn from fig:our-pipeline in latex/contents.tex (same TikZ coordinates).
-// A dot = one log line: SilkETW -> Alloy -> Loki -> steps 1-4 -> UI, looping. Numbers match the paper's
+// A dot = one log line: etwcollect -> Loki -> steps 1-4 -> UI, looping. Numbers match the paper's
 // 5 steps (Fig. 1), so each block can be compared with its paper counterpart.
 const SX = 64
 const SY = 56
@@ -11,8 +11,7 @@ const H = 44
 
 interface B { id: string, x: number, y: number, c: string, t: string, s: string, n?: number }
 const boxes: B[] = [
-  { id: 'etw', x: 0, y: 0, c: 'prep', t: 'SilkETW', s: 'kernel log: process, file, network' },
-  { id: 'alloy', x: 0, y: -1.8, c: 'prep', t: 'Grafana Alloy', s: 'gửi nguyên văn từng dòng' },
+  { id: 'etw', x: 0, y: 0, c: 'prep', t: 'etwcollect', s: 'ETW→JSON, tự đẩy về Loki' },
   { id: 'loki', x: 3.6, y: 0, c: 'prep', t: 'Loki', s: 'kho log (nhãn: run, provider)' },
   { id: 's1', x: 7.0, y: 0, c: 'prep', t: 'Graph + window 5 phút', s: 'lược đồ NODLINK W10', n: 1 },
   { id: 's2', x: 10.4, y: 0, c: 'prep', t: '15 behavior feature', s: 'thang đo của tập train', n: 2 },
@@ -27,8 +26,7 @@ const cy = (id: string) => Y(at[id].y)
 
 // Arrows between box borders (straight segments, as in the TikZ figure).
 const arrows = [
-  { d: `M ${cx('etw')} ${cy('etw') + H / 2} V ${cy('alloy') - H / 2}` },
-  { d: `M ${cx('alloy') + W / 2} ${cy('alloy') - 6} L ${cx('loki') - W / 2} ${cy('loki') + 6}`, label: 'HTTP', lx: X(3.6) - W / 2 - 14, ly: 72 },
+  { d: `M ${cx('etw') + W / 2} ${cy('etw')} H ${cx('loki') - W / 2}`, label: 'HTTP push', lx: X(3.6) - W / 2 - 14, ly: 44 },
   { d: `M ${cx('loki') + W / 2} ${cy('loki')} H ${cx('s1') - W / 2}` },
   { d: `M ${cx('s1') + W / 2} ${cy('s1')} H ${cx('s2') - W / 2}` },
   { d: `M ${cx('s2')} ${cy('s2') + H / 2} V ${cy('s3') - H / 2}` },
@@ -38,10 +36,10 @@ const arrows = [
   { d: `M ${cx('s5')} ${cy('s5') + H / 2} V ${cy('ui')} H ${cx('ui') - W / 2}`, opt: true },
 ]
 // Path the "log line" dot follows (box centres).
-const flow = ['etw', 'alloy', 'loki', 's1', 's2', 's3', 's4', 'ui'].map(id => `${cx(id)},${cy(id)}`).join(' L ')
+const flow = ['etw', 'loki', 's1', 's2', 's3', 's4', 'ui'].map(id => `${cx(id)},${cy(id)}`).join(' L ')
 
 const frames = [
-  { l: X(0) - W / 2 - 10, t: Y(0) - H / 2 - 22, r: X(0) + W / 2 + 10, b: Y(-1.8) + H / 2 + 10, label: 'ws-etw (Windows)' },
+  { l: X(0) - W / 2 - 10, t: Y(0) - H / 2 - 22, r: X(0) + W / 2 + 10, b: Y(0) + H / 2 + 10, label: 'ws-etw (Windows)' },
   { l: X(3.6) - W / 2 - 10, t: Y(0) - H / 2 - 22, r: X(10.4) + W / 2 + 10, b: Y(-3.6) + H / 2 + 10, label: 'ubuntu-trainer' },
 ]
 </script>

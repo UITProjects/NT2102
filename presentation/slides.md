@@ -489,7 +489,7 @@ $$s_i = \|\mathbf{z}_i - \mathbf{c}\|_2^2 - R^2$$
 <OurPipeline />
 
 <div class="grid grid-cols-2 gap-4 small mt-1">
-  <div class="card neutral !py-2"><b><code>ws-etw</code></b> · Windows Server 2022: <b>etwcollect</b> (collector Python tự viết: ghi ETW ra JSON; Kernel-Process, -File, -Network) tự gửi nguyên văn từng dòng về Loki; benign workload có seed; dịch vụ web chưa vá. <b>Không huấn luyện.</b></div>
+  <div class="card neutral !py-2"><b><code>ws-etw</code></b> · Windows Server 2022: <b>etwcollect</b> (collector Python tự viết: ghi ETW ra JSON; Kernel-Process, -File, -Network) tự gửi nguyên văn từng dòng về Loki; benign = <b>idle</b> (lấy trực tiếp từ Loki, không có script thu thập); dịch vụ web chưa vá. <b>Không huấn luyện.</b></div>
   <div class="card neutral !py-2"><b><code>ubuntu-trainer</code></b> · Ubuntu 24.04: <b>Loki</b> (kho lưu log) + <b>Grafana</b> (dashboard); chuyển đổi, cắt window, feature, huấn luyện; máy chủ demo (FastAPI + web UI). Cả hai máy dựng bằng <b>Ansible</b>, chuyển lên cloud được.</div>
 </div>
 
@@ -507,7 +507,7 @@ clicks: 1
 
 Ký hiệu $[t, t+5)$: gồm $t$, **không** gồm $t+5$ <span class="tag ours">OURS</span>
 
-- Huấn luyện: bản ghi ~20 phút, **sliding** window; overlapping window → hàng feature tương quan
+- Huấn luyện: bản ghi benign **idle** (lấy từ Loki, ~16 phút), **sliding** window; overlapping window → hàng feature tương quan
 - Demo: **tumbling** window (window lật), mỗi sự kiện thuộc đúng một window
 - Mỗi node được sao theo window (`w0007_…`) → max idle ≤ 290 s
 - Đồng hồ demo = thời gian sự kiện mới nhất − **20 s**; không có log mới → đồng hồ máy chủ
@@ -624,8 +624,8 @@ layout: center
 - Phát hiện APT, tấn công nhiều host hay kéo dài nhiều ngày
 
 ### Hạn chế đã biết
-- Dữ liệu benign hẹp (workload dạng script, một máy)
-- Mốc 30 đặt từ **một** benign window, chưa kiểm chứng trên tấn công
+- Benign = **idle** một máy → mô hình idle mỏng (net `val_fpr=1.0`), chỉ là baseline cho demo
+- Mốc 30: demo tách rõ (idle ≤ Minor 8.0 vs tấn công **106.96**) nhưng dựa trên baseline idle, chưa tổng quát
 - Window 5 phút cắt rời hành vi kéo dài
 
 </div>
@@ -656,11 +656,10 @@ transition: fade
 <div class="text-left inline-block small mt-2">
 
 ```powershell
-# ws-etw (PowerShell quyền admin): bắt đầu một lần thu thập live; etwcollect tự gửi về Loki
-C:\scripts\start-live.ps1 -Minutes 30
+# ws-etw: live capture luôn chạy (SYSTEM task); etwcollect tự đẩy về Loki — chỉ cần một session sạch:
+C:\scripts\start-live.ps1 -Rotate
 
-# Song song: benign workload (khởi chạy ứng dụng qua explorer)
-C:\scripts\06-benign-workload.ps1 -DurationMinutes 20
+# Benign = IDLE: giữ desktop không thao tác (baseline idle, lấy trực tiếp từ Loki)
 ```
 
 ```bash
