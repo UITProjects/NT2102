@@ -4,7 +4,7 @@ Provisions the lab the Vagrantfile builds (or any two cloud VMs in one subnet):
 
 | host (group) | address | role |
 |---|---|---|
-| `ws-etw` (`windows`) | 10.21.2.10 | ETW collector **`etwcollect`** (`src/etw-python`, SYSTEM task `etwlab-collector`; it also pushes to Loki), benign workload, DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
+| `ws-etw` (`windows`) | 10.21.2.10 | ETW collector **`etwcollect`** (`src/etw-python`, SYSTEM task `etwlab-collector`; it also pushes to Loki), DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
 | `ubuntu-trainer` (`ubuntu`) | 10.21.2.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
 
 > The lab also has a **Kali attacker VM** (`10.21.2.30`), but it is **not provisioned by Ansible** — it
@@ -123,7 +123,7 @@ vagrant up                                   # from src/, builds both bare VMs
 ansible ubuntu -m ping
 ansible windows -m ansible.windows.win_ping  # use win_ping on Windows, NOT ping
 ansible-playbook site.yml --limit ubuntu     # Loki + Grafana + repo + ocr-live
-ansible-playbook site.yml --limit windows    # etwcollect (uv) + scripts (+ vulnlab with -e vulnlab_enabled=true)
+ansible-playbook site.yml --limit windows    # etwcollect (uv) + start-live.ps1 (+ vulnlab with -e vulnlab_enabled=true)
 
 # cloud (the vault supplies the Windows + Grafana creds):
 ansible-playbook -i inventory.cloud.ini site.yml -e @group_vars/vault.yml --ask-vault-pass
@@ -153,11 +153,14 @@ edit is live after `etwctl stop; etwctl start`; re-run `--tags collector` only w
 
 ```powershell
 # on ws-etw, elevated PowerShell in the RDP desktop session (not WinRM):
-C:\scripts\06-benign-workload.ps1 -SelfTest           # once per VM
-C:\scripts\07-build-train-dataset.ps1                 # 20-min benign capture, run x-<UTC>; shipped to Loki live
+# benign = IDLE pulled from Loki (no capture script): keep the desktop idle so the always-on live capture
+# ships idle background activity, then on the trainer pull a clean idle range and train:
+#   lab pull --start 2026-10-31T12:45:00Z --end 2026-10-31T13:02:00Z --split test --yes
+#   # a Loki idle pull is --split test -> files are SimulatedW10_test_*; copy them to _train_ before training:
+#   cp <exp>/SimulatedW10_test_edges.csv <exp>/SimulatedW10_train_edges.csv   # and _node_attrs.csv
+#   lab train --experiment <id> --model exp0X && lab promote exp0X && sudo systemctl restart ocr-live
 ```
-`07` still converts on the VM. That copy is now a cross-check; the training source is Loki. `etwctl stop`
-waits until `etwcollect` has pushed its last lines, `07` then pushes the workload ledger
+The training source is Loki
 (`etwcollect push-ledger`) and **copies** the raw files into the experiment folder.
 
 ```bash
@@ -175,9 +178,6 @@ trainer) → `encode_to_features.py` → `train_gnn_models.py`, all into one run
 `group_vars` names the model. To share a model, commit its model folder and `lab promote <model> --shared`
 (writes the tracked `current.json`).
 
-`collect-train.yml` (tar the VM's experiment folder and fetch it) is the **legacy fallback**, for when Loki
-is down.
-
 **Converter hash rule.**
 - `experiment.json` records the sha256 of the converter's raw file bytes. The live server compares it with
   its own copy and reports the result as `converter_check`.
@@ -188,9 +188,8 @@ is down.
 ## Demo (on `ws-etw`, elevated PowerShell in the RDP desktop session)
 
 ```powershell
-C:\scripts\06-benign-workload.ps1 -SelfTest            # once per VM
 C:\scripts\start-live.ps1 -Rotate                      # optional: fresh live run = a clean session for the demo
-C:\scripts\06-benign-workload.ps1 -DurationMinutes 20  # benign activity (green windows)
+# then just use the desktop normally (browse, docs) to produce benign green windows — no scripted workload
 ```
 
 The live capture itself is **always on**: the SYSTEM scheduled task `live_task_name` (`etwlab-live`) runs
@@ -234,7 +233,7 @@ windows stay green; the teammate's attack turns its window red.
 ## Layout
 
 ```
-ansible.cfg  requirements.yml  requirements.txt  site.yml  windows.yml  ubuntu.yml  collect-train.yml (legacy)
+ansible.cfg  requirements.yml  requirements.txt  site.yml  windows.yml  ubuntu.yml
 inventory.local.ini  inventory.cloud.ini.example
 group_vars/   all.yml  windows.yml  ubuntu.yml  vault.yml.example
 roles/
@@ -242,7 +241,6 @@ roles/
   win_collector   uv + etw-python venv + SYSTEM task etwlab-collector + embeddable Python + etw2nodlink.py/
                   etwwindow.py/etwship.py/etwctl; removes the old SilkService + Grafana Alloy
   win_shipper     start-live.ps1 watchdog + SYSTEM task etwlab-live (always-on live test capture)
-  win_benign      06-benign-workload.ps1 + 07-build-train-dataset.ps1
   win_vulnlab     XAMPP (Apache + PHP + MariaDB) + DVWA, served on vulnlab_port (opt-in: vulnlab_enabled)
   ubuntu_base     UTC+7 + timesyncd, apt deps + uv + ufw rule for the live server
   ubuntu_loki     Docker + Loki + Grafana (compose, host network) + ufw (Loki from Windows, Grafana from admin_cidr)

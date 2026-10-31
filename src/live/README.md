@@ -66,14 +66,13 @@ The trainer runs `ocr-live` (systemd, `src/ansible/roles/ubuntu_project`), which
 
 **The capture is always on.** The SYSTEM scheduled task `etwlab-live` (win_shipper role) runs
 `C:\scripts\start-live.ps1` at boot and every 5 min: it keeps a `test/live-<UTC>` run capturing, starts a new
-run every 6 h, deletes raw `live-*` runs idle for 1 day, and leaves the collector alone while a hold exists
-(`07-build-train-dataset.ps1` pauses it for a train capture and resumes it after). By hand, in an elevated
+run every 6 h, deletes raw `live-*` runs idle for 1 day,. By hand, in an elevated
 PowerShell on the VM:
 ```
 C:\scripts\start-live.ps1 -Status     # service, current run, hold, task, last log lines
 C:\scripts\start-live.ps1 -Rotate     # fresh live run now = a clean session before a demo
 C:\scripts\start-live.ps1 -Pause      # stop live and keep it stopped;  -Resume undoes it
-C:\scripts\06-benign-workload.ps1     # benign activity, as in training (RDP desktop only; not automatic)
+# benign = idle: keep the desktop idle; the always-on capture ships it to Loki, pull an idle range to train
 ```
 The server follows the newest `split="test"` run, and a new run starts a new session. Old `live-*` session
 folders on the trainer (each holds a raw copy, ~2 GB/h) are deleted after 12 idle hours (`live_session_keep_hours`; a

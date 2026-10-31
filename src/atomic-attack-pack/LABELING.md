@@ -31,8 +31,9 @@ window times in `sessions/<id>/windows.csv`; same join.
   range narrows this; a process key (PID + start time) would narrow it further.
 - **Oracle errors move the metric:** over-labelling hurts the detector's apparent precision, under-labelling
   flatters it.
-- **Embed attacks in benign noise:** run with `06-benign-workload.ps1`, or every node in an attack window is
-  malicious and the task collapses to "did anything happen".
+- **Embed attacks in benign noise:** run the attack while the always-on live capture is recording natural
+  desktop activity (browse, docs), or every node in an attack window is malicious and the task collapses to
+  "did anything happen".
 - **Class imbalance:** malicious nodes are a tiny fraction; prefer P/R/F1 over accuracy.
 
 [PAPER] OCR-APT labels come from DARPA ground truth / analyst reports (§7 flags label-provenance issues even

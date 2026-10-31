@@ -122,14 +122,15 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   `src/etw-python` (`etwcollect`, pushes to Loki itself) replaced SilkService AND Alloy, verified on `ws-etw` and
   both removed (D10, PROGRESS). exp03 does not match the new data (other collector, fixed NET owners), so
   live windows are red until a new model exists; that is not a detection result.
-- Next step (user, 2026-10-27), in order; details and gates in PROGRESS "Next 3 steps":
-  1. Benign train capture with etwcollect: `07-build-train-dataset.ps1` from the RDP desktop, browsing
-     included (browser FP). First real use of `etwctl` by 07 and of `etwcollect push-ledger`: check the
-     ledger reaches Loki. Gate on `lab status` coverage and Read/Write per window.
-  2. `lab loop` → `exp04` → `lab promote exp04`; `ocr-live` restarts on it; benign live windows stay green.
-  3. Full flow: DVWA→RCE from Kali during a live session → attack window red, LLM triage `attack` + report
-     (DeepSeek); laptop replay.
-  Then: the replay equivalence check, understanding the trainer (concepts 2–4).
+- DONE (2026-10-31): the core concept demo works end to end. `exp04` (scripted workload) fixed benign but
+  MISSED the attack (LOLBin overlap); user switched to **benign = idle pulled from Loki**, removed both
+  capture scripts, and trained **exp05** on a 16-min idle Loki range. Result (session
+  `live-20261031T134030Z`): idle windows green (≤ Minor 8.0), DVWA→RCE attack **red** (subgraph 106.96,
+  Significant, alert True; flagged the Kali stage IP, `downloaded_tool.bin`, the RCE powershell), LLM triage
+  **`attack` 0.85** + report; offline re-judge reproduces it. See PROGRESS, D2, [[live-detector-benign-fp]].
+- Next: (a) the live UI renders the LLM report as raw markdown — add HTML rendering (user, 2026-10-31);
+  (b) idle model is thin (net `val_fpr=1.0`) — a larger idle pull would steady it; (c) understanding the
+  trainer (concepts 2–4).
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
@@ -175,11 +176,15 @@ history of earlier progress) and, if relevant, this section.
 - Node identity: processes keyed by PID + start time (raw PIDs get reused and would corrupt idle-time
   features); FILE and NET nodes keyed by a hash of path / ip:port so IDs are stable across train and test.
   Windowed outputs prefix every node ID with its window (`w0007_...`).
-- Benign workload: a custom scripted generator (seeded) rather than GHOSTS or the Caldera human plugin.
-  Apps are launched via explorer (Shell COM) so the benign graph does not learn the attack tooling's
-  parent (PowerShell) as normal.
-- Windowing: train capture of ~20 min benign activity cut into 5-min sliding windows with a 2-min
-  stride. Detection uses the same 5-min window length. For the small scripted demo, tumbling windows
+- Benign set: **idle machine activity, pulled directly from Loki** — no capture script. The always-on live
+  capture ships idle background activity to Loki; a clean idle time-range is pulled with
+  `lab pull --start <t> --end <t> --split test` and trained on. Both earlier scripts were removed 2026-10-31
+  (`06-benign-workload.ps1`, then `07-build-train-dataset.ps1`): the scripted workload's netcheck/download/cmd
+  scenarios reused the attack's living-off-the-land binaries, making the DVWA→RCE chain in-distribution and
+  undetectable (exp04 miss). With an idle baseline the attack separates cleanly; keep benign demo windows
+  idle (an idle model is thin, so real activity can false-positive). See `docs/DEVIATIONS.md` D2.
+- Windowing: an idle benign time-range pulled from Loki, cut into 5-min sliding windows with a 2-min
+  stride. Detection uses the same 5-min window length. For the small demo, tumbling windows
   (stride = window) are enough; sliding windows are the option for real attacks that cross window
   boundaries.
 - Feature extraction: a standalone re-implementation of the repo's behavior-feature step (paper
@@ -199,8 +204,9 @@ history of earlier progress) and, if relevant, this section.
   collector as SYSTEM task `etwlab-collector`, `etwctl`, copies `src/pipeline/etw2nodlink.py` /
   `etwwindow.py` / `src/live/etwship.py`; the collector source is the Vagrant mount `C:\etw-python` locally
   and a git clone on cloud; it also removes the old SilkETW/SilkService and Grafana Alloy),
-  `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture), `win_benign` (`src/scripts/06-benign-workload`,
-  `07-build-train-dataset`), `win_vulnlab` (XAMPP + DVWA).
+  `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture),
+  `win_vulnlab` (XAMPP + DVWA). (The `win_benign` role and `src/scripts/` capture scripts were removed
+  2026-10-31: benign = idle pulled from Loki.)
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
@@ -241,7 +247,8 @@ history of earlier progress) and, if relevant, this section.
 Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`. Summary:
 
 - Windowed, near-live detection instead of the paper's offline whole-log prediction.
-- Own scripted Windows ETW data instead of NODLINK/DARPA datasets; benign activity is scripted.
+- Own Windows ETW data instead of NODLINK/DARPA datasets; benign activity is natural desktop use (the
+  scripted workload was removed 2026-10-31, D2).
 - Own Python ETW collector (`src/etw-python`) instead of SilkETW: SilkETW-format lines with plain values,
   self/collector I/O excluded in the callback, pushes to Loki itself (D10).
 - Feature extraction: all 15 columns kept; idle scaler fit on train only; RDF skipped; per-window

@@ -13,5 +13,4 @@
     - { role: win_base,      tags: [base] }       # OS config: network profile, UTC+7 clock, no-sleep, RDP, folders, Defender
     - { role: win_collector, tags: [collector] }  # etwcollect (uv; ETW -> files -> Loki) + embeddable Python + converter + etwctl
     - { role: win_shipper,   tags: [shipper] }     # start-live.ps1: start/stop a live (test) capture; etwcollect ships it
-    - { role: win_benign,    tags: [benign] }      # scripted benign workload generator (green windows for the demo)
     - { role: win_vulnlab,   tags: [vulnlab], when: vulnlab_enabled | bool }   # XAMPP + DVWA on {{ vulnlab_port }}; -e vulnlab_enabled=true

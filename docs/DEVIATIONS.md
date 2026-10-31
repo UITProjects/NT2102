@@ -11,15 +11,28 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   the window length (train max idle = 290 s, `src/artifacts/features/self-dataset/feature_scaler.json`).
 - Limits: no claim about whole-log detection quality.
 
-## D2. Own scripted Windows ETW data
+## D2. Own Windows ETW data; benign = idle, pulled from Loki
 - What: [PAPER] NODLINK / DARPA TC3 / OpTC. [OURS] ETW Kernel-Process/File/Network on a Windows VM (SilkETW
-  until 2026-10-26, then our own collector, D10),
-  converted to the NODLINK SimulatedW10 schema; benign activity from a seeded scripted workload
-  (`src/scripts/06-benign-workload.ps1`), plus background OS activity.
-- Why: own end-to-end pipeline for the live demo; dataset small enough to inspect.
-- Impact: benign behaviour is narrower than human use → likely optimistic false-positive rates;
-  converter drops/unresolves some events (see converter `_summary.json`).
-- Limits: our numbers are not comparable with the paper's tables.
+  until 2026-10-26, then our own collector, D10), converted to the NODLINK SimulatedW10 schema.
+  Benign = **idle machine activity**: no capture script at all — the always-on live capture ships idle
+  background activity to Loki, and a clean idle time-range is pulled straight from Loki
+  (`lab pull --start <t> --end <t> --split test`) and trained on. There is no `src/scripts/` capture script.
+- Why: simplest possible concept demo. Against an idle baseline the attack's whole discovery+RCE burst is
+  out-of-distribution, so it separates cleanly (idle = green, attack = red).
+- History (2026-10-31), two failure modes before this: (1) a **seeded scripted workload**
+  (`06-benign-workload.ps1`: netcheck/download/files ran ipconfig/curl/cmd/net — the attack's own
+  living-off-the-land binaries) taught the model the attack's tools, so on exp04 every attack process scored
+  below τ_process (−0.400) and the attack did **not** alert. (2) A natural manual capture via a rewritten
+  `07` was tried, then both `06` and `07` were **removed** for the idle-from-Loki approach. exp05 (idle)
+  result: idle windows green (≤ Minor 8.0, no alert), the live DVWA→RCE attack **red** (subgraph 106.96,
+  Significant, alert True; flagged the attacker stage IP, `downloaded_tool.bin`, the RCE powershell), LLM
+  triage `attack` (0.85) + report. [[live-detector-benign-fp]].
+- Impact: an **idle baseline is thin** — the idle set that worked was ~16 min with only 6 net / 13 process
+  training nodes, so the per-node net threshold is noisy (`val_fpr=1.0`); the per-subgraph SG-Det cut-off
+  (Moderate ≥ 30) absorbs that noise, keeping idle windows green, but **any real user activity in a benign
+  window can raise false positives**, so the demo must keep benign windows idle. Not a general detector —
+  a concept demo baseline. Converter still drops/unresolves some events (see converter `_summary.json`).
+- Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
 - What: [AUTHOR CODE] `encode_to_PyG.py::feature_engineering` drops all-zero columns and fits the idle

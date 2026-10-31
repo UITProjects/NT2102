@@ -33,11 +33,13 @@ The launcher + scripts are mounted into the Kali VM at `/opt/attack-pack` by Vag
 
 ## Run during a live session (end-goal path)
 
-1. **Target VM (`ws-etw`)**, RDP desktop, two shells:
+1. **Target VM (`ws-etw`)**, RDP desktop:
    ```powershell
-   C:\scripts\start-live.ps1            # shell 1: start the test capture; Alloy ships it to Loki
-   C:\scripts\06-benign-workload.ps1    # shell 2: benign noise, so the window is not all-malicious
+   C:\scripts\start-live.ps1 -Status    # confirm the always-on live capture is recording (etwcollect -> Loki)
    ```
+   Keep the desktop **idle** (the idle benign baseline); the attack window's own background activity is
+   the benign noise. (The always-on live task usually already runs; `start-live.ps1 -Rotate` starts a fresh
+   session for the demo.)
 2. **Kali attacker** (pack mounted at `/opt/attack-pack`), the only required input is the vulnerable web URL:
    ```bash
    python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000
