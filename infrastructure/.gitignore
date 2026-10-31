@@ -1,0 +1,9 @@
+.terraform/
+# terraform.tfstate IS committed (user, 2026-10-31); backups stay ignored
+*.tfstate.*
+terraform.tfvars
+*.auto.tfvars
+crash.log
+crash.*.log
+*.tfplan
+# .terraform.lock.hcl IS committed (pins provider checksums)
