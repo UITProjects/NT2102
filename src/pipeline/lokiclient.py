@@ -1,7 +1,7 @@
 """lokiclient.py - the few Loki HTTP calls the lab needs (stdlib only). Shared by loki_pull.py (training
 pull), live/loki_source.py (live demo) and live/loki_push.py (test feed).
 
-Label scheme (what Alloy on the VM writes; src/ansible/roles/win_alloy/templates/config.alloy.j2):
+Label scheme (what etwcollect on the VM pushes, src/etw-python/src/etwcollect/loki.py; Grafana Alloy before 2026-10-26):
     labels (indexed)       job="silketw"|"etw-meta"|"workload-ledger", host, split, run, provider (kproc|kfile|knet)
     structured metadata    event (EventName), pid (ProcessID), process (ProcessName)  -- filterable, not indexed
     line                   the raw SilkETW JSON line, unchanged

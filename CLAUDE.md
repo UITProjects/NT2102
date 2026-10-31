@@ -114,8 +114,23 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   reproduction.
 - Current focus: the live detection demo. A valid training run (`runs/exp01`) and the live path
   (`src/live/`) exist, and Alg. 1 + the subgraph-score filter (SG-Det) decides the window alert. Immediate
-  steps: wider benign training data + calibration, the replay equivalence check, one Atomic scenario
-  live, and understanding the trainer (concepts 2–4).
+  step (user, 2026-10-25): verify the full detection flow with LLM support (DeepSeek, `--llm-provider
+  deepseek`) live: benign stays green, the DVWA→RCE attack goes red and gets an LLM attack verdict + report.
+  The first run (2026-10-25) is blocked by the collector: SilkService writes Kernel-File events minutes late
+  (its own per-event file writes feed back into Kernel-File), so live windows have no file events (DEVIATIONS
+  D8 correction, `docs/notes/silkservice-kfile-lag.md`). Fixed (user, 2026-10-26): our own Python ETW collector
+  `src/etw-python` (`etwcollect`, pushes to Loki itself) replaced SilkService AND Alloy, verified on `ws-etw` and
+  both removed (D10, PROGRESS). exp03 does not match the new data (other collector, fixed NET owners), so
+  live windows are red until a new model exists; that is not a detection result.
+- DONE (2026-10-31): the core concept demo works end to end. `exp04` (scripted workload) fixed benign but
+  MISSED the attack (LOLBin overlap); user switched to **benign = idle pulled from Loki**, removed both
+  capture scripts, and trained **exp05** on a 16-min idle Loki range. Result (session
+  `live-20261031T134030Z`): idle windows green (≤ Minor 8.0), DVWA→RCE attack **red** (subgraph 106.96,
+  Significant, alert True; flagged the Kali stage IP, `downloaded_tool.bin`, the RCE powershell), LLM triage
+  **`attack` 0.85** + report; offline re-judge reproduces it. See PROGRESS, D2, [[live-detector-benign-fp]].
+- Next: (a) the live UI renders the LLM report as raw markdown — add HTML rendering (user, 2026-10-31);
+  (b) idle model is thin (net `val_fpr=1.0`) — a larger idle pull would steady it; (c) understanding the
+  trainer (concepts 2–4).
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
@@ -138,16 +153,19 @@ history of earlier progress) and, if relevant, this section.
 - Environment: Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers. Docker is
   used only on the Ubuntu trainer for Loki + Grafana (installed by Ansible). No RDF / GraphDB (user,
   2026-10-17): edges stay CSV and Alg. 1 runs in memory.
-- Log transport (user, 2026-10-17): Grafana Alloy (native on the Windows VM) ships raw SilkETW lines,
-  unchanged, to Loki (Docker, host network) on the Ubuntu trainer. Labels: job, host, split, run, provider;
-  event/pid/process as structured metadata. Training pulls from Loki by run or time range
+- Log transport (user, 2026-10-26, superseding the 2026-10-17 Alloy decision): our collector
+  (`src/etw-python`, `etwcollect`) pushes its SilkETW-format JSON lines to Loki (Docker, host network) on
+  the Ubuntu trainer itself, from its own run files with saved offsets (Grafana Alloy removed 2026-10-26). Labels unchanged: job (`silketw`, it names the line format), host, split, run,
+  provider; event/pid/process as structured metadata. Training pulls from Loki by run or time range
   (`loki_pull.py`); the live server follows Loki (`--loki-url`). All conversion, windowing and scoring run on
   the trainer with the training converter code, scaler and relation list; the live clock is event time
   (newest event − lateness), with a host-clock fallback when idle (DEVIATIONS D8). The HTTP shipper
   (`etwship.py`) remains for replay only.
 - Collection lab: three VMs provisioned by Ansible (`src/ansible/`, cloud-portable via inventory): Windows
-  Server 2022 `ws-etw` (SilkETW/SilkService on Kernel-Process, Kernel-File, Kernel-Network + Alloy + the
-  DVWA vulnlab on XAMPP, no training), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
+  Server 2022 `ws-etw` (own Python ETW collector `etwcollect` on Kernel-Process, Kernel-File,
+  Kernel-Network, pushing to Loki, + the DVWA vulnlab on XAMPP, no training; user, 2026-10-26: replaces
+  SilkETW/SilkService v0.8, whose per-event file writes feed back into Kernel-File and which has no exclude
+  filter), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
   Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, same host-only subnet;
   LOCAL LAB ONLY and NOT Ansible-managed — it mounts `src/atomic-attack-pack` via a Vagrant synced
   folder). The Vagrantfile only
@@ -158,11 +176,15 @@ history of earlier progress) and, if relevant, this section.
 - Node identity: processes keyed by PID + start time (raw PIDs get reused and would corrupt idle-time
   features); FILE and NET nodes keyed by a hash of path / ip:port so IDs are stable across train and test.
   Windowed outputs prefix every node ID with its window (`w0007_...`).
-- Benign workload: a custom scripted generator (seeded) rather than GHOSTS or the Caldera human plugin.
-  Apps are launched via explorer (Shell COM) so the benign graph does not learn the attack tooling's
-  parent (PowerShell) as normal.
-- Windowing: train capture of ~20 min benign activity cut into 5-min sliding windows with a 2-min
-  stride. Detection uses the same 5-min window length. For the small scripted demo, tumbling windows
+- Benign set: **idle machine activity, pulled directly from Loki** — no capture script. The always-on live
+  capture ships idle background activity to Loki; a clean idle time-range is pulled with
+  `lab pull --start <t> --end <t> --split test` and trained on. Both earlier scripts were removed 2026-10-31
+  (`06-benign-workload.ps1`, then `07-build-train-dataset.ps1`): the scripted workload's netcheck/download/cmd
+  scenarios reused the attack's living-off-the-land binaries, making the DVWA→RCE chain in-distribution and
+  undetectable (exp04 miss). With an idle baseline the attack separates cleanly; keep benign demo windows
+  idle (an idle model is thin, so real activity can false-positive). See `docs/DEVIATIONS.md` D2.
+- Windowing: an idle benign time-range pulled from Loki, cut into 5-min sliding windows with a 2-min
+  stride. Detection uses the same 5-min window length. For the small demo, tumbling windows
   (stride = window) are enough; sliding windows are the option for real attacks that cross window
   boundaries.
 - Feature extraction: a standalone re-implementation of the repo's behavior-feature step (paper
@@ -178,10 +200,13 @@ history of earlier progress) and, if relevant, this section.
 
 ### Pipeline map (where each stage lives)
 
-- VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (SilkETW, `etwctl`,
-  copies `src/pipeline/etw2nodlink.py` / `etwwindow.py` / `src/live/etwship.py`), `win_alloy`
-  (Alloy → Loki), `win_shipper` (`start-live.ps1`), `win_benign` (`src/scripts/06-benign-workload`,
-  `07-build-train-dataset`), `win_vulnlab` (XAMPP + DVWA).
+- VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (uv + `src/etw-python`
+  collector as SYSTEM task `etwlab-collector`, `etwctl`, copies `src/pipeline/etw2nodlink.py` /
+  `etwwindow.py` / `src/live/etwship.py`; the collector source is the Vagrant mount `C:\etw-python` locally
+  and a git clone on cloud; it also removes the old SilkETW/SilkService and Grafana Alloy),
+  `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture),
+  `win_vulnlab` (XAMPP + DVWA). (The `win_benign` role and `src/scripts/` capture scripts were removed
+  2026-10-31: benign = idle pulled from Loki.)
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
@@ -222,7 +247,10 @@ history of earlier progress) and, if relevant, this section.
 Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`. Summary:
 
 - Windowed, near-live detection instead of the paper's offline whole-log prediction.
-- Own scripted Windows ETW data instead of NODLINK/DARPA datasets; benign activity is scripted.
+- Own Windows ETW data instead of NODLINK/DARPA datasets; benign activity is natural desktop use (the
+  scripted workload was removed 2026-10-31, D2).
+- Own Python ETW collector (`src/etw-python`) instead of SilkETW: SilkETW-format lines with plain values,
+  self/collector I/O excluded in the callback, pushes to Loki itself (D10).
 - Feature extraction: all 15 columns kept; idle scaler fit on train only; RDF skipped; per-window
   nodes give correlated rows.
 - Graph storage: no RDF/GraphDB; edges stay CSV and Alg. 1 runs in memory per window.

@@ -9,14 +9,15 @@
   tasks:
 
     # ---------- win_collector ----------
-    - name: SilkService service is registered (win_collector)
+    - name: Old collector removed (SilkService + Alloy, replaced by etwcollect)
       ansible.windows.win_service_info:
-        name: "{{ service_name }}"
-      register: silksvc
+        name: "{{ item }}"
+      loop: [SilkService, Alloy]
+      register: old_svcs
     - ansible.builtin.assert:
-        that: silksvc.services | length == 1
-        fail_msg: "SilkService not registered — run role win_collector"
-        success_msg: "SilkService registered (start_mode={{ silksvc.services[0].start_mode }})"
+        that: (old_svcs.results | map(attribute='services') | sum(start=[]) | length) == 0
+        fail_msg: "SilkService or Alloy is still installed — run role win_collector (it removes them)"
+        success_msg: "SilkService and Alloy are gone"
 
     - name: Collector files present (win_collector)
       ansible.windows.win_stat:
@@ -34,44 +35,51 @@
         fail_msg: "A collector file is missing — run role win_collector"
         success_msg: "Converter, windowing, shipper, etwctl and embeddable Python all present"
 
+    - name: etw-python collector present (win_collector)
+      ansible.windows.win_stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ uv_dir }}\\{{ uv_version }}\\uv.exe"
+        - "{{ etwpy_python }}"
+        - "{{ etwpy_src | default(etwpy_clone_dir ~ '\\src\\etw-python') }}\\pyproject.toml"
+      register: etwpy_files
+    - ansible.builtin.assert:
+        that: etwpy_files.results | map(attribute='stat.exists') | min
+        fail_msg: "uv, the collector venv or its source is missing — run role win_collector (mount mode: vagrant reload ws-etw)"
+        success_msg: "uv, collector venv and source present"
+
+    - name: Collector task registered (win_collector)
+      ansible.windows.win_powershell:
+        script: |
+          $Ansible.Changed = $false
+          $t = Get-ScheduledTask -TaskName '{{ collector_task }}' -ErrorAction SilentlyContinue
+          if ($t) { "$($t.State)|$($t.Principal.UserId)|$($t.Actions[0].Execute)" } else { 'missing' }
+      register: coll_task
+    - ansible.builtin.assert:
+        that: coll_task.output[0] != 'missing'
+        fail_msg: "task {{ collector_task }} not registered — run role win_collector"
+        success_msg: "task {{ collector_task }}: {{ coll_task.output[0] }}"
+
+    - name: Collector selftest (proves it runs; not that it captures)
+      ansible.windows.win_command: '"{{ etwpy_python }}" -m etwcollect selftest'
+      environment:
+        ETW2NODLINK: "{{ lab_home }}\\etw2nodlink.py"
+      changed_when: false
+
     - name: Converter selftest (proves it runs)
       ansible.windows.win_command: >-
         "{{ tools_dir }}\python-embed\{{ python_embed_version }}\python.exe" "{{ lab_home }}\etw2nodlink.py" --selftest
       changed_when: false
 
-    # ---------- win_alloy ----------
-    - name: Alloy service running (win_alloy)
-      ansible.windows.win_service_info:
-        name: Alloy
-      register: alloy_svc
-    - ansible.builtin.assert:
-        that:
-          - alloy_svc.services | length == 1
-          - alloy_svc.services[0].state == 'started'
-        fail_msg: "Alloy not running — run role win_alloy"
-        success_msg: "Alloy service running"
-
-    - name: Alloy config present (win_alloy)
+    # ---------- win_shipper ----------
+    - name: Shipper script present (win_shipper)
       ansible.windows.win_stat:
-        path: 'C:\Program Files\GrafanaLabs\Alloy\config.alloy'
-      register: alloy_cfg
+        path: 'C:\scripts\start-live.ps1'
+      register: shipper_stat
     - ansible.builtin.assert:
-        that: alloy_cfg.stat.exists
-        fail_msg: "config.alloy missing — run role win_alloy"
-
-    # ---------- win_shipper / win_benign ----------
-    - name: Shipper + benign scripts present (win_shipper, win_benign)
-      ansible.windows.win_stat:
-        path: "{{ item }}"
-      loop:
-        - 'C:\scripts\start-live.ps1'
-        - 'C:\scripts\06-benign-workload.ps1'
-        - 'C:\scripts\07-build-train-dataset.ps1'
-      register: scripts_stat
-    - ansible.builtin.assert:
-        that: scripts_stat.results | map(attribute='stat.exists') | min
-        fail_msg: "A script is missing — run roles win_shipper / win_benign"
-        success_msg: "start-live.ps1 + benign workload (06/07) present"
+        that: shipper_stat.stat.exists
+        fail_msg: "start-live.ps1 missing — run role win_shipper"
+        success_msg: "start-live.ps1 present (always-on live capture)"
 
     # ---------- win_vulnlab / DVWA (only when enabled) ----------
     - name: DVWA checks (win_vulnlab)

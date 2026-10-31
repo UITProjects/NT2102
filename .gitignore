@@ -31,3 +31,6 @@ __pycache__/
 
 # per-machine current-model pointer written by `lab promote` (overrides src/artifacts/current.json)
 /src/artifacts/current.local.json
+
+# etw-python collector (uv project): its own venv when run on the host
+/src/etw-python/.venv/

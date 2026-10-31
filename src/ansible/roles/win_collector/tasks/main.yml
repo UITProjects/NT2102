@@ -1,61 +1,41 @@
 ---
-# Collector install: SilkETW, converter, etwctl, SilkService.
-# Installs SilkETW/SilkService, embeddable Python, deploys the converter/windowing tool/shipper/etwctl,
-# registers the service. The Python tools are copied byte-for-byte from src/pipeline and src/live, so
-# Get-FileHash on the VM (experiment.json tools.*) equals the sha engine.py load_converter computes.
+# Collector install: our ETW collector etwcollect (src/etw-python, DEVIATIONS D10) + embeddable Python +
+# converter/windowing tool/shipper + etwctl. The Python tools are copied byte-for-byte from src/pipeline and
+# src/live, so Get-FileHash on the VM (experiment.json tools.*) equals the sha engine.py load_converter computes.
 
-# ---------- 1. VC++ runtime (SilkETW needs it) ----------
-- name: Install the VC++ 2015-2022 runtime
-  chocolatey.chocolatey.win_chocolatey:
-    name: vcredist140
-    state: present
+# ---------- 1. Remove the old collector path (SilkETW/SilkService + Grafana Alloy, replaced 2026-10-26) ----------
+# Idempotent and cloud-safe: every step is a no-op when the old pieces are not there.
+- name: Remove the SilkService service
+  ansible.windows.win_service:
+    name: SilkService
+    state: absent
 
-# ---------- 2. SilkETW ----------
-- name: Download SilkETW {{ silketw_tag }}
-  ansible.windows.win_get_url:
-    url: "{{ silketw_url }}"
-    dest: "{{ tools_dir }}\\SilkETW_{{ silketw_tag }}.zip"
-    checksum: "{{ silketw_sha256 | regex_replace('^sha256:', '') or omit }}"
-    checksum_algorithm: sha256
-    force: false   # version-pinned URL: keep the existing file, do not re-download each run (idempotent)
-  register: silk_dl
+- name: Remove SilkETW files
+  ansible.windows.win_file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - '{{ tools_dir }}\SilkETW'
+    - '{{ tools_dir }}\SilkETW_v0.8.zip'
 
-- name: Report the SilkETW zip sha256 (pin silketw_sha256 to this)
-  ansible.windows.win_stat:
-    path: "{{ tools_dir }}\\SilkETW_{{ silketw_tag }}.zip"
-    get_checksum: true
-    checksum_algorithm: sha256
-  register: silk_stat
+- name: Uninstall Grafana Alloy (it shipped SilkService's files; etwcollect pushes to Loki itself)
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = 'Continue'
+    $dir = Join-Path $env:ProgramFiles 'GrafanaLabs\Alloy'
+    if (-not (Test-Path $dir) -and -not (Get-Service Alloy -ErrorAction SilentlyContinue)) { 'absent'; exit 0 }
+    Stop-Service Alloy -ErrorAction SilentlyContinue
+    $un = Join-Path $dir 'uninstall.exe'
+    if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList '/S' -Wait }
+    Start-Sleep -Seconds 3
+    if (Get-Service Alloy -ErrorAction SilentlyContinue) { sc.exe delete Alloy | Out-Null }
+    Remove-Item $dir, (Join-Path $env:ProgramData 'GrafanaLabs\Alloy') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-MpPreference -ExclusionPath $dir, (Join-Path $env:ProgramData 'GrafanaLabs\Alloy') -ErrorAction SilentlyContinue
+    Get-ChildItem '{{ tools_dir }}' -Filter 'alloy-installer-*.exe' -ErrorAction SilentlyContinue | Remove-Item -Force
+    'removed'
+  register: alloy_rm
+  changed_when: "'removed' in alloy_rm.stdout"
 
-- name: Show the sha256 to pin
-  ansible.builtin.debug:
-    msg: "SilkETW zip sha256 = {{ silk_stat.stat.checksum }} (set silketw_sha256: 'sha256:{{ silk_stat.stat.checksum }}')"
-  when: silketw_sha256 == ""
-
-- name: Extract SilkETW
-  community.windows.win_unzip:
-    src: "{{ tools_dir }}\\SilkETW_{{ silketw_tag }}.zip"
-    dest: "{{ silketw_dir }}"
-    creates: "{{ silketw_dir }}"
-
-- name: Locate SilkService.exe
-  ansible.windows.win_find:
-    paths: "{{ silketw_dir }}"
-    recurse: true
-    patterns: ["SilkService.exe"]
-  register: silksvc_find
-
-- name: Fail if SilkService.exe is missing
-  ansible.builtin.assert:
-    that: silksvc_find.files | length > 0
-    fail_msg: "SilkService.exe not found under {{ silketw_dir }}"
-
-- name: Record the SilkService directory
-  ansible.builtin.set_fact:
-    silkservice_exe: "{{ silksvc_find.files[0].path }}"
-    silkservice_dir: "{{ silksvc_find.files[0].path | win_dirname }}"
-
-# ---------- 3. Embeddable Python (stdlib only, runs the converter) ----------
+# ---------- 2. Embeddable Python (stdlib only, runs the converter) ----------
 - name: Download embeddable Python {{ python_embed_version }}
   ansible.windows.win_get_url:
     url: "{{ python_embed_url }}"
@@ -74,7 +54,7 @@
   ansible.builtin.set_fact:
     python_exe: "{{ tools_dir }}\\python-embed\\{{ python_embed_version }}\\python.exe"
 
-# ---------- 4. Deploy converter, shipper, etwctl, config ----------
+# ---------- 3. Deploy converter, shipper, etwctl, config ----------
 - name: "Deploy the converter (source of truth: src/pipeline/etw2nodlink.py)"
   ansible.windows.win_copy:
     src: "{{ src_dir }}/pipeline/etw2nodlink.py"
@@ -119,17 +99,108 @@
   ansible.windows.win_command: '"{{ python_exe }}" "{{ lab_home }}\etwwindow.py" --selftest'
   changed_when: false
 
-# ---------- 5. SilkService Windows service ----------
-- name: Register the SilkService collector (startup = Manual)
-  ansible.windows.win_service:
-    name: "{{ service_name }}"
-    path: "{{ silkservice_exe }}"
-    display_name: "SilkETW collector (etwlab)"
-    start_mode: manual
-    state: stopped
+# ---------- 4. etw-python collector (src/etw-python, DEVIATIONS D10) ----------
+# Source: mount (local lab: src/Vagrantfile shares src/etw-python as C:\etw-python, inventory.local.ini sets
+# etwpy_mode=mount) or clone (cloud default: git clone of repo_url@repo_branch). uv builds the venv on the VM's
+# own disk and downloads its own CPython 3.12 (.python-version); the embeddable Python above stays for the
+# converter/windowing/shipper scripts.
+- name: Resolve the collector source (mount or clone)
+  ansible.builtin.set_fact:
+    etwpy_mode_r: "{{ etwpy_mode | default('clone') }}"
+    etwpy_src_r: "{{ etwpy_src | default(etwpy_clone_dir ~ '\\src\\etw-python') }}"
+    uv_exe: "{{ uv_dir }}\\{{ uv_version }}\\uv.exe"
 
-- name: Configure crash-restart (stay Manual; a reboot must not resume into an old run folder)
-  ansible.windows.win_command: >-
-    sc.exe failure {{ service_name }} reset= 86400
-    actions= restart/30000/restart/30000/restart/30000
+- name: Install git (clone mode)
+  chocolatey.chocolatey.win_chocolatey:
+    name: git
+    state: present
+  when: etwpy_mode_r == 'clone'
+
+- name: Clone or fast-forward the repo (clone mode)
+  ansible.windows.win_shell: |
+    $ErrorActionPreference = 'Continue'
+    $d = '{{ etwpy_clone_dir }}'
+    if (-not (Test-Path "$d\.git")) {
+      git clone --branch '{{ repo_branch }}' '{{ repo_url }}' $d 2>&1 | Out-Null
+      if ($LASTEXITCODE) { throw "git clone failed ($LASTEXITCODE)" }
+      'cloned'
+    } else {
+      $before = git -C $d rev-parse HEAD
+      git -C $d fetch origin '{{ repo_branch }}' 2>&1 | Out-Null
+      git -C $d checkout -B '{{ repo_branch }}' 'origin/{{ repo_branch }}' 2>&1 | Out-Null
+      if ($LASTEXITCODE) { throw "git checkout failed ($LASTEXITCODE)" }
+      if ((git -C $d rev-parse HEAD) -ne $before) { 'updated' } else { 'unchanged' }
+    }
+  register: etwpy_git
+  changed_when: "'unchanged' not in etwpy_git.stdout"
+  when: etwpy_mode_r == 'clone'
+
+- name: Collector source present ({{ etwpy_src_r }})
+  ansible.windows.win_stat:
+    path: "{{ etwpy_src_r }}\\pyproject.toml"
+  register: etwpy_pp
+
+- name: Fail if the collector source is missing
+  ansible.builtin.assert:
+    that: etwpy_pp.stat.exists
+    fail_msg: >-
+      {{ etwpy_src_r }}\pyproject.toml not found. mount mode: `vagrant reload ws-etw` so src/Vagrantfile mounts
+      src/etw-python at C:\etw-python; clone mode: check repo_url / repo_branch.
+
+- name: Download uv {{ uv_version }}
+  ansible.windows.win_get_url:
+    url: "{{ uv_url }}"
+    dest: "{{ tools_dir }}\\uv-{{ uv_version }}.zip"
+    checksum: "{{ uv_sha256 | regex_replace('^sha256:', '') or omit }}"
+    checksum_algorithm: sha256
+    force: false   # version-pinned URL: keep the existing file (idempotent)
+
+- name: Extract uv
+  community.windows.win_unzip:
+    src: "{{ tools_dir }}\\uv-{{ uv_version }}.zip"
+    dest: "{{ uv_dir }}\\{{ uv_version }}"
+    creates: "{{ uv_exe }}"
+
+# UV_PROJECT_ENVIRONMENT puts the venv outside the source: a venv inside the VirtualBox share would break
+# (no symlinks there) and would clash with a host .venv. --frozen = install exactly uv.lock, never rewrite it.
+- name: Build the collector venv (uv sync; the first run downloads CPython 3.12)
+  ansible.windows.win_command: '"{{ uv_exe }}" sync --frozen --project "{{ etwpy_src_r }}"'
+  environment:
+    UV_PROJECT_ENVIRONMENT: "{{ etwpy_venv }}"
+    UV_PYTHON_INSTALL_DIR: "{{ uv_dir }}\\python"
+    UV_CACHE_DIR: "{{ uv_dir }}\\cache"
+    UV_LINK_MODE: copy
+    UV_PYTHON_PREFERENCE: only-managed
+  register: etwpy_sync
+  changed_when: >-
+    'Installed' in etwpy_sync.stderr or 'Uninstalled' in etwpy_sync.stderr
+    or 'Creating virtual environment' in etwpy_sync.stderr
+
+- name: Collector selftest (pure parts + converter round-trip; proves it runs, not that it captures)
+  ansible.windows.win_command: '"{{ etwpy_python }}" -m etwcollect selftest'
+  environment:
+    ETW2NODLINK: "{{ lab_home }}\\etw2nodlink.py"
   changed_when: false
+
+# No trigger: `etwctl start` starts it, `etwctl stop` stops it (etwcollect stop -> the process exits by itself).
+# A reboot must not resume into an old run folder, so nothing starts it at boot (start-live.ps1 starts a new
+# live run instead). Restart on failure covers a crash during a run.
+- name: Register the collector task (SYSTEM, started by etwctl)
+  community.windows.win_scheduled_task:
+    name: "{{ collector_task }}"
+    description: "etwcollect: ETW -> raw run files -> Loki (started/stopped by etwctl; managed by Ansible win_collector)"
+    actions:
+      - path: "{{ etwpy_python }}"
+        arguments: -m etwcollect run
+        working_directory: "{{ lab_home }}"
+    username: SYSTEM
+    run_level: highest
+    multiple_instances: 2               # IgnoreNew: never two collectors
+    execution_time_limit: PT0S          # no time limit
+    restart_count: 3
+    restart_interval: PT1M
+    allow_demand_start: true
+    disallow_start_if_on_batteries: false
+    stop_if_going_on_batteries: false
+    enabled: true
+    state: present

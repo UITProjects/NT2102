@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""loki_push.py - push a recorded SilkETW run folder into Loki in the same shape Alloy writes. Test feed for
+"""loki_push.py - push a recorded SilkETW-format run folder into Loki in the same shape etwcollect pushes. Test feed for
 the Ubuntu side (pull, build, live) when no Windows VM is running; also a no-VM demo path.
 
-Alloy on the VM (roles/win_alloy/templates/config.alloy.j2) and this script must agree on:
+etwcollect on the VM (src/etw-python/src/etwcollect/loki.py; Alloy until 2026-10-26) and this script must agree on:
     labels               job="silketw", host, split, run, provider (= file stem: kproc|kfile|knet)
     structured metadata  event (EventName), pid (ProcessID), process (ProcessName)
     timestamp            the line's TimeStamp (event time, ns)

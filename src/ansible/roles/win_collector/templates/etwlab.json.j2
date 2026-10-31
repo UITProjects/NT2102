@@ -1,13 +1,17 @@
 {#- Rendered to C:\ProgramData\etwlab\etwlab.json. to_nice_json escapes the Windows backslashes. -#}
 {{
   {
-    "ServiceName": service_name,
-    "SilkServiceDir": silkservice_dir,
     "RawRoot": raw_root,
     "OutDir": out_dir,
     "Graph": graph_name,
     "Python": python_exe,
     "Converter": lab_home ~ "\\etw2nodlink.py",
+    "CollectorTask": collector_task,
+    "CollectorSession": collector_session,
+    "EtwPython": etwpy_python,
+    "EtwPySrc": etwpy_src | default(etwpy_clone_dir ~ "\\src\\etw-python"),
+    "LokiUrl": loki_url,
+    "Host": inventory_hostname,
     "Collectors": [
       {"Stem": "kproc", "Required": true,  "Guid": "6f1a2c10-0b7e-4c1d-9a51-3e1f00000001",
        "Provider": "Microsoft-Windows-Kernel-Process", "Keywords": "0x50"},

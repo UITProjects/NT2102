@@ -11,14 +11,28 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   the window length (train max idle = 290 s, `src/artifacts/features/self-dataset/feature_scaler.json`).
 - Limits: no claim about whole-log detection quality.
 
-## D2. Own scripted Windows ETW data
-- What: [PAPER] NODLINK / DARPA TC3 / OpTC. [OURS] SilkETW Kernel-Process/File/Network on a W10 VM,
-  converted to the NODLINK SimulatedW10 schema; benign activity from a seeded scripted workload
-  (`src/scripts/06-benign-workload.ps1`), plus background OS activity.
-- Why: own end-to-end pipeline for the live demo; dataset small enough to inspect.
-- Impact: benign behaviour is narrower than human use → likely optimistic false-positive rates;
-  converter drops/unresolves some events (see converter `_summary.json`).
-- Limits: our numbers are not comparable with the paper's tables.
+## D2. Own Windows ETW data; benign = idle, pulled from Loki
+- What: [PAPER] NODLINK / DARPA TC3 / OpTC. [OURS] ETW Kernel-Process/File/Network on a Windows VM (SilkETW
+  until 2026-10-26, then our own collector, D10), converted to the NODLINK SimulatedW10 schema.
+  Benign = **idle machine activity**: no capture script at all — the always-on live capture ships idle
+  background activity to Loki, and a clean idle time-range is pulled straight from Loki
+  (`lab pull --start <t> --end <t> --split test`) and trained on. There is no `src/scripts/` capture script.
+- Why: simplest possible concept demo. Against an idle baseline the attack's whole discovery+RCE burst is
+  out-of-distribution, so it separates cleanly (idle = green, attack = red).
+- History (2026-10-31), two failure modes before this: (1) a **seeded scripted workload**
+  (`06-benign-workload.ps1`: netcheck/download/files ran ipconfig/curl/cmd/net — the attack's own
+  living-off-the-land binaries) taught the model the attack's tools, so on exp04 every attack process scored
+  below τ_process (−0.400) and the attack did **not** alert. (2) A natural manual capture via a rewritten
+  `07` was tried, then both `06` and `07` were **removed** for the idle-from-Loki approach. exp05 (idle)
+  result: idle windows green (≤ Minor 8.0, no alert), the live DVWA→RCE attack **red** (subgraph 106.96,
+  Significant, alert True; flagged the attacker stage IP, `downloaded_tool.bin`, the RCE powershell), LLM
+  triage `attack` (0.85) + report. [[live-detector-benign-fp]].
+- Impact: an **idle baseline is thin** — the idle set that worked was ~16 min with only 6 net / 13 process
+  training nodes, so the per-node net threshold is noisy (`val_fpr=1.0`); the per-subgraph SG-Det cut-off
+  (Moderate ≥ 30) absorbs that noise, keeping idle windows green, but **any real user activity in a benign
+  window can raise false positives**, so the demo must keep benign windows idle. Not a general detector —
+  a concept demo baseline. Converter still drops/unresolves some events (see converter `_summary.json`).
+- Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
 - What: [AUTHOR CODE] `encode_to_PyG.py::feature_engineering` drops all-zero columns and fits the idle
@@ -136,9 +150,39 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     msedge spawns many short-lived processes, each a fresh node under PID+start-time keying (D4) and so
     unseen in benign training, tripping the *same* "unfamiliar process+DLL burst" mechanism as the cradle.
     This is a benign-**variety** gap, not a duration gap — more minutes of the same seeded workload do not
-    fix it; the fix is benign training that covers browsing. Honest reading: detection works, but the
+    fix it; the fix is benign training that covers browsing. Reading at the time: detection works, but the
     attack/benign margin is narrow (56 vs 22 without the browser; 37.76 vs 31 with it) and both sides are
     the same mechanism, so 30 is not yet a trustworthy clean separator. [[live-detector-benign-fp]]
+    **Superseded by the correction below.**
+  - **Correction (2026-10-25, verified): live windows have no file events, so no live result so far is a
+    valid detection result.** Every window of `live-20261022T155035Z` holds **zero Read/Write edges**
+    (exp03 training windows: ~14,000 Read + ~500 Write each). Cause, measured on `ws-etw`: SilkService
+    writes Kernel-File (`kfile`) events far behind real time. From a fresh run it falls behind at once
+    (event time advances at ~20–25 % of wall time; 9+ min behind after 25 min) with SilkService at ~1 CPU
+    core, and nearly all recent kfile events are SilkService's own writes to `kfile.json` plus Alloy's reads
+    of it (a self-feeding loop). Alloy and Loki pass the delay through (both ~real time for kproc/knet),
+    and the engine drops lines older than the watermark (newest event − 20 s) as late (`late_dropped`
+    ≈ all kfile lines). ETW reports `Buffers Lost: 0`, yet SilkService memory stays flat (~275 MB), so where
+    the backlog goes (and whether kfile events are also lost) is open [INFERENCE: lost at the real-time
+    layer]. Not explained yet: why the Oct 22 1-h training capture kept a full 77-min kfile span.
+    Rerun 2026-10-25 (`live-20261025T073042Z`, exp03, attack 14:45–14:47 local): the attack's processes
+    (httpd, cmd, powershell ×3, systeminfo, PING; images whoami/tasklist/ipconfig/net/schtasks) all reached
+    the graph, but **none was flagged** (closest: the cradle powershell, 0.004 below τ). The window went red
+    (33.87, Moderate) only because of a benign msedge launch at 14:49. Benign 14:35 / 14:40 stayed green
+    (12.0 / 21.0). A laptop replay of that session, which receives the kfile lines live dropped, scored the
+    14:35 benign window 3.0 instead of 12.0: one data point consistent with "missing file actions push live
+    features off the training distribution" [INFERENCE], not proof. Until the collector keeps up with kfile
+    (lag < lateness), live detection is unvalidated.
+  - **Cause found (2026-10-26, SilkService source):** SilkService writes every event with
+    `File.AppendAllText` (open + write + close per line), so each line adds ≥ 1 Create + ≥ 1 Write of its
+    own to Kernel-File; Alloy's reads add more. In `live-20261025T073042Z`, 224k of the first 300k kfile
+    lines are SilkService's and 45k Alloy's. Fix: our own collector (D10).
+  - **NET attribution bug (verified 2026-10-26, `live-20261025T073042Z/raw/knet.json`):** in 77 % of knet
+    events (14,826 / 19,212) the header PID differs from the payload PID (header = Idle 0, System,
+    SilkService; payload = msedge, …). SilkETW stores the payload owner as `XmlEventData._PID` and the header
+    copy as `PID`; `etw2nodlink._net()` reads `pid`, so most NET edges of every capture so far (exp01–exp03
+    included) hang off the wrong process. D10 data writes the payload PID as `PID`; the converter will
+    prefer `_pid` so old captures are fixed on re-conversion.
 - Limits: shows near-live node scoring + Alg. 1 on our own data. No detection-quality claim until windows
   are labelled (D6); no claim about Alg. 1 precision; the cut-off (Moderate ≥ 30) is ours, set on one
   benign window, not the paper's.
@@ -163,7 +207,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     cut, keeping lines that touch anomalous nodes first (count recorded).
   - Left out: Alg. 2 l.16–25 (an LLM judge picks top IOCs, their context is pulled from the graph DB, the
     report is enriched).
-  - Provider is pluggable (`--llm-provider anthropic|openai|ollama|mock`). [PAPER] used GPT-4o-mini
+  - Provider is pluggable (`--llm-provider anthropic|openai|ollama|deepseek|mock`). [PAPER] used GPT-4o-mini
     (temperature 0) and LLaMA3-8B. The Anthropic backend sends no temperature (current models reject it),
     so its output is not deterministic. `mock` is a keyword rule for UI tests, not an LLM.
   - Provider choice (user, 2026-10-22): **any OpenAI-compatible endpoint** — `--llm-provider openai
@@ -171,6 +215,20 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     `$OPENAI_API_KEY`; a keyless endpoint used with a custom `--llm-base-url` gets a harmless dummy key so
     the SDK is satisfied ([OURS] `_resolve_openai_key`). Same flags on `live_server.py`, `rejudge.sh` and
     `alg2.py`. This covers self-hosted (vLLM / LM Studio / Ollama) and hosted (OpenRouter / Groq) servers.
+  - First live run (2026-10-25, `ocr-live` with DeepSeek `deepseek-flash`, thinking off,
+    `live-20261025T073042Z`): the one red window (a benign msedge launch, sg 33.87) → `false_positive`
+    (confidence 0.9, 1 call, 3.1 s, 8/8 evidence lines found verbatim in the document): correct. A laptop
+    replay of the session gave the same verdict (0.9, then 0.95 on a second replay: not bit-reproducible).
+    The attack path (triage `attack` → IOCs → report) has **not** run live: the GNN produced no attack
+    subgraph (D8 correction). One window = one data point.
+  - Model choice (user, 2026-10-25): [OURS] DeepSeek API `deepseek-flash` (= DeepSeek-V4.1-Flash-1017,
+    `--llm-provider deepseek`, OpenAI-compatible endpoint), not the paper's GPT-4o-mini / LLaMA3-8B. (Cloudflare
+    Workers AI was tried first and dropped: the account's Free plan refuses this model.) By default DeepSeek
+    thinks (effort high), and in thinking mode temperature has no effect, so verdicts and reports are not
+    reproducible between runs. `--llm-reasoning-effort none` turns thinking off; temperature 0 then applies, but
+    seed support is undocumented. No output cap is sent (DeepSeek's default is undocumented); a cut answer
+    (`finish_reason=length`) prints a warning. The key comes from `NT2102_DEEPSEEK_API_KEY` or a prompt saved to
+    `~/.config/nt2102/credentials.json` (mode 600).
 - Why: the GNN alone cannot tell unseen-but-benign activity (the 11:25 `updater` window) from an attack;
   the demo needs a readable report for a real attack.
 - Impact: the GNN alert is never removed. An LLM `false_positive` shows as a struck-through badge on a
@@ -181,3 +239,46 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   not fed back into training: log text (paths, process names) is attacker-controlled, so prompt injection
   is possible, and [PAPER] §3 assumes training logs free of attack traces. No claim about report quality
   vs the paper's Table 5.
+
+## D10. Own Python ETW collector (`src/etw-python`, `etwcollect`) instead of SilkETW + Alloy
+- What: [PAPER] the paper consumes existing audit datasets and names no collector. Until 2026-10-26 we used
+  SilkETW/SilkService v0.8 (Mandiant, archived) writing JSON lines to files, shipped to Loki by Grafana
+  Alloy. [OURS] (user decision 2026-10-26) one Python process, stdlib + ctypes only, run as the SYSTEM
+  task `etwlab-collector`:
+  - one real-time ETW session with the same 3 providers and keywords (Kernel-Process 0x50, Kernel-File
+    0x380, Kernel-Network 0x30); payload decoded via TDH schemas cached per event type;
+  - SilkETW's JSON line shape (top-level keys, `EventName` = task or task/opcode, payload in
+    `XmlEventData` under manifest names), but plain values: ints without thousands separators, IPv4 dotted,
+    ports in host order, UTC timestamps; no `FormattedMessage` and no TraceEvent header copies (`MSec`,
+    `PName`, `TID`, header `PID`) inside `XmlEventData`;
+  - exclusion **before** formatting, counted: events of its own PID; Read/Write on file objects whose
+    Create named a path under the raw output root (any process, incl. System lazy writes); knet events
+    whose payload PID is excluded; Read/Write on ETW's own real-time spill file for the session (System writes it);
+  - one batched write per provider per second instead of one file open per event;
+  - it pushes its own files to Loki (saved offsets, retry), with the labels/metadata/timestamps Alloy used,
+    plus the dos-map line and the 07 workload ledger. SilkService and Alloy were removed from `ws-etw` the
+    same day, after the checks below (`win_collector` uninstalls them).
+  - Verified on `ws-etw` (2026-10-26):
+    - parity: SilkService and etwcollect side by side, 20 s window: kproc 620/620, kfile 88,612/88,612 (the 76
+      SilkETW-only lines are our own process), knet 26/26 events matched, 0 field mismatches after undoing
+      SilkETW's formatting (`tools/parity.py`); our timestamps are 0.13–0.18 ms earlier than TraceEvent's;
+    - 32-min live run with generated activity (~1,300 kfile events/s): kfile lag within ±4 s throughout
+      (negative values = ETW timestamps a few seconds ahead of the system clock), `EventsLost` 0, collector CPU
+      ~9–11 % of one core; Loki stopped for 2 min mid-run: 69 MB backlog, shipped within ~7 min of the
+      restart; Loki per-provider counts = file line counts exactly (2,629,621 lines); the live engine got
+      ~374k Read edges per 5-min window (SilkService runs: 0).
+- Why: SilkService's per-event writes feed back into Kernel-File faster than it can drain them, and it has
+  no exclude filter (keep-only, one value) and no batching (`docs/notes/silkservice-kfile-lag.md`); live
+  windows had no file events (D8 correction). Own code is also fully explainable.
+- Impact: raw lines differ in formatting from earlier captures, and process names of short-lived
+  processes are real instead of `N/A`, so earlier experiments (exp01–exp03) are not comparable; a new
+  benign capture + retrain (exp04) is required. The converter output contract is unchanged. Excluded events
+  are gone from the raw data (counts in `collector-status.json`); exclusion is by PID and by our own file
+  paths, not by name, so a binary named like the collector is still recorded. Anything written under the raw
+  output root (`C:\lab-out\etw\raw`) by any process is dropped: an attacker hiding files there is invisible.
+  Fields the manifest marks as hex (IOSize, ByteOffset, CreateOptions) are written as `0x..`. Live: a Loki
+  outage longer than the engine's idle fallback makes the backlog arrive after its windows closed (dropped as
+  late, D8); the files and Loki still hold every line.
+- Limits: collector correctness is shown by the parity check against SilkService (one 20 s window) and the
+  lag/lossless checks on one 32-min run with generated (not workload) activity; no claim that it captures
+  every kernel event (`EventsLost` is reported, not prevented).

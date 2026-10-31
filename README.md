@@ -30,14 +30,14 @@ ACM CCS 2025), built as a live demo. **Not a full reproduction** of the paper. S
 
 ```mermaid
 flowchart LR
-  subgraph VM["Windows 10 VM · 10.21.2.10"]
-    A["SilkETW<br/>kernel events"] --> B["shipper"]
+  subgraph VM["Windows Server VM · 10.21.2.10"]
+    A["etwcollect<br/>kernel events (ETW)"] --> B["shipper<br/>(push to Loki)"]
   end
   subgraph H["Linux host · 10.21.2.1:8000"]
     C["graph +<br/>5-min windows"] --> D["OCRGCN<br/>node scores"] --> E["Alg. 1 subgraphs<br/>+ score filter"] --> F["alert in web UI"]
     E -.-> G["LLM verdict + report<br/>(optional)"] -.-> F
   end
-  B -- "HTTP" --> C
+  B -- "HTTP · Loki" --> C
 ```
 
 ## Quick start (no VM needed)

@@ -1,36 +1,92 @@
-# PROGRESS (status as of 2026-10-22)
+# PROGRESS (status as of 2026-10-31)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
+Branch: **`make-sure-to-support-llm-investigator`**.
 
 ## Current focus
 
-The "widen benign + calibrate" cycle ran on **1 HOUR** of benign data (not 2): kfile-fixed capture
-`x-20261022T140932Z` → `exp03` trained + promoted → live DVWA→RCE attack. Work is on branch
-**`collect-benign-data-for-1-hour`**. Now: the LLM Attack Investigator (OpenAI-compatible) and the
-residual browser false positive.
+**The core concept demo WORKS end to end (2026-10-31, exp05, benign = idle pulled from Loki).** The path to
+it: exp03 (broken SilkService data → all red) → exp04 (etwcollect scripted-workload capture: benign green but
+attack MISSED, because the scripted workload's netcheck/download/cmd scenarios reused the attack's
+living-off-the-land binaries) → user switched to **benign = idle, pulled directly from Loki, no capture
+script** → **exp05**.
+
+- **exp05**: trained on a 16-min idle Loki range (`range-20261031T124500Z`, pre-attack idle, pulled with
+  `lab pull --start … --end … --split test`). Thin (FILE 339 / PROCESS 34 / NET 18 node-copies; net
+  `val_fpr=1.0`), but the per-subgraph SG-Det cut-off absorbs the per-node noise.
+- **Result (session `live-20261031T134030Z`, fresh idle run):** idle windows **green** (13:45 = 13 flagged
+  but subgraph max 8.0 Minor, alert False; 13:50 green). Live DVWA→RCE attack (13:55Z, 2314 edges) **RED**:
+  201 flagged, subgraph **106.96 Significant, alert True**; flagged nodes = the Kali stage IP
+  `10.21.2.30:8080`, `c:\users\public\downloaded_tool.bin` (T1105), the RCE `powershell.exe`, DVWA MariaDB
+  `127.0.0.1:3306`. **LLM triage `attack` (0.85)** + IOCs (full discovery chain) + report. Offline re-judge
+  (`rejudge.sh`) reproduces the subgraph + serialized attack document. End goal met.
+
+Note the subgraph correctly captured the discovery tools (whoami/net/systeminfo/schtasks) via their flagged
+powershell parent even though each scored below τ individually — OCR-APT subgraph expansion working.
+
+**Cleanup done (2026-10-31):** both capture scripts removed (`06-benign-workload.ps1`,
+`07-build-train-dataset.ps1`), `win_benign` role + `collect-train.yml` deleted, `windows.yml` /
+`verify-windows.yml` / docs / memory updated. Benign = idle pulled from Loki (D2).
 
 DONE this session (2026-10-22, verified live):
 - **exp03** trained on the 1-h capture and **PROMOTED** (gate passed: 77-min kfile span, all 6 edge types
   non-zero, `emb_std ≠ 0` per type; Read 517,951 · Send 35,485 · Write 18,308 · Recv 10,109 · Load 4,474 ·
   Start 76). `ocr-live` restarted on exp03. The `0x380` kfile fix held at 1-h scale.
-- **Live attack detected** (session `live-20261022T155035Z`): DVWA→RCE kill chain scored **37.76** then
-  **56.0** (Moderate); kept subgraph = powershell cradle (powershell + .NET assembly loads + RAS/proxy
-  DLLs). Non-browser benign stayed green (10.0 / 12.45 / 22.0, Minor). DEVIATIONS D8.
+- ~~Live attack detected~~ (session `live-20261022T155035Z`, 37.76 / 56.0): **NOT valid** (verified
+  2026-10-25): its windows have zero Read/Write edges (training ~14k Read per window). DEVIATIONS D8.
 - **LLM investigator** (`alg2.py`, paper Alg. 2 l.3–15 incl. the serialize+reduce phase that collapses the
   DLL-load flood) already implemented; **added OpenAI-compatible support** (`--llm-api-key`, keyless-dummy
   for a custom `--llm-base-url`) across `alg2.py` / `engine.py` / `live_server.py`; selftest passes.
 
+DONE 2026-10-25 (verified live):
+- **Always-on live capture**: SYSTEM task `etwlab-live` runs the `start-live.ps1` watchdog at boot + every
+  5 min (rotate 6 h, raw `live-*` kept 1 day, `07` pauses it via a hold file). Verified: ws-etw reboot →
+  new run by itself; a tick during `-Pause` left it stopped; `-Resume` restarted in 11 s. The `07` hold
+  path is NOT yet exercised by a real train capture.
+- **LLM on `ocr-live`**: DeepSeek, thinking off, `--llm-debug`; key saved once on the trainer
+  (`alg2.py --ping`, no-TTY ping 0.8 s). Trainer root LV grown 31 → 61 GB; sessions pruned after 12 idle h
+  (`.keep` on `live-20261022T155035Z`); Loki retention 3 d.
+- **Full-flow run** `live-20261025T073042Z` (exp03, attack 14:45–14:47 local): benign 14:35 / 14:40 green;
+  attack window red (33.87) but ONLY from a benign msedge launch: the attack's processes reached the graph
+  and none was flagged. LLM judged that red window `false_positive` (0.9): correct. Laptop replay
+  (`replay-live-20261025T073042Z`, bundle with the model in `src/live/sessions/live-20261025T073042Z/model/`)
+  reproduces the live windows that were not affected by late kfile lines, and the same LLM verdict.
+
 OPEN (the real limitation):
+- **exp03 vs new data**: exp03 was trained on SilkService captures (wrong NET owners, `N/A` process names,
+  thinned kfile). On etwcollect data every live window is red (sg 62–96 during generated DLL-hashing load, not
+  a detection result). Needs a new benign capture + `exp04` (Next 3 steps).
+- Live engine vs Loki outages: after a Loki outage longer than `--loki-idle-s`, the backlog reaches the engine
+  after its windows closed and is dropped as late (522k lines after a 2-min outage on 2026-10-26). Files and
+  Loki keep every line, so a re-build/replay is complete; only the live windows of the outage are thin.
+- etwcollect lag values go to −3.6 s over 32 min: ETW event timestamps run a few seconds ahead of the system
+  clock (status compares against wall time). Harmless for windows; not investigated further.
 - **Browser benign FP**: an Edge-browsing benign window hit **31.0** (Moderate, false alarm). msedge's
   many per-instance processes are unseen in benign training → the *same* mechanism as the cradle. The fix
   is benign **variety** (training that covers browsing), **not** more capture time. DEVIATIONS D8,
   [[live-detector-benign-fp]].
-- A **real LLM run** still needs the user's OpenAI-compatible endpoint URL + key; serialize/mock path
-  verified without one.
-- `06-benign-workload.ps1` **deadline-overrun bug** (the `while (now < deadline)` loop ran ~74 min for a
-  60-min target because one scenario call blocked) — deferred, not yet debugged.
+- LLM attack path (triage `attack` → IOCs → report) never run live: the exp04 attack formed no subgraph
+  (all attack nodes below τ), so the LLM never triggered. Pending exp05.
 
 ## Done
+
+- **Own ETW collector `etwcollect`** (`src/etw-python`, 2026-10-26, verified on `ws-etw`, DEVIATIONS D10):
+  stdlib + ctypes, one real-time session (Kernel-Process 0x50 / File 0x380 / Network 0x30), TDH decode, own
+  I/O dropped in the callback, 1 s batched writes, Loki shipper with saved offsets (replaces Alloy), ledger push
+  for 07. SYSTEM task `etwlab-collector` started/stopped by `etwctl`; local source = Vagrant mount `C:\etw-python`,
+  cloud = git clone. Checks:
+  - `etwcollect selftest` (any OS) + `selftest --live` on ws-etw (struct sizes, child process + canary file +
+    curl network event captured, nothing from our PID written, converter gives Start/Load/Read/Write/Send/Recv);
+  - parity vs SilkService side by side (20 s): 100 % of events matched for kproc 620, kfile 88,612, knet 26, 0
+    field mismatches; SilkETW-only = our own 76 events;
+  - 32-min live run (~1,300 kfile ev/s generated activity): kfile lag within ±4 s, `EventsLost` 0, CPU ~10 %
+    of a core; Loki down 2 min → 69 MB backlog shipped within ~7 min; Loki counts = file lines (2,629,621);
+    live engine `late_dropped` 0 outside the outage, ~374k Read edges per window;
+  - Ansible: SilkService + Alloy uninstalled, `win_alloy` role deleted, 2nd `windows.yml` run `changed=0`,
+    `verify-windows.yml` passes (DVWA too). Repo-wide `./selftest.sh` 15/15.
+- **NET attribution fix** (2026-10-26): 77 % of knet events have header PID ≠ payload PID; the converter now
+  takes the owner from `_PID` (SilkETW) / `PID` (etwcollect), selftest case added. Old captures are fixed on
+  re-conversion; models trained before (exp01–exp03) used the wrong owners.
 
 - Windows 10 ETW lab VM + collector + converter, end to end (Ansible, `src/ansible/`) + `src/scripts/06, 07`.
 - Benign train dataset, experiment `20261009T145632Z` (verified, `src/out/etw/experiments/20261009T145632Z/`):
@@ -70,7 +126,11 @@ OPEN (the real limitation):
   Runs on its own thread in `engine.py`, `--llm-provider` in `live_server.py`, badge + report card in the UI.
   Plumbing verified with the keyword mock on a replay of `live-20261011T112141Z` (before the scale
   change; now needs `--sg-moderate-from 10.0001`): 1 red window (11:25 `updater`), verdict attached,
-  `llm/` files written. No real LLM run yet (provider not chosen).
+  `llm/` files written. Provider chosen (user, 2026-10-25): DeepSeek API `deepseek-flash`
+  (`--llm-provider deepseek`, replaces the dropped Cloudflare attempt); code + offline selftest done.
+  First real run (user-verified 2026-10-25): re-judged replay `live-20261011T112141Z` 11:25 `updater` window
+  → `false_positive` (conf 0.88, 1 call, 3.1 s, 2159 tokens, default thinking). One benign window = one data
+  point, not a rate (D9).
 - Attack pack is now ONE attack: the RCE kill chain (`src/atomic-attack-pack/scenarios/rce-killchain.ps1`),
   delivered from a Kali attacker VM (`tools/launch_exploit.py`; local-only Vagrant box, pack mounted at
   `/opt/attack-pack`, not Ansible-managed). Kali exploits DVWA (OS command injection) and the RCE shell
@@ -120,10 +180,9 @@ OPEN (the real limitation):
 
 ## Not done
 
-- 2h (or 90-min) benign train capture (07) on `ws-etw`, pulled from Loki, retrain into `exp03`, promote,
-  calibrate, attack-test. NOT run yet; this is the paused cycle (see Current focus + Next 3 steps). The
-  kfile-truncation blocker that made earlier captures FILE-starved is now fixed (see Done 2026-10-21).
-  Still gate on `lab status` per-provider coverage (kfile ≈ full span) before trusting any new capture.
+- Benign train capture (07) with the NEW collector (D10), pulled from Loki, train `exp04`, promote,
+  calibrate, attack-test (Next 3 steps; the collector is ready). Gate on `lab status` per-provider coverage (kfile ≈ full
+  span) and Read/Write per window before trusting it.
 
 - Run the RCE kill chain end to end against DVWA. DVWA provisioning is verified on `ws-etw`
   (`ansible-playbook -i inventory.local.ini windows.yml -e vulnlab_enabled=true` serves DVWA on :3000,
@@ -134,10 +193,10 @@ OPEN (the real limitation):
 - Concepts 2 (rest) to 9. Phase 0 toy exercises; Phase 1 one-page paper summary + hyperparameter list.
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
-  score_window.py / engine.py / etwship.py; a benign live run with `06-benign-workload.ps1`.
+  score_window.py / engine.py / etwship.py.
 - Test split capture, node labels, test scoring, NODLINK W10 detector baseline.
-- LLM: choose a provider (`uv sync --group llm`), re-judge the 11:25 window with
-  `./rejudge.sh <session> <p> --sg-moderate-from 10.0001`, then one Atomic scenario live. Alg. 2 l.16–25
+- LLM: DeepSeek on a red window from a real attack (the RCE kill chain live), to see the attack path
+  (triage → IOCs → report). Alg. 2 l.16–25
   not built.
 - SG-Det cut-off not checked against an attack: our scale (Moderate ≥ 30 ≈ at least 30 anomalous nodes
   in one subgraph) was set from one benign window; a small Atomic scenario may be filtered out.
@@ -178,7 +237,6 @@ Code bugs found in the 2026-10-13 docs pass (verified in code, not fixed yet):
 - `build_node_labels.py` expects `node_id,type,name,timestamp`; the converter writes `node,node_type,node_attr`
   (no timestamp, types `PROCESS/FILE/NET`), and NET is checked as `network`. It cannot run as is.
 - `selftest.sh` skips `encode_to_features.py --selftest`.
-- Runtime message names an old file: `07-build-train-dataset.ps1` ("05-collect-10-minutes-window.ps1").
 - `src/Vagrantfile:13` names `./host-setup.sh`; the file is `src/setup-virtualbox.sh`.
 - `live_server.py --sg-moderate-from` hard-codes 30.0 instead of `alg1.MODERATE_FROM`.
 - Scenarios 05 (lsass handle access) and 09 (timestomp) may be invisible to the collector's file keywords
@@ -190,23 +248,19 @@ Repo hygiene:
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
-## Next 3 steps (resume the paused cycle — full detail in `~/.claude/plans/i-want-you-to-splendid-naur.md`)
+## Next steps (2026-10-31, after the exp05 demo win)
 
-Pre-flight is already done (trainer on main + Loki ready + Kali selftest ok + kfile fix verified). Start here:
+1. **Live UI: render the LLM report as HTML** (user, 2026-10-31). The web UI currently shows the Alg. 2
+   report (`sg3_report.md`) as raw markdown text — add markdown→HTML rendering in `src/live/` (the UI /
+   `live_server.py`).
+2. **Steady the idle baseline:** exp05's idle set is thin (net `val_fpr=1.0`, 6 net train nodes). Pull a
+   larger idle range from Loki (e.g. rotate a fresh idle run, let it sit ~30 min, `lab pull --latest
+   --split test`) and retrain for a less noisy per-node net model. The demo already works; this hardens it.
+3. Concepts 2–4 (GNN basics, RGCN, one-class loss) for the write-up; replay equivalence via
+   `compare_replay.py` on the host (the trainer-side `rejudge.sh` already reproduced the attack subgraph).
 
-1. Launch the benign capture on `ws-etw` (VirtualBox window, elevated PS):
-   `C:\scripts\07-build-train-dataset.ps1 -DurationMinutes 120 -Seed 42` (or 90). ~58 windows at 5-min/2-min.
-   Note the `x-<UTC>` run stamp. (Runs in the interactive desktop only — WinRM/session-0 is refused and would
-   mis-parent apps to powershell.)
-2. On the trainer: `lab loop --latest --split train --lookback 1d --model exp03 --seeds 3 --yes`. GATE before
-   promote: `lab status` shows kfile ≈ full span (fix holds at scale), all 6 edge types non-zero, `emb_std`
-   ≠ 0 for every type. Then `lab promote exp03` + `sudo systemctl restart ocr-live`.
-3. Honest calibrate + attack (both via `vagrant ssh` for the trainer/Kali; the Windows capture is manual):
-   benign live session first (`start-live.ps1` + `06-benign-workload.ps1 -Seed 7`), record max benign
-   `sg_score` (`alg1.py --session-dir`); set cut-off from benign only; THEN
-   `vagrant ssh kali -c 'python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000'`.
-   Attack window must reach ≥ cut-off while benign stays green; confirm the kept subgraph is ATTACK indicators
-   (httpd→cmd→powershell, tool images, attacker :8080), not NAT/powershell noise. Record in DEVIATIONS D8.
-
-Watch item: the first 15-min `07` run (`x-20261021T161810Z`) did not write `stopped_utc` (capture left
-running); the 5-min smoke stopped cleanly, so likely a one-off — but confirm `07` stops the service on the 2h run.
+Note: benign = idle pulled from Loki (no capture script). To rebuild benign: `lab pull --start <t>
+--end <t> --split test --yes` on a clean idle range, then `lab train --experiment <id> --model <name>`.
+Training needs `_train_`-named edges, but a Loki idle pull is `--split test` → files are `_test_`: copy
+`SimulatedW10_test_{edges,node_attrs}.csv` to `_train_` in the experiment folder before `lab train`
+(or add split-awareness to `lab train`, which hardcodes `SimulatedW10_train_edges.csv`).

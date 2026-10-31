@@ -1,9 +1,11 @@
 ---
-# Deploy start-live.ps1: start/stop a live (test) SilkETW capture. Alloy (win_alloy) ships it to Loki and
-# the live server follows Loki, so this script no longer sends anything itself. Run it interactively
-# during the demo (elevated PowerShell), alongside the benign workload.
+# Always-on live capture. start-live.ps1 is a watchdog: one run = one tick that keeps a test/live-<UTC>
+# SilkETW run capturing (rotated every live_rotate_hours, old raw live runs pruned, paused while a hold file
+# exists, e.g. during 07-build-train-dataset.ps1). A SYSTEM scheduled task runs it at boot and every
+# live_watchdog_minutes, so nobody has to start the capture by hand. Alloy (win_alloy) ships the lines to
+# Loki; the live server follows Loki.
 
-- name: Deploy start-live.ps1
+- name: Deploy start-live.ps1 (watchdog; also -Status / -Rotate / -Pause / -Resume by hand)
   ansible.windows.win_template:
     src: start-live.ps1.j2
     dest: 'C:\scripts\start-live.ps1'
@@ -12,3 +14,31 @@
   ansible.windows.win_file:
     path: 'C:\scripts\ship-live.ps1'
     state: absent
+
+# Two triggers, both repeating every live_watchdog_minutes with no end: "boot" (after a reboot) and
+# "registration" (starts ticking as soon as Ansible creates or changes the task, no reboot needed).
+- name: Register the always-on live capture task
+  community.windows.win_scheduled_task:
+    name: "{{ live_task_name }}"
+    description: "Keeps a live ETW capture running (C:\\scripts\\start-live.ps1; managed by Ansible win_shipper)"
+    actions:
+      - path: powershell.exe
+        arguments: -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\scripts\start-live.ps1
+    triggers:
+      - type: boot
+        delay: PT1M                     # let the network and Alloy come up first
+        repetition:
+          interval: "PT{{ live_watchdog_minutes }}M"
+      - type: registration
+        repetition:
+          interval: "PT{{ live_watchdog_minutes }}M"
+    username: SYSTEM
+    run_level: highest
+    multiple_instances: 2               # IgnoreNew: a slow tick is never doubled
+    execution_time_limit: PT15M
+    allow_demand_start: true
+    start_when_available: true
+    disallow_start_if_on_batteries: false
+    stop_if_going_on_batteries: false
+    enabled: true
+    state: present

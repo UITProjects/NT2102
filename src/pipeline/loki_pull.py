@@ -8,7 +8,7 @@
 
 Same raw layout 07-build-train-dataset.ps1 produced on the VM, so build_experiment.py (convert -> window ->
 check -> experiment.json) and everything after it are unchanged. Lines are written exactly as Loki returns
-them (Alloy never rewrites a line), oldest first, one file per provider.
+them (the VM's shipper never rewrites a line), oldest first, one file per provider.
 
 Pick what to pull:
     uv run python src/pipeline/loki_pull.py                          interactive (arrow keys): runs or a custom range
@@ -169,7 +169,7 @@ def pull(lk, sel, out_dir, page=5000, log=print, job="silketw"):
             n, last_ts, at_ts = 0, None, set()
             for ts, lab, line in lk.query_all(q, sel["start_ns"], sel["end_ns"], page=page):
                 key = (lab["split"], lab["run"], lab["provider"])
-                # exact (ts, stream, line) repeats = the same event shipped twice (Alloy lost its positions, a
+                # exact (ts, stream, line) repeats = the same event shipped twice (the shipper lost its positions, a
                 # re-push): drop and count them. Entries arrive in ts order, so only the current ts is kept.
                 if ts != last_ts:
                     last_ts, at_ts = ts, set()
@@ -363,7 +363,7 @@ def main(argv=None):
             print("[loki_pull] cancelled")
             return 1
     if time.time_ns() - sel["end_ns"] < 180 * NS and sel["mode"] == "run":
-        print("[loki_pull] WARNING: the run ended < 3 min ago; Alloy may still be shipping its last lines")
+        print("[loki_pull] WARNING: the run ended < 3 min ago; the VM may still be shipping its last lines")
     exp_id = a.id or default_id(sel)
     if interactive and not a.id:
         import questionary

@@ -16,7 +16,7 @@ Usage (from the repo root): ./serve.sh [live|local] [flags] wraps
   The model comes from the current-model pointer (src/artifacts/current.local.json, else current.json;
   `lab promote <run>` sets it). --run-dir / --scaler / --experiment override it, e.g.
     --run-dir src/artifacts/runs/exp01 --scaler src/artifacts/features/self-dataset/feature_scaler.json
-    add --llm-provider anthropic|openai|ollama|mock for the LLM verdict on red windows (src/live/README.md)
+    add --llm-provider anthropic|openai|ollama|deepseek|mock for the LLM verdict on red windows (src/live/README.md)
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))          # src/: the `lab` package (current-model pointer)
 from engine import Engine  # noqa: E402
+import alg2  # noqa: E402  (engine put src/pipeline on sys.path; provider list + reasoning efforts)
 
 
 def create_app(engine: Engine, token: str | None, source=None) -> FastAPI:
@@ -138,13 +139,21 @@ def main():
     g.add_argument("--sg-min-score", type=float, default=None,
                    help="[OURS] numeric cut-off instead of the level (alert if sg_score > X); calibrate on BENIGN sessions")
     g = ap.add_argument_group("LLM triage + attack report after SG-Det (src/pipeline/alg2.py)")
-    g.add_argument("--llm-provider", choices=["anthropic", "openai", "ollama", "mock"], default=None,
+    g.add_argument("--llm-provider", choices=list(alg2.DEFAULT_MODELS), default=None,
                    help="off by default; only red windows are sent; the verdict never turns a red window green")
     g.add_argument("--llm-model", default=None, help="default per provider, see alg2.DEFAULT_MODELS")
     g.add_argument("--llm-base-url", default=None,
                    help="OpenAI-compatible endpoint, e.g. http://host:8000/v1 (or a remote Ollama :11434/v1)")
     g.add_argument("--llm-api-key", default=None,
-                   help="key for an OpenAI-compatible --llm-base-url (else $OPENAI_API_KEY; keyless endpoints use a dummy)")
+                   help="key for an OpenAI-compatible --llm-base-url (else $OPENAI_API_KEY; keyless endpoints use a "
+                        "dummy). deepseek: else $NT2102_DEEPSEEK_API_KEY, else ~/.config/nt2102/credentials.json, "
+                        "else a prompt that saves it there")
+    g.add_argument("--llm-reasoning-effort", choices=alg2.REASONING_EFFORTS, default=None,
+                   help="deepseek: thinking effort; none = thinking off (fastest, use for the live demo); "
+                        "default: not sent = DeepSeek default (thinking, high)")
+    g.add_argument("--llm-debug", action="store_true", default=alg2.debug_default(),
+                   help="print each LLM call's raw response / HTTP error body to stderr, keep it in calls.jsonl "
+                        "(default from $NT2102_LLM_DEBUG=1)")
     g.add_argument("--llm-max-subgraphs", type=int, default=5, help="kept subgraphs investigated per window")
     a = ap.parse_args()
     if not (a.run_dir and a.scaler):
@@ -170,7 +179,8 @@ def main():
                     sg_min_level=a.sg_min_level, sg_min_score=a.sg_min_score,
                     sg_moderate_from=a.sg_moderate_from, llm_provider=a.llm_provider,
                     llm_model=a.llm_model, llm_base_url=a.llm_base_url, llm_api_key=a.llm_api_key,
-                    llm_max_subgraphs=a.llm_max_subgraphs)
+                    llm_max_subgraphs=a.llm_max_subgraphs, llm_reasoning_effort=a.llm_reasoning_effort,
+                    llm_debug=a.llm_debug)
     print(f"[live] model {engine.run_dir}  tau={engine.run.tau}")
     print(f"[live] Alg. 1 {engine.sg}  train score range {engine.run.score_range}")
     print(f"[live] LLM {engine.llm_cfg}")

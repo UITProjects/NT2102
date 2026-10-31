@@ -3,15 +3,17 @@
 #
 # Usage: ./rejudge.sh <session-id> [llm-provider] [extra alg1.py flags...]
 #   no provider -> prints the LLM input documents of every red window (alg2.py --serialize-only, no call)
-#   provider    -> anthropic | openai | ollama | mock: writes windows/<wid>/llm/ (needs: uv sync --group llm)
+#   provider    -> anthropic | openai | ollama | deepseek | mock: writes windows/<wid>/llm/ (needs: uv sync --group llm)
+#                  deepseek: prompts once for the API key, saved to ~/.config/nt2102/credentials.json
 # Examples:
 #   ./rejudge.sh replay-live-20261011T112141Z
 #   ./rejudge.sh replay-live-20261011T112141Z anthropic
 #   ./rejudge.sh replay-live-20261011T112141Z "" --sg-min-score 20    # other cut-off, no LLM
-# Env: RUN_DIR (default: the current model, `lab current --field run_dir`).
+# Env: RUN_DIR (default: the current model, `lab current --field run_dir`);
+#      NT2102_LLM_DEBUG=1 prints every raw LLM response / HTTP error body (alg2.py --llm-debug).
 set -euo pipefail
 cd "$(dirname "$0")"
-[[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]] && { sed -n '2,11p' "$0"; exit 0; }
+[[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]] && { sed -n '2,13p' "$0"; exit 0; }
 
 session=$1
 provider=${2:-}

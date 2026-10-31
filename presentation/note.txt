@@ -66,3 +66,16 @@ Mỗi lớp lấy trung bình với neighbor. Xếp quá nhiều lớp thì vect
 giống nhau (over-smoothing: trên slide "Xếp nhiều lớp", các màu sẽ thành cùng một màu xám), nên
 không còn phân biệt được node bất thường. OCR-APT dùng 3 lớp [PAPER §7.2.1]: đủ thấy chuỗi
 process -> file -> process -> mạng.
+
+
+Q7. Demo đã chạy thật chưa? Kết quả thế nào?
+---------------------------------------------
+Rồi (session live-20261031T134030Z, mô hình exp05). Benign (desktop idle) các window XANH
+(subgraph ≤ Minor 8.0, không alert). Tấn công DVWA→RCE từ Kali: window đó ĐỎ — subgraph 106.96
+(Significant, alert), cờ đúng IP máy tấn công 10.21.2.30:8080, downloaded_tool.bin (T1105) và
+powershell của RCE; LLM phân loại "attack" (0.85) + báo cáo Alg. 2. rejudge.sh tái hiện lại offline.
+
+Vì sao benign = idle? Nếu benign có sẵn các lệnh discovery (whoami/net/systeminfo/schtasks) — như
+workload script cũ — thì mô hình học chúng là "bình thường" và bỏ sót tấn công (exp04). Nền idle giữ
+chuỗi living-off-the-land của tấn công nằm ngoài phân phối benign nên tách rõ. Đánh đổi: mô hình idle
+mỏng (net val_fpr=1.0), nên giữ các window benign ở trạng thái idle khi demo.

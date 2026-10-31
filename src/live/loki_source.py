@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """loki_source.py - feed engine.Engine from Loki instead of the HTTP shipper (live_server.py --loki-url).
 
-    Alloy (VM) -> Loki {job="silketw", split="test", run, provider}
+    etwcollect (VM) -> Loki {job="silketw", split="test", run, provider}
       -> poll every --poll-s: newest run in the split = the current session (a new run = a new session)
       -> per provider stream: query [cursor - overlap, now + grace), drop lines already seen
       -> engine.ingest({session: run, batches: [{stream: provider, offset_start, lines, ends}], clock_ms, dos_map})
@@ -14,7 +14,7 @@ seen. When no new line arrives for --idle-s, the clock keeps moving with the hos
 measured lag (host now - newest event), so the last window of a stopped capture still closes.
 
 Why poll instead of /tail (websocket): no extra dependency, and reconnecting is just asking again from the
-cursor. Why the overlap: Alloy ships each file in order, but small reorderings inside a file are possible;
+cursor. Why the overlap: the VM ships each file in order, but small reorderings inside a file are possible;
 re-reading the last few seconds and de-duplicating costs little.
 
     uv run python src/live/loki_source.py --selftest

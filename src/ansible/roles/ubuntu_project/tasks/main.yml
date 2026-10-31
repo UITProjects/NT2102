@@ -13,9 +13,10 @@
                        # with them the module reports "submodules_changed" on every run
   notify: restart ocr-live   # the running server keeps the old Python code until restarted
 
-- name: uv sync (resolve torch, torch-geometric, fastapi, ...)
+- name: uv sync (resolve torch, torch-geometric, fastapi, ...; + the llm group when live_llm_args is set)
   become: false
-  ansible.builtin.command: uv sync
+  # a plain `uv sync` removes packages of groups it was not asked for, so the llm group must be named here
+  ansible.builtin.command: "uv sync{{ ' --group llm' if live_llm_args | default('') else '' }}"
   args:
     chdir: "{{ repo_dest }}"
   register: uv_sync
@@ -24,6 +25,20 @@
 # The live server loads the CURRENT MODEL from the repo's pointer (src/artifacts/current.json, or
 # current.local.json written by `lab promote` on this host). Each run folder carries its own
 # experiment.json, so nothing has to be copied from the control node.
+
+# The Windows capture is always on (win_shipper watchdog) and every live session keeps a raw copy of it
+# (~2 GB/h), so old sessions are pruned hourly. A session goes only when NO file inside changed for
+# live_session_keep_hours (the folder's own mtime does not move while raw/ grows). replay-* and other
+# folders are never touched; a session holding a .keep file is kept forever (touch <session>/.keep).
+- name: Hourly cleanup of old live sessions
+  become: false
+  ansible.builtin.cron:
+    name: "nt2102 live session cleanup"
+    special_time: hourly
+    job: >-
+      for d in {{ repo_dest }}/src/live/sessions/live-*/; do [ -d "$d" ] && [ ! -e "$d.keep" ] &&
+      [ -z "$(find "$d" -type f -mmin -{{ live_session_keep_hours | int * 60 }} -print -quit)" ] &&
+      rm -rf "$d"; done; true
 
 - name: Install the live-server systemd unit
   ansible.builtin.template:

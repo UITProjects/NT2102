@@ -3,7 +3,8 @@
 Everything for the NT2102 demo ("Phát hiện bất thường trên endpoint device log"): detect a demo attack
 (e.g. CVE exploit → RCE → ATT&CK techniques) live on a Windows host, using OCR-APT's core method.
 
-- **Windows Server lab VM** (`ws-etw`): records kernel activity with ETW (SilkETW); Grafana Alloy ships it to Loki.
+- **Windows Server lab VM** (`ws-etw`): records kernel activity with ETW using our own collector `etw-python/`
+  (`etwcollect`), which also pushes it to Loki. SilkETW + Grafana Alloy did this until 2026-10-26 (DEVIATIONS D10).
 - **Ubuntu trainer** (`ubuntu-trainer`): Loki + Grafana, then logs → graph → behaviour features → one-class
   GNN per node type (OCRGCN).
 - **Live demo**: scores every 5-minute window, builds alert subgraphs (Alg. 1), optional LLM verdict, web UI.
@@ -57,11 +58,12 @@ trained model is never overwritten.
 | folder | kind | runs where | in git |
 |---|---|---|---|
 | `Vagrantfile`, `setup-virtualbox.sh` | builds the two bare lab VMs (Windows collector + Ubuntu trainer) | host | yes |
-| `ansible/` | provisions both VMs (Windows: SilkETW, Alloy, vulnlab; Ubuntu: Loki/Grafana, repo, `ocr-live`); cloud-portable via inventory | control node | yes |
+| `etw-python/` | the ETW collector `etwcollect` (uv project, stdlib + ctypes): ETW -> SilkETW-format lines -> Loki; mounted at `C:\etw-python` locally, cloned on cloud | VM | yes |
+| `ansible/` | provisions both VMs (Windows: etw-python collector, vulnlab; Ubuntu: Loki/Grafana, repo, `ocr-live`); cloud-portable via inventory | control node | yes |
 | `lab/` | the `lab` CLI (the loop above) | trainer / host | yes |
 | `pipeline/` | stage scripts: Loki pull, convert, window, features, training, scoring, Alg. 1/2 | trainer / host | yes |
 | `live/` | live demo: server, engine, Loki source, web UI, replay tools | trainer | yes (`sessions/` no) |
-| `scripts/` | the two PowerShell scripts Ansible still deploys: `06-benign-workload.ps1`, `07-build-train-dataset.ps1` | VM | yes |
+| _(no `scripts/`)_ | benign = idle pulled from Loki; the capture scripts were removed 2026-10-31 (D2) | — | — |
 | `artifacts/` | data we keep: trained runs (each with its features), the current-model pointer, paper features | — | yes |
 | `out/` | local data: experiments pulled from Loki, raw captures | trainer / host | no |
 | `atomic-attack-pack/` | attack scenarios + labelling scheme | VM (isolated) | yes |
@@ -103,13 +105,14 @@ src/
 ├── Vagrantfile               the two bare VMs: ws-etw (Windows Server 2022, 10.21.2.10, 3D off) and
 │                             ubuntu-trainer (Ubuntu 24.04, 10.21.2.20); no provisioners (Ansible does that)
 ├── setup-virtualbox.sh       one-time host prep: allow 10.21.2.0/24 in VirtualBox, warn about KVM
+├── etw-python/               the ETW collector `etwcollect` (README.md: commands, modules, format differences)
 ├── ansible/                  site.yml / windows.yml / ubuntu.yml, roles/, inventories (ansible/README.md)
 ├── lab/cli.py                the `lab` command (status, pull, train, loop, promote, current, selftest)
 ├── pipeline/                 stage scripts (Python, code only; each has --selftest)
 │   ├── lokiclient.py           Loki HTTP calls (+ fake Loki for selftests)
 │   ├── loki_pull.py            Loki -> experiment raw/ (interactive picker or flags)
 │   ├── build_experiment.py     raw/ -> converted, windowed edges, check.json, experiment.json
-│   ├── etw2nodlink.py          SilkETW JSON -> edges (the converter; Ansible copies it to the VM too)
+│   ├── etw2nodlink.py          SilkETW-format JSON -> edges (the converter; Ansible copies it to the VM too)
 │   ├── etwwindow.py            edges -> 5-min windows;  check_rdf_input.py  input-contract check
 │   ├── encode_to_features.py   edges -> 15 behaviour features per node (paper §5.1.2)
 │   ├── train_gnn_models.py     trains one OCRGCN per node type
@@ -125,7 +128,6 @@ src/
 │   ├── compare_replay.py       checks that live results equal the offline pipeline
 │   ├── static/index.html       the web UI
 │   └── sessions/<id>/          per-session outputs (not in git)
-├── scripts/                  06-benign-workload.ps1, 07-build-train-dataset.ps1 (deployed to C:\scripts)
 ├── artifacts/                data we keep in git
 │   ├── current.json            the current-model pointer (current.local.json overrides it, not in git)
 │   ├── runs/<model>/           one model: models/, features/, experiment.json, lineage.json, train_*.csv
@@ -145,7 +147,7 @@ paths as they were at training time. They are a record of that run; do not edit 
 
 ## Data flow
 
-1. VM: `scripts/07` (training) or `start-live.ps1` (demo) captures; Alloy ships every line to Loki on the trainer.
+1. VM: the always-on `start-live.ps1` capture ships every ETW line to Loki on the trainer (benign = idle; no capture script).
 2. Trainer: `lab loop` runs `loki_pull.py --build` → `encode_to_features.py` → `train_gnn_models.py`, all into
    `artifacts/runs/<model>/`. Then `lab promote <model>`.
 3. Live: Loki → `live/live_server.py --loki-url` (current model) → `live/sessions/<id>/` + web UI.
@@ -159,7 +161,7 @@ records its sha256 and the live server compares it (`converter_check`). Edit it 
 |---|---|
 | collapsed model, all-zero features | trained on un-windowed edges (e.g. `out/_old/etw/SimulatedW10_train_edges.csv`) → train on an experiment folder (`lab train --experiment`) |
 | a provider covers only a minute of the capture | `lab status` warns (e.g. `kfile 1/21m` in `20261009T145632Z`) → check the collector before training on it |
-| installer activity flagged in a "benign" test | software installs are not benign workload → use `06-benign-workload.ps1` |
+| installer activity flagged in a "benign" test | software installs are not benign → pull a clean *idle* range from Loki (`lab pull --start … --end … --split test`) |
 | VM dies, looks like OOM | VMSVGA segfault in `libnvidia-glcore` (3D acceleration) → keep `accelerate3d off`; check `journalctl -k` and `VBox.log.1` first |
 | `converter_check: MISMATCH` | the model was trained with another converter version → rebuild + retrain (`lab loop`) |
 | live server loads the wrong model | `lab current` shows which pointer is used (`current.local.json` wins) |
