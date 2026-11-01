@@ -108,6 +108,24 @@ ansible-vault encrypt group_vars/vault.yml                # vault.yml is gitigno
 # then add to every cloud command:  -e @group_vars/vault.yml --ask-vault-pass
 ```
 
+### Proxmox lab (`proxmox.ini`)
+
+The VMs from `infrastructure/` (Terraform): `ws-etw` 10.21.3.10, `ubuntu-trainer` 10.21.3.20, reached over a
+routed path to 10.21.3.0/24. Credentials come from the vault, like cloud: `win_user: Administrator`, the
+Windows password, and `grafana_admin_password` in `group_vars/vault.yml`. The trainer uses the cloud-init user
+`it2102` and the `it2102-vms` key.
+
+A fresh `ws-etw` puts its NIC on the Public profile, where the WinRM firewall rule only accepts the local
+subnet, so a routed workstation times out on 5985. Once, in RDP as Administrator (PowerShell):
+
+```powershell
+Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private   # NIC -> Private profile
+Enable-PSRemoting -Force                                                       # WinRM listener + firewall rule
+```
+
+Check with `nc -zv -w3 10.21.3.10 5985`, then run with `-i proxmox.ini -e @group_vars/vault.yml --ask-vault-pass`
+(Ubuntu first; add `-e vulnlab_enabled=true` for DVWA).
+
 ### Tamper Protection (Windows, manual, once)
 
 Defender **Tamper Protection** cannot be toggled remotely. Before the first run, RDP into `ws-etw` and

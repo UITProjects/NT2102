@@ -160,7 +160,7 @@ resource "proxmox_virtual_environment_firewall_options" "windows" {
   vm_id     = proxmox_virtual_environment_vm.windows.vm_id
 
   enabled       = true
-  input_policy  = "DROP"
+  input_policy  = "ACCEPT"
   output_policy = "ACCEPT"
 }
 
