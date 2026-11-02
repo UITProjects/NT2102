@@ -19,6 +19,14 @@ watchdog exit + `Restart=always`; a restart appended a 2nd raw copy into the sam
 lines/provider/poll with the clock held for the lagging provider; the UI never re-synced after a reconnect →
 re-fetch on every SSE open. Added `/healthz`, `OOMScoreAdjust=500`, per-event converter guard, and the [OURS]
 **daily LLM budget** `--llm-max-per-day 10` (user, 2026-11-02; D9). `./selftest.sh` 16/16. src/live/README §5.
+Deployed on the Proxmox trainer (`7dadd1a`, `-e repo_branch=provide-infrastructure -e live_llm_args=`) and
+verified there: `/healthz` 200; deploy restart → `.r2`, SIGKILL → systemd restart → `.r3`, both 0 duplicate raw
+lines and 0 late drops during catch-up; Loki container restart → error shown, recovered in < 10 s, no process
+restart. Costs seen: a restart re-reads up to 1 h (catch-up 6–16 min at ~1.6–4k lines/s, the UI is that far
+behind meanwhile; "event lag" shows ≈ −backlog then); memory 2.7 GB after catch-up (peak 3.1 GB, VM 5.9 GB).
+NOT yet: a soak across a 6-h run rotation (memory trend). Seen live: a ws-etw burst (≤ 7,660 kfile ev/s,
+11:18–11:21Z) put the etwcollect shipper (1 MiB per file per second ≈ 1,800 kfile lines/s) minutes behind, so
+211k kfile lines were dropped as late in `.r2`; the `.r3` re-read later had them (11:30 window 21k → 109k edges).
 
 **The core concept demo WORKS end to end (2026-10-31, exp05, benign = idle pulled from Loki).** The path to
 it: exp03 (broken SilkService data → all red) → exp04 (etwcollect scripted-workload capture: benign green but
@@ -265,9 +273,9 @@ Repo hygiene:
 
 ## Next steps (2026-11-01: Proxmox)
 
-0. **Deploy + soak the 24/7 fix** on the trainer: `ansible-playbook -i proxmox.ini ubuntu.yml -e
-   repo_branch=provide-infrastructure -e live_llm_args=`; check `/healthz`, a `kill -9` restart (→ `.r2`, no
-   duplicate raw), `docker restart loki` recovery, RSS across one 6-h run rotation.
+0. **Soak the 24/7 fix** (deployed + fault-tested 2026-11-02): RSS across one 6-h run rotation (next at
+   ~17:04Z). Option: raise the etwcollect shipper rate (more than one 1 MiB batch per file per second) so kfile
+   bursts stop being dropped as late live.
 
 1. **Train on Proxmox:** once the kfile backlog is 0, let ws-etw sit idle (≥30 min, after all provisioning),
    `lab pull --start … --end … --split test` on the trainer, then train + `lab promote`. Check that idle stays green live.
