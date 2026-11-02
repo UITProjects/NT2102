@@ -34,3 +34,5 @@ __pycache__/
 
 # etw-python collector (uv project): its own venv when run on the host
 /src/etw-python/.venv/
+# audit-python shipper (uv project, Linux endpoint)
+/src/audit-python/.venv/

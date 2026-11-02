@@ -1,0 +1,18 @@
+# {{ ansible_managed }} - role linux_auditship (src/ansible)
+[Unit]
+Description=NT2102 auditship: auditd records -> Loki ({{ loki_url }})
+After=network-online.target auditd.service
+Wants=network-online.target
+
+[Service]
+User={{ auditship_user }}
+Group={{ auditship_user }}
+ExecStart={{ auditship_code_dir }}/audit-python/.venv/bin/auditship run --loki-url {{ loki_url }} --host {{ inventory_hostname }} --state-dir {{ auditship_state_dir }}
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={{ auditship_state_dir }}
+
+[Install]
+WantedBy=multi-user.target

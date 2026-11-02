@@ -132,7 +132,7 @@ class Engine:
                  n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None,
                  sg_moderate_from=alg1.MODERATE_FROM, llm_provider=None, llm_model=None, llm_base_url=None,
                  llm_api_key=None, llm_client=None, llm_max_subgraphs=5, llm_reasoning_effort=None,
-                 llm_debug=False):
+                 llm_debug=False, llm_max_per_day=10, today=None):
         self.conv, self.conv_sha = load_converter(converter_path)
         self.conv_check = "not checked (no --experiment)"
         if experiment_json:
@@ -164,24 +164,40 @@ class Engine:
                                   if llm_provider else None)
         self.llm_cfg = {"provider": llm_provider or ("custom" if llm_client else None),
                         "model": getattr(self.llm, "model", None), "max_subgraphs": llm_max_subgraphs,
-                        "reasoning_effort": llm_reasoning_effort}
+                        "reasoning_effort": llm_reasoning_effort, "max_per_day": llm_max_per_day}
+        # [OURS] daily LLM budget (user, 2026-11-02: token spend on a 24/7 server): at most llm_max_per_day red
+        # windows investigated per local calendar day (each = 1 triage per kept subgraph up to max_subgraphs, 3 for
+        # an attack subgraph, +9 with >= 2 attack subgraphs: <= 24 requests);
+        # 0 = unlimited. Kept in sessions/llm_budget.json so restarts and new sessions do not reset it.
+        self.llm_max_per_day = int(llm_max_per_day or 0)
+        self.today = today or (lambda: datetime.now().astimezone().strftime("%Y-%m-%d"))
+        self.budget_path = os.path.join(sessions_dir, "llm_budget.json")
 
         self.lock = threading.RLock()
         self.listeners = []                       # callables(event_dict), called from any thread
         self.jobs = queue.Queue()
         self.llm_jobs = queue.Queue()
         self.session = None
-        threading.Thread(target=self._scoring_loop, daemon=True, name="scoring").start()
-        threading.Thread(target=self._llm_loop, daemon=True, name="llm").start()
+        self.threads = [threading.Thread(target=self._scoring_loop, daemon=True, name="scoring"),
+                        threading.Thread(target=self._llm_loop, daemon=True, name="llm")]
+        for t in self.threads:
+            t.start()
 
     # ---------------------------------------------------------------- session
     def _new_session(self, sid, payload):
-        sdir = os.path.join(self.sessions_dir, re.sub(r"[^A-Za-z0-9._-]", "_", sid))
+        base = os.path.join(self.sessions_dir, re.sub(r"[^A-Za-z0-9._-]", "_", sid))
+        # a restart mid-run re-reads the run from Loki: a fresh folder <sid>.r2, .r3, ... instead of appending a
+        # second copy of the raw lines to the old one (that would corrupt replay / re-judge of the session)
+        sdir, n = base, 1
+        while os.path.exists(os.path.join(sdir, "session.json")):
+            n += 1
+            sdir = f"{base}.r{n}"
         os.makedirs(os.path.join(sdir, "raw"), exist_ok=True)
         os.makedirs(os.path.join(sdir, "windows"), exist_ok=True)
         dmap = {str(k).lower(): str(v).lower() for k, v in (payload.get("dos_map") or {}).items()}
         dmap = dict(sorted(dmap.items(), key=lambda kv: -len(kv[0])))   # longest device prefix first
-        stats = {k: Counter() for k in ("events", "edges", "excluded", "unresolved", "unmapped", "bad_lines")}
+        stats = {k: Counter() for k in ("events", "edges", "excluded", "unresolved", "unmapped", "bad_lines",
+                                        "bad_events")}
         sink = EdgeSink()
         exclude = set(int(p) for p in (payload.get("exclude_pids") or [payload.get("pid")]) if p is not None)
         g = self.LiveGraph(sink, dmap, stats, exclude)
@@ -202,7 +218,8 @@ class Engine:
                 "window_min": self.w_ms / 60000, "stride_min": self.s_ms / 60000,
                 "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms,
                 "tau": self.run.tau, "score_range": self.run.score_range, "alg1": self.sg, "llm": self.llm_cfg,
-                "created_utc": utc_iso(int(time.time() * 1000))}
+                "created_utc": utc_iso(int(time.time() * 1000)),
+                "restart_of": os.path.basename(base) if sdir != base else None}
         json.dump(meta, open(os.path.join(sdir, "session.json"), "w"), indent=2)
         with open(os.path.join(sdir, "windows.csv"), "w", newline="") as fh:
             csv.writer(fh).writerow(["window", "start_ms", "end_ms", "start_utc", "status", "edges", "nodes",
@@ -281,7 +298,12 @@ class Engine:
                 S["first_t"] = t
                 # first window whose end is after the first event
                 S["next_k"] = (t - self.origin_ms - self.w_ms) // self.s_ms + 1
-            g.handle(t, ev)
+            try:
+                g.handle(t, ev)
+            except Exception as e:           # 24/7: one odd event must not stop the stream; counted, shown in status
+                S["stats"]["bad_events"][type(e).__name__] += 1
+                if sum(S["stats"]["bad_events"].values()) <= 5:
+                    print(f"[engine] event skipped ({type(e).__name__}: {e}): {str(ev)[:300]}")
         S["released_wm"] = wm
         self._close_windows(S, wm)
 
@@ -401,7 +423,36 @@ class Engine:
             self._emit({"type": "window", "window": rec})
 
     # ---------------------------------------------------------------- LLM triage + report (alg2.py)
+    def _budget(self) -> dict:
+        try:
+            b = json.load(open(self.budget_path))
+        except (OSError, ValueError):
+            b = {}
+        day = self.today()
+        return b if b.get("date") == day else {"date": day, "used": 0}
+
+    def _take_budget(self) -> bool:
+        """Count one investigation against today's budget; False = budget spent (nothing counted)."""
+        b = self._budget()
+        if self.llm_max_per_day and b["used"] >= self.llm_max_per_day:
+            return False
+        b["used"] += 1
+        os.makedirs(self.sessions_dir, exist_ok=True)
+        tmp = self.budget_path + ".tmp"
+        json.dump(b, open(tmp, "w"))
+        os.replace(tmp, self.budget_path)     # atomic: a crash never leaves half a file
+        return True
+
     def _queue_llm(self, S, rec, wdir, subgraphs, edges_norm):
+        if not self._take_budget():
+            rec["llm"] = {"status": "skipped", "error": f"daily LLM budget reached ({self.llm_max_per_day} red "
+                                                        f"windows per day, --llm-max-per-day); window stays red"}
+            with open(os.path.join(S["dir"], "llm_verdicts.csv"), "a", newline="") as fh:
+                w = csv.writer(fh)
+                if fh.tell() == 0:
+                    w.writerow(["window", "verdict", "confidence", "tactics", "ms", "model"])
+                w.writerow([rec["window"], "skipped", "", "", "", self.llm_cfg["model"]])
+            return
         rec["llm"] = {"status": "pending"}
         win = {"window": rec["window"], "start_utc": rec["start_utc"], "end_utc": utc_iso(rec["end_ms"])}
         self.llm_jobs.put((S["id"], rec["window"], wdir, [g for g in subgraphs if g["kept"]], edges_norm, win))
@@ -451,7 +502,9 @@ class Engine:
                               "converter_sha256": self.conv_sha, "converter_check": self.conv_check},
                     "params": {"window_min": self.w_ms / 60000, "stride_min": self.s_ms / 60000,
                                "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms,
-                               "alg1": self.sg, "llm": self.llm_cfg},
+                               "alg1": self.sg, "llm": self.llm_cfg | ({"budget": {**self._budget(),
+                                                                                "limit": self.llm_max_per_day}}
+                                                                    if self.llm else {})},
                     "server_ms": int(time.time() * 1000), "session": None}
             S = self.session
             if S is None:
@@ -474,12 +527,18 @@ class Engine:
                 "lines_per_s": round(sum(n for _, n in S["rate"]) / span, 1) if span else 0,
                 "lines_total": dict(S["lines_total"]), "heap": len(S["heap"]),
                 "late_dropped": S["late_dropped"], "bad_lines": sum(st["bad_lines"].values()),
+                "bad_events": dict(st["bad_events"]),
                 "events": dict(st["events"]), "edges": dict(st["edges"]), "excluded": dict(st["excluded"]),
                 "unresolved": dict(st["unresolved"]), "unmapped": sum(st["unmapped"].values()),
                 "exclude_pids": S["exclude_pids"], "dos_map": S["dmap"],
                 "open_window": open_win, "windows": len(S["windows"]),
                 "scoring_queue": self.jobs.qsize()}
             return base
+
+    def health(self):
+        """(ok, reason): the scoring and LLM threads are alive (they catch their own errors; this is a guard)."""
+        dead = [t.name for t in self.threads if not t.is_alive()]
+        return (False, f"engine thread(s) died: {', '.join(dead)}") if dead else (True, "ok")
 
     def windows(self) -> list:
         with self.lock:
@@ -682,9 +741,48 @@ def selftest():
         assert os.path.exists(os.path.join(sdir, "windows", w1, "llm", "triage.json"))
         lv = pd.read_csv(os.path.join(sdir, "llm_verdicts.csv"))
         assert lv["verdict"].tolist()[-1] == "false_positive", lv
+
+        # 24/7 restart: a second engine (= the server restarted) on the same run gets a fresh .r2 folder; the
+        # first folder's raw copy is not appended to
+        eng2 = Engine(f"{d}/run", f"{d}/scaler.json", f"{d}/sessions", window_min=5, lateness_s=20,
+                      llm_client=alg2.MockLLM(alg2.rule_mock_responder), llm_max_per_day=1, today=lambda: "2099-01-01")
+        b0, _ = batches("kfile", streams["kfile"], 0, 40, 0)
+        assert eng2.ingest({**hello, "batches": [b0]})[0] == 200
+        eng2.flush_raw()
+        s2 = eng2.session["dir"]
+        assert s2 == sdir + ".r2", s2
+        assert json.load(open(os.path.join(s2, "session.json")))["restart_of"] == "selftest"
+        assert sum(1 for _ in open(os.path.join(s2, "raw", "kfile.json"))) == 40
+        assert sum(1 for _ in open(os.path.join(sdir, "raw", "kfile.json"))) == len(streams["kfile"])
+        # a bad event is counted and skipped, the stream goes on
+        orig = eng2.session["graph"].handle
+        eng2.session["graph"].handle = lambda t, e: (_ for _ in ()).throw(TypeError("odd event"))
+        b1, _ = batches("kfile", streams["kfile"], 40, 5, b0["ends"][-1])
+        assert eng2.ingest({**hello, "clock_ms": t0 + 120_000, "batches": [b1]})[0] == 200
+        assert eng2.status()["session"]["bad_events"].get("TypeError", 0) > 0
+        eng2.session["graph"].handle = orig
+        assert eng2.health()[0]
+
+        # daily LLM budget = 1: the first alerted window is investigated, the second is 'skipped' (stays red), and
+        # the count survives a restart (a third engine on the same sessions dir and day)
+        with eng2.lock:
+            S2 = eng2.session
+            for wid in ("w-a", "w-b"):
+                S2["by_id"][wid] = {"window": wid, "start_utc": "", "end_ms": 0}
+                eng2._queue_llm(S2, S2["by_id"][wid], os.path.join(s2, "windows", wid), [fake], en)
+        eng2.drain()
+        assert eng2.windows() == [] and S2["by_id"]["w-a"]["llm"]["status"] == "false_positive"
+        assert S2["by_id"]["w-b"]["llm"]["status"] == "skipped", S2["by_id"]["w-b"]
+        assert eng2.status()["params"]["llm"]["budget"] == {"date": "2099-01-01", "used": 1, "limit": 1}
+        eng3 = Engine(f"{d}/run", f"{d}/scaler.json", f"{d}/sessions", llm_client=alg2.MockLLM(alg2.rule_mock_responder),
+                      llm_max_per_day=1, today=lambda: "2099-01-01")
+        assert not eng3._take_budget()
+        eng3.today = lambda: "2099-01-02"                   # a new day resets it
+        assert eng3._take_budget() and not eng3._take_budget()
+        assert sorted(pd.read_csv(os.path.join(s2, "llm_verdicts.csv"))["verdict"]) == ["false_positive", "skipped"]
     print("\n[SELFTEST OK] dedup, 409 on gap, late events counted, shipper PID excluded, "
           "partial window skipped, 3 windows scored, Alg. 1 alert fields, artefacts written, "
-          "LLM verdict pending -> final on its own thread")
+          "LLM verdict pending -> final on its own thread, restart -> .r2 folder, bad event skipped, daily LLM budget")
 
 
 if __name__ == "__main__":

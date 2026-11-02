@@ -1,0 +1,10 @@
+---
+# auditd.service has RefuseManualStop=yes, so `systemctl restart` is refused; the SysV-style `service` wrapper
+# is the documented way to restart it on Ubuntu. Rules are (re)loaded by augenrules at start, and below.
+- name: restart auditd
+  ansible.builtin.command: service auditd restart
+  changed_when: true
+
+- name: load audit rules
+  ansible.builtin.command: augenrules --load
+  changed_when: true

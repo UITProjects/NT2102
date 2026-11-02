@@ -1,9 +1,42 @@
-# PROGRESS (status as of 2026-10-31)
+# PROGRESS (status as of 2026-11-02)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`make-sure-to-support-llm-investigator`**.
+Branch: **`provide-infrastructure`**.
 
 ## Current focus
+
+**Move training + attack to the home Proxmox lab (user, 2026-11-01).** Infrastructure verified: `infrastructure/`
+(Terraform) built ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 on VNet `it2102`; `src/ansible/proxmox.ini`
+provisioned both (ubuntu.yml + windows.yml with vulnlab: first run failed=0, re-runs `changed=0`, verify-windows
+passes, DVWA :3000 = 200, Grafana = 200, Loki receives kproc/kfile/knet from ws-etw, collector 0 lost events).
+Open: the first-run kfile ship backlog (~2M install events) was draining; LLM on (DeepSeek key saved on the
+trainer); `ocr-live` on exp01 (red until a Proxmox model is promoted); no Kali on Proxmox yet.
+
+**nt2102-vpn (2026-11-02):** VM 2105 at 10.21.3.50, bare (OpenVPN not installed yet). External TCP 2102 → home
+router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
+and the DNAT comment now say TCP (were UDP): needs `terraform apply` + a `proxmox-firewall.yml` re-run.
+
+**ubuntu-etw (2026-11-02):** third Proxmox VM, VM 2104 at 10.21.3.11 (Ubuntu 24.04 cloud image + cloud-init, like
+the trainer), direct SSH over the routed path. auditd → `auditship` (`src/audit-python`) → trainer Loki
+`{job="auditd", host="ubuntu-etw"}` verified: exec/net/file records arrive in seconds, no feedback loop, 20/20
+events after a 40 s Loki outage, `target.yml` re-runs changed=0 (D11). Raw logs only: no converter/model for Linux.
+
+**`ocr-live` hardened for 24/7 (2026-11-02, code + selftests; Proxmox deploy/soak: see Next steps).** Fixed four
+failure modes: the Loki thread died silently on any non-OSError (UI frozen, systemd unaware) → catch-all +
+watchdog exit + `Restart=always`; a restart appended a 2nd raw copy into the same session folder → new
+`<run>.rN` folder; an unbounded catch-up read (≤ 1 h backlog in one step, OOM risk on the 6 GB trainer) → ≤ 20k
+lines/provider/poll with the clock held for the lagging provider; the UI never re-synced after a reconnect →
+re-fetch on every SSE open. Added `/healthz`, `OOMScoreAdjust=500`, per-event converter guard, and the [OURS]
+**daily LLM budget** `--llm-max-per-day 10` (user, 2026-11-02; D9). `./selftest.sh` 16/16. src/live/README §5.
+Deployed on the Proxmox trainer (`7dadd1a`, `-e repo_branch=provide-infrastructure -e live_llm_args=`; the LLM
+was turned on later: DeepSeek key saved, then `ubuntu.yml --tags project` with the inventory's `live_llm_args`) and
+verified there: `/healthz` 200; deploy restart → `.r2`, SIGKILL → systemd restart → `.r3`, both 0 duplicate raw
+lines and 0 late drops during catch-up; Loki container restart → error shown, recovered in < 10 s, no process
+restart. Costs seen: a restart re-reads up to 1 h (catch-up 6–16 min at ~1.6–4k lines/s, the UI is that far
+behind meanwhile; "event lag" shows ≈ −backlog then); memory 2.7 GB after catch-up (peak 3.1 GB, VM 5.9 GB).
+NOT yet: a soak across a 6-h run rotation (memory trend). Seen live: a ws-etw burst (≤ 7,660 kfile ev/s,
+11:18–11:21Z) put the etwcollect shipper (1 MiB per file per second ≈ 1,800 kfile lines/s) minutes behind, so
+211k kfile lines were dropped as late in `.r2`; the `.r3` re-read later had them (11:30 window 21k → 109k edges).
 
 **The core concept demo WORKS end to end (2026-10-31, exp05, benign = idle pulled from Loki).** The path to
 it: exp03 (broken SilkService data → all red) → exp04 (etwcollect scripted-workload capture: benign green but
@@ -56,7 +89,7 @@ OPEN (the real limitation):
 - **exp03 vs new data**: exp03 was trained on SilkService captures (wrong NET owners, `N/A` process names,
   thinned kfile). On etwcollect data every live window is red (sg 62–96 during generated DLL-hashing load, not
   a detection result). Needs a new benign capture + `exp04` (Next 3 steps).
-- Live engine vs Loki outages: after a Loki outage longer than `--loki-idle-s`, the backlog reaches the engine
+- Live engine vs Loki push outages (left as is, user 2026-11-02): after a ws-etw → Loki push stall longer than `--loki-idle-s`, the backlog reaches the engine
   after its windows closed and is dropped as late (522k lines after a 2-min outage on 2026-10-26). Files and
   Loki keep every line, so a re-build/replay is complete; only the live windows of the outage are thin.
 - etwcollect lag values go to −3.6 s over 32 min: ETW event timestamps run a few seconds ahead of the system
@@ -248,7 +281,20 @@ Repo hygiene:
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
-## Next steps (2026-10-31, after the exp05 demo win)
+## Next steps (2026-11-01: Proxmox)
+
+0. **Soak the 24/7 fix** (deployed + fault-tested 2026-11-02): RSS across one 6-h run rotation (next at
+   ~17:04Z). Option: raise the etwcollect shipper rate (more than one 1 MiB batch per file per second) so kfile
+   bursts stop being dropped as late live.
+
+1. **Train on Proxmox (exp06):** runbook `docs/notes/proxmox-idle-training.md` (2026-11-02). Idle range from
+   2026-11-02 11:45Z (11:05–11:40Z is a boot + fault-test burst, not idle) up to the trigger (user: ~2 days);
+   no WinRM/RDP/Ansible on ws-etw until then. `lab pull --start … --end … --split test` → `lab train
+   --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
+2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery instead of
+   the Vagrant mount), run the DVWA→RCE chain live, expect red + an LLM verdict.
+
+Earlier backlog (2026-10-31, after the exp05 demo win):
 
 1. **Live UI: render the LLM report as HTML** (user, 2026-10-31). The web UI currently shows the Alg. 2
    report (`sg3_report.md`) as raw markdown text — add markdown→HTML rendering in `src/live/` (the UI /
@@ -260,7 +306,6 @@ Repo hygiene:
    `compare_replay.py` on the host (the trainer-side `rejudge.sh` already reproduced the attack subgraph).
 
 Note: benign = idle pulled from Loki (no capture script). To rebuild benign: `lab pull --start <t>
---end <t> --split test --yes` on a clean idle range, then `lab train --experiment <id> --model <name>`.
-Training needs `_train_`-named edges, but a Loki idle pull is `--split test` → files are `_test_`: copy
-`SimulatedW10_test_{edges,node_attrs}.csv` to `_train_` in the experiment folder before `lab train`
-(or add split-awareness to `lab train`, which hardcodes `SimulatedW10_train_edges.csv`).
+--end <t> --split test --yes` on a clean idle range, then `lab train --experiment <id> --model <name>
+--benign-split test` (a Loki idle pull builds `_test_` files; the flag is an explicit opt-in recorded in
+`lineage.json`, added 2026-11-02, replacing the old copy-to-`_train_` workaround).

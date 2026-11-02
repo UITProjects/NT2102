@@ -1,0 +1,20 @@
+## {{ ansible_managed }} - role linux_auditd (src/ansible). Loaded by augenrules after 10-base-config.rules.
+## Exit-filter rules are checked in order and the first match decides, so the "never" rules come first.
+
+## 1. The shipper (uid {{ auditship_account.uid }} = {{ auditship_user }}): its Loki connects and positions-file
+##    writes would otherwise be audited, shipped, and audited again (feedback loop, DEVIATIONS D11).
+-a never,exit -F arch=b64 -F uid={{ auditship_account.uid }}
+-a never,exit -F arch=b32 -F uid={{ auditship_account.uid }}
+
+## 2. Process starts (the provenance graph's Start edges).
+-a always,exit -F arch=b64 -S execve,execveat -k exec
+-a always,exit -F arch=b32 -S execve,execveat -k exec
+
+## 3. Outbound / inbound connections (Send/Recv edges). 64-bit only: 32-bit programs are not expected here.
+-a always,exit -F arch=b64 -S connect,accept,accept4 -k net
+
+## 4. File writes and attribute changes under the directories an attacker typically touches (Write edges).
+##    Watches on directories are recursive. A global open() rule would flood a demo VM, so none.
+{% for d in auditd_watch_dirs %}
+-w {{ d }} -p wa -k file
+{% endfor %}

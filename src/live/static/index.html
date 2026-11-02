@@ -166,7 +166,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   const full = n => n.attr_raw ? `${n.attr} (raw ${n.attr_raw})` : (n.attr ?? "");
 
   const LLM_LABEL = {pending: "LLM: …", attack: "LLM: attack", false_positive: "LLM: FP",
-                     uncertain: "LLM: ?", error: "LLM: error"};
+                     uncertain: "LLM: ?", error: "LLM: error", skipped: "LLM: budget"};
   let windows = new Map();       // wid -> summary
   let status = null, selected = null, pinned = false, cy = null, detail = null, sgIdx = 0;
 
@@ -185,7 +185,8 @@ tr.flag td{color:var(--anom);font-weight:600}
     const ago = s.last_seen_s_ago;
     $("conn").className = "dot " + (ago == null ? "" : ago < 5 ? "on" : ago < 30 ? "stale" : "off");
     const src = status.source;
-    $("connTxt").textContent = ago == null ? "no data" : src ? `Loki data ${ago}s ago${src.idle ? " (idle: host clock)" : ""}` : `shipper seen ${ago}s ago`;
+    $("connTxt").textContent = (ago == null ? "no data" : src ? `Loki data ${ago}s ago${src.idle ? " (idle: host clock)" : ""}${src.catching_up ? " (catching up)" : ""}` : `shipper seen ${ago}s ago`)
+      + (src?.error ? ` · Loki error: ${src.error}` : "");
     const excl = Object.values(s.excluded || {}).reduce((a,b) => a+b, 0);
     const unres = Object.values(s.unresolved || {}).reduce((a,b) => a+b, 0);
     const edges = Object.values(s.edges || {}).reduce((a,b) => a+b, 0);
@@ -205,6 +206,11 @@ tr.flag td{color:var(--anom);font-weight:600}
       ["reorder buffer", s.heap],
       ["scoring queue", s.scoring_queue, s.scoring_queue > 1 ? "warn" : ""],
     ];
+    const bad = Object.values(s.bad_events || {}).reduce((a,b) => a+b, 0);
+    if (bad) tiles.push(["events skipped (converter error)", bad, "warn"]);
+    const bud = p?.llm?.budget;
+    if (bud) tiles.push(["LLM budget today", bud.limit ? `${bud.used} / ${bud.limit}` : `${bud.used} (no limit)`,
+                         bud.limit && bud.used >= bud.limit ? "warn" : ""]);
     $("tiles").innerHTML = tiles.map(([k,v,c]) => `<div class="tile ${c||""}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
     renderTimeline();
   }
@@ -403,14 +409,30 @@ tr.flag td{color:var(--anom);font-weight:600}
   }
 
   // ------------------------------------------------------------- live updates
-  async function init() {
+  // (Re)load the full window list. Runs at start AND on every SSE (re)connect: after a server restart or a
+  // session change while this tab was disconnected, the "session" event was missed and the map is stale.
+  async function resync() {
     try {
-      for (const w of await (await fetch("api/windows")).json()) windows.set(w.window, w);
-      status = await (await fetch("api/status")).json();
+      const list = await (await fetch("api/windows")).json();
+      const st = await (await fetch("api/status")).json();
+      if (st?.session?.id !== status?.session?.id) { selected = null; pinned = false; $("detail").hidden = true; }
+      windows = new Map(list.map(w => [w.window, w]));
+      status = st;
     } catch (e) {}
     renderStatus();
+    renderTimeline();
+    if (selected && windows.has(selected)) loadDetail();
+  }
+
+  async function init() {
     const es = new EventSource("api/stream");
-    es.addEventListener("status", e => { status = JSON.parse(e.data); renderStatus(); });
+    es.onopen = resync;                       // first connect and every automatic reconnect
+    es.addEventListener("status", e => {
+      const st = JSON.parse(e.data);
+      const changed = status?.session?.id && st?.session?.id !== status.session.id;
+      status = st; renderStatus();
+      if (changed) resync();                  // the session switched while we were not listening
+    });
     es.addEventListener("session", () => { windows.clear(); selected = null; pinned = false; $("detail").hidden = true; });
     es.addEventListener("window", e => {
       const w = JSON.parse(e.data).window;

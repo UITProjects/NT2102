@@ -128,9 +128,20 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   `live-20261031T134030Z`): idle windows green (≤ Minor 8.0), DVWA→RCE attack **red** (subgraph 106.96,
   Significant, alert True; flagged the Kali stage IP, `downloaded_tool.bin`, the RCE powershell), LLM triage
   **`attack` 0.85** + report; offline re-judge reproduces it. See PROGRESS, D2, [[live-detector-benign-fp]].
-- Next: (a) the live UI renders the LLM report as raw markdown — add HTML rendering (user, 2026-10-31);
-  (b) idle model is thin (net `val_fpr=1.0`) — a larger idle pull would steady it; (c) understanding the
-  trainer (concepts 2–4).
+- DONE (2026-11-01): the lab also runs on the user's home **Proxmox** (`pve-master`). `infrastructure/`
+  (Terraform, bpg/proxmox) builds ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 (+ ubuntu-etw 10.21.3.11, Linux
+  endpoint, 2026-11-02) on the SDN VNet `it2102`
+  (10.21.3.0/24, LAN-isolated firewall), and `src/ansible/proxmox.ini` provisions them over a routed path.
+  ws-etw + trainer are fully provisioned and idempotent (ubuntu.yml + windows.yml with vulnlab, verify passes),
+  ubuntu-etw by target.yml, and etwcollect → Loki carries all 3 providers. nt2102-vpn 10.21.3.50 is a bare VM
+  (OpenVPN not installed yet); external TCP 2102 → pve-master DNAT (`proxmox-firewall.yml`) → :1194. The LLM is on
+  there (DeepSeek, key saved on the trainer, inventory `live_llm_args`); `ocr-live` still loads exp01 (red until a
+  Proxmox-trained model is promoted).
+- **Next (user, 2026-11-01): build training and the attack on Proxmox.** (1) Train an idle model from a
+  clean idle Loki range of the Proxmox ws-etw. Provisioning time (installs, Ansible runs) is NOT idle.
+  (2) Attack: Kali is not on Proxmox yet (it was a Vagrant-only box). It needs a Kali VM on it2102 (planned
+  10.21.3.30) with the attack pack, then run DVWA→RCE live and get it red. Earlier backlog: (a) render the LLM
+  report as HTML in the live UI; (b) a larger idle pull; (c) concepts 2–4.
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
@@ -169,7 +180,11 @@ history of earlier progress) and, if relevant, this section.
   Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, same host-only subnet;
   LOCAL LAB ONLY and NOT Ansible-managed — it mounts `src/atomic-attack-pack` via a Vagrant synced
   folder). The Vagrantfile only
-  builds the bare VMs.
+  builds the bare VMs. Two deployments of the same roles: local Vagrant (`inventory.local.ini`, 10.21.2.0/24)
+  and home Proxmox (user, 2026-10-31/11-01: `infrastructure/` Terraform builds the bare VMs, `proxmox.ini`,
+  10.21.3.0/24). Terraform rules: the user runs `apply`/`destroy`, Claude only writes config and runs `plan`;
+  values are hardcoded in `main.tf` locals and only credentials are variables (`TF_VAR_*`); `terraform.tfstate`
+  is committed (public repo, no secrets). Windows WinRM creds come from the gitignored `group_vars/vault.yml`.
 - Target schema (NODLINK W10, as the repo expects): 3 node types `PROCESS`, `FILE`, `NET`
   (repo `database_config.py`), 6 edge types (Write, Read, Send, Recv, Start, Load), epoch-millisecond
   timestamps.
@@ -205,8 +220,14 @@ history of earlier progress) and, if relevant, this section.
   `etwwindow.py` / `src/live/etwship.py`; the collector source is the Vagrant mount `C:\etw-python` locally
   and a git clone on cloud; it also removes the old SilkETW/SilkService and Grafana Alloy),
   `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture),
-  `win_vulnlab` (XAMPP + DVWA). (The `win_benign` role and `src/scripts/` capture scripts were removed
+  `win_vulnlab` (XAMPP + DVWA). Linux endpoint `ubuntu-etw` (group `target`, `target.yml`): `linux_auditd` (auditd rules,
+  shipper uid excluded) + `linux_auditship` (`src/audit-python` rsynced from the control node, systemd `auditship`
+  → Loki `job="auditd"`; raw logs only, D11). (The `win_benign` role and `src/scripts/` capture scripts were removed
   2026-10-31: benign = idle pulled from Loki.)
+- Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw VM from the Server 2022
+  eval ISO with manual install, ubuntu-trainer, ubuntu-etw and nt2102-vpn from a cloud image + cloud-init, per-VM
+  firewall rules prefixed `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`; `proxmox-firewall.yml`
+  adds the pve-master DNAT (TCP 2102 → nt2102-vpn:1194).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that

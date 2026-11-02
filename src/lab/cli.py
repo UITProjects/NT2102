@@ -45,7 +45,15 @@ RUNS = os.path.join(SRC, "artifacts", "runs")
 POINTER = os.path.join(SRC, "artifacts", "current.json")
 LOCAL = os.path.join(SRC, "artifacts", "current.local.json")
 CONVERTER = os.path.join(PIPE, "etw2nodlink.py")
-EDGES = "SimulatedW10_train_edges.csv"
+GRAPH = "SimulatedW10"
+SPLITS = ("train", "test")
+
+
+def edges_file(exp, split="train"):
+    """<exp>/SimulatedW10_<split>_edges.csv, the pooled windowed edges build_experiment.py writes."""
+    return os.path.join(exp, f"{GRAPH}_{split}_edges.csv")
+
+
 NS = 1_000_000_000
 
 
@@ -145,8 +153,8 @@ def cmd_status(a):
         res = rec.get("results", {})
         cov, span = coverage(d)
         flags = [p for p, (m, _, _) in cov.items() if span and m < 0.5 * span]
-        built = "built" if os.path.exists(os.path.join(d, EDGES)) else "NOT built"
-        print(f"  {os.path.basename(d):<26} {rec.get('source', 'vm-07'):<9} {built:<9} windows {res.get('windows', '-')!s:<3} "
+        built = next((f"built:{sp}" for sp in SPLITS if os.path.exists(edges_file(d, sp))), "NOT built")
+        print(f"  {os.path.basename(d):<26} {rec.get('source', 'vm-07'):<9} {built:<11} windows {res.get('windows', '-')!s:<3} "
               + " ".join(f"{p} {m:.0f}/{span:.0f}m" for p, (m, _, _) in cov.items())
               + (f"   WARNING short coverage: {', '.join(flags)}" if flags else ""))
     print("\nmodels  (src/artifacts/runs; * = current)")
@@ -187,12 +195,21 @@ def pull(loki_args, out_root=None):
     return max(after, key=os.path.getmtime)
 
 
-def train(experiment, model=None, seeds=3, epochs=None, extra=()):
-    """features + OCRGCN for one experiment into a NEW model folder src/artifacts/runs/<model>/."""
+def train(experiment, model=None, seeds=3, epochs=None, extra=(), benign_split="train"):
+    """features + OCRGCN for one experiment into a NEW model folder src/artifacts/runs/<model>/.
+
+    benign_split="test" trains on a test-split build (an idle range pulled from Loki, D2). That is an explicit
+    opt-in: a test split may contain an attack, so the operator asserts it is benign and lineage.json says so."""
     exp = experiment if os.path.isdir(experiment) else os.path.join(EXPS, experiment)
-    edges = os.path.join(exp, EDGES)
+    edges = edges_file(exp, benign_split)
     if not os.path.exists(edges):
-        sys.exit(f"[lab] {rel(edges)} missing: build the experiment first (lab pull)")
+        other = [sp for sp in SPLITS if sp != benign_split and os.path.exists(edges_file(exp, sp))]
+        hint = (f"; this experiment is built as split {other[0]!r}: if that range is benign (an idle Loki pull),"
+                f" add --benign-split {other[0]}") if other else ": build the experiment first (lab pull)"
+        sys.exit(f"[lab] {rel(edges)} missing{hint}")
+    rec = json.load(open(os.path.join(exp, "experiment.json"), encoding="utf-8-sig"))
+    if rec.get("split", "train") != benign_split:
+        sys.exit(f"[lab] experiment.json says split {rec.get('split')!r}, not {benign_split!r}: rebuild it")
     run_dir = os.path.join(RUNS, model or "model-" + os.path.basename(os.path.normpath(exp)))
     if os.path.exists(run_dir):
         sys.exit(f"[lab] model {os.path.basename(run_dir)} already exists ({rel(run_dir)}); "
@@ -214,12 +231,12 @@ def train(experiment, model=None, seeds=3, epochs=None, extra=()):
         print(f"[lab] training failed; partial output kept in {rel(failed)}")
         raise
     shutil.copy2(os.path.join(exp, "experiment.json"), os.path.join(run_dir, "experiment.json"))
-    rec = json.load(open(os.path.join(exp, "experiment.json"), encoding="utf-8-sig"))
     git = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True, text=True)
     dirty = subprocess.run(["git", "status", "--porcelain", "--", "src/pipeline"], cwd=REPO,
                            capture_output=True, text=True).stdout.strip()
     lineage = {"model": os.path.basename(run_dir), "experiment": os.path.basename(os.path.normpath(exp)),
-               "experiment_source": rec.get("source"), "seeds": seeds, "epochs": epochs,
+               "experiment_source": rec.get("source"), "benign_split": benign_split,
+               "label_source": label_source(rec, benign_split), "seeds": seeds, "epochs": epochs,
                "created_utc": datetime.now(timezone.utc).isoformat(),
                "git_commit": git.stdout.strip() or None, "pipeline_uncommitted_changes": bool(dirty),
                "converter_sha256": rec.get("tools", {}).get("converter"),
@@ -231,6 +248,14 @@ def train(experiment, model=None, seeds=3, epochs=None, extra=()):
     print(f"[lab] model ready: {rel(run_dir)}")
     print(f"[lab] next: lab promote {os.path.basename(run_dir)}")
     return run_dir
+
+
+def label_source(rec, benign_split):
+    """What makes the training data benign, as recorded in lineage.json."""
+    if benign_split == "train":
+        return rec.get("label_source")
+    rng = (rec.get("pull") or {}).get("range_utc") or ["?", "?"]
+    return f"benign by operator assertion: idle Loki range {rng[0]} - {rng[1]} (split {benign_split}), no attack run"
 
 
 def ask_model_name(exp):
@@ -278,7 +303,7 @@ def selftest():
             _synthetic_capture(cap, random.Random(7))
             push_run(Loki(fake.url), cap, "train", "x-20261017T030000Z", log=lambda *_: None)
             exp = pull(["--loki", fake.url, "--latest", "--yes", "--lookback", "3650d"])
-            assert os.path.exists(os.path.join(exp, EDGES)), exp
+            assert os.path.exists(edges_file(exp)), exp
             rd = train(os.path.basename(exp), "t1", seeds=1, epochs=3)
             for f in ("experiment.json", "lineage.json", "features/feature_scaler.json", "train_meta.json"):
                 assert os.path.exists(os.path.join(rd, f)), f
@@ -292,10 +317,23 @@ def selftest():
             c = current()
             assert c["run"] == "t1" and c["pointer"] == LOCAL and c["run_dir"] == os.path.abspath(rd), c
             assert converter_check(c["experiment"]) == "match"
+            # an idle range pulled as split test (D2): refused without the opt-in, trained with it
+            push_run(Loki(fake.url), cap, "test", "live-20261017T030000Z", log=lambda *_: None)
+            texp = pull(["--loki", fake.url, "--since", "3h", "--split", "test", "--id", "range-t", "--yes"])
+            assert os.path.exists(edges_file(texp, "test")) and not os.path.exists(edges_file(texp)), texp
+            try:
+                train(texp, "t2", seeds=1, epochs=3)
+                raise AssertionError("a test-split experiment must need --benign-split test")
+            except SystemExit as e:
+                assert "--benign-split test" in str(e), e
+            rd2 = train(texp, "t2", seeds=1, epochs=3, benign_split="test")
+            lin = json.load(open(os.path.join(rd2, "lineage.json")))
+            assert lin["benign_split"] == "test" and "operator assertion" in lin["label_source"], lin
     finally:
         fake.close()
         EXPS, RUNS, POINTER, LOCAL = saved
-    print("[SELFTEST OK] Loki -> pull + build -> features + train into one run folder -> promote -> current")
+    print("[SELFTEST OK] Loki -> pull + build -> features + train into one run folder -> promote -> current;"
+          " test-split idle range needs --benign-split test")
     return 0
 
 
@@ -352,6 +390,8 @@ EX_TRAIN = """examples:
   lab train --experiment x-20261017T030000Z --model exp02
   lab train --experiment x-20261017T030000Z --model exp02-quick --seeds 1 --epochs 30
   lab train --experiment x-20261017T030000Z --model exp02-h64 --trainer-args "--hidden 64 --lr 0.001"
+  lab train --experiment range-20261102T114500Z --model exp06 --benign-split test
+                                    an idle range pulled with --split test (D2); you assert it is benign
 the experiment must be built first (lab pull); the model folder must not exist yet"""
 
 EX_PROMOTE = """examples:
@@ -386,6 +426,9 @@ def _model_options(p, required=False):
     g.add_argument("--seeds", type=int, default=3, metavar="N",
                    help="train N times with different random seeds and report mean ± std (default 3; 1 = quick test)")
     g.add_argument("--epochs", type=int, metavar="N", help="max training epochs per seed (default 100, early stop)")
+    g.add_argument("--benign-split", choices=list(SPLITS), default="train",
+                   help="which built split to train on (default train). test = an idle Loki range pulled with"
+                        " --split test; you assert it holds no attack (recorded in lineage.json)")
     g.add_argument("--trainer-args", metavar='"..."', default="",
                    help='any other train_gnn_models.py flags as one quoted string, e.g. "--hidden 64"')
 
@@ -452,7 +495,7 @@ def main(argv=None):
         import shlex
         extra = shlex.split(a.trainer_args)
         if a.cmd == "train":
-            train(a.experiment, a.model, a.seeds, a.epochs, extra)
+            train(a.experiment, a.model, a.seeds, a.epochs, extra, a.benign_split)
             return 0
         if a.yes and not a.model:
             ap.error("loop --yes needs --model NAME (no question is asked)")
@@ -462,7 +505,7 @@ def main(argv=None):
         model = a.model or (ask_model_name(exp) if sys.stdin.isatty() else None)
         if not model:
             return 1
-        train(exp, model, a.seeds, a.epochs, extra)
+        train(exp, model, a.seeds, a.epochs, extra, a.benign_split)
         return 0
     if a.cmd == "promote":
         promote(a.model, a.shared)

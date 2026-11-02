@@ -99,6 +99,24 @@ and compare `windows.csv` / `llm_verdicts.csv` of `replay-live-<UTC>` with the l
   lines, it follows host time, so the last window of a stopped capture still closes (DEVIATIONS D8).
 - UI tile "pipeline lag": host time minus the newest event.
 
+**Running 24/7 (2026-11-02).** What keeps `ocr-live` up unattended:
+- `curl http://<trainer>:8000/healthz` → 200 `{"ok": true}`, or 503 with the reason (an engine thread died, or
+  no successful Loki poll for 120 s).
+- Errors do not end the Loki polling thread: any exception is logged (traceback in `journalctl -u ocr-live`)
+  and retried with backoff; the UI shows `Loki error: …`. One event the converter cannot handle is skipped
+  and counted (tile "events skipped").
+- Watchdog (`--watchdog-s 300`): when a worker thread died or a Loki poll hangs for 5 min, the process exits
+  and systemd (`Restart=always`) starts a fresh one. Loki merely being down does NOT restart it (that would
+  not fix Loki); it keeps retrying.
+- A restart mid-run re-reads the run (up to `--loki-lookback-s`, 1 h) into a **new folder
+  `sessions/<run>.r2`** (`.r3`, …; `session.json` has `restart_of`), so the first folder's raw copy is never
+  duplicated. The cleanup cron prunes `.rN` folders like any `live-*` session.
+- Catch-up is bounded: at most 20 000 lines per provider per poll, and the clock waits for the provider that
+  is behind, so a 1-h backlog arrives in slices instead of one multi-GB read (UI: "catching up").
+- The UI tab re-syncs by itself after the server restarts or the session changes (no reload needed).
+- `OOMScoreAdjust=500`: under memory pressure the kernel kills `ocr-live` (it restarts) before Loki/Docker.
+- Still open: a ws-etw → Loki push stall longer than `--loki-idle-s` drops that backlog as late (PROGRESS).
+
 No VM? Feed Loki from a recording (on the trainer):
 ```
 uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train/<run> \
@@ -141,6 +159,12 @@ uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train
   `./serve.sh local --llm-provider mock --sg-moderate-from 10.0001` makes its 11:25 window red.
 - Without the VM: `./rejudge.sh <id>` (prints the LLM input, no call) or `./rejudge.sh <id> anthropic`.
 - An LLM "FP" is not a label and is never used for training.
+- **Daily budget** `--llm-max-per-day 10` (default; 0 = no limit): at most 10 red windows investigated per
+  local calendar day of the trainer. One window = for each of up to `--llm-max-subgraphs` (5) kept subgraphs
+  1 triage request (3 if it is judged an attack), plus 9 when ≥ 2 subgraphs are attacks: ≤ 5 requests for a
+  benign window, ≤ 24 worst case, so 10 windows ≤ 240 requests/day. Later red windows stay red with the badge `LLM: budget` and
+  `skipped` in `llm_verdicts.csv`. The count lives in `sessions/llm_budget.json` (survives restarts; delete
+  it to reset today's count). The status panel shows "LLM budget today used / limit".
 
 A red window is an observation, not a detection result, until the window has labels (DEVIATIONS D6, D8).
 

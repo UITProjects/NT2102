@@ -108,6 +108,39 @@ ansible-vault encrypt group_vars/vault.yml                # vault.yml is gitigno
 # then add to every cloud command:  -e @group_vars/vault.yml --ask-vault-pass
 ```
 
+### Proxmox lab (`proxmox.ini`)
+
+The VMs from `infrastructure/` (Terraform): `ws-etw` 10.21.3.10, `ubuntu-trainer` 10.21.3.20, reached over a
+routed path to 10.21.3.0/24. Credentials come from the vault, like cloud: `win_user: Administrator`, the
+Windows password, and `grafana_admin_password` in `group_vars/vault.yml`. The trainer uses the cloud-init user
+`it2102` and the `it2102-vms` key.
+
+A fresh `ws-etw` puts its NIC on the Public profile, where the WinRM firewall rule only accepts the local
+subnet, so a routed workstation times out on 5985. Once, in RDP as Administrator (PowerShell):
+
+```powershell
+Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private   # NIC -> Private profile
+Enable-PSRemoting -Force                                                       # WinRM listener + firewall rule
+```
+
+Check with `nc -zv -w3 10.21.3.10 5985`, then run with `-i proxmox.ini -e @group_vars/vault.yml --ask-vault-pass`
+(Ubuntu first; add `-e vulnlab_enabled=true` for DVWA).
+
+The Linux endpoint `ubuntu-etw` 10.21.3.11 (group `target`) ships auditd records to the same Loki with
+`auditship` (`src/audit-python`, DEVIATIONS D11). No vault is needed. The trainer must list it in Loki's ufw
+rule first:
+
+```bash
+ansible-playbook -i proxmox.ini ubuntu.yml --tags loki      # ufw: Loki :3100 from ws-etw + ubuntu-etw
+ansible-playbook -i proxmox.ini target.yml                  # auditd + rules, auditship (rsync of src/audit-python
+                                                            # + src/etw-python from this machine), systemd unit
+```
+
+Check on `ubuntu-etw`: `sudo auditctl -l` (the `never ... uid=<auditship>` rules come first),
+`sudo /opt/auditship/audit-python/.venv/bin/auditship status` (`backlog_bytes` ≈ 0, `last_error` null). In Grafana:
+`{job="auditd", host="ubuntu-etw"} | key="exec"`. `type` and `key` are structured metadata: filter them after the
+`{...}` selector, not inside it.
+
 ### Tamper Protection (Windows, manual, once)
 
 Defender **Tamper Protection** cannot be toggled remotely. Before the first run, RDP into `ws-etw` and

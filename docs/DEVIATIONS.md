@@ -16,7 +16,9 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   until 2026-10-26, then our own collector, D10), converted to the NODLINK SimulatedW10 schema.
   Benign = **idle machine activity**: no capture script at all — the always-on live capture ships idle
   background activity to Loki, and a clean idle time-range is pulled straight from Loki
-  (`lab pull --start <t> --end <t> --split test`) and trained on. There is no `src/scripts/` capture script.
+  (`lab pull --start <t> --end <t> --split test`) and trained on (`lab train --benign-split test`). There is
+  no `src/scripts/` capture script. The benign label of such a range is an **operator assertion** (no attack
+  was run in it), recorded with the range in the model's `lineage.json` (`benign_split`, `label_source`).
 - Why: simplest possible concept demo. Against an idle baseline the attack's whole discovery+RCE burst is
   out-of-distribution, so it separates cleanly (idle = green, attack = red).
 - History (2026-10-31), two failure modes before this: (1) a **seeded scripted workload**
@@ -183,6 +185,12 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     copy as `PID`; `etw2nodlink._net()` reads `pid`, so most NET edges of every capture so far (exp01–exp03
     included) hang off the wrong process. D10 data writes the payload PID as `PID`; the converter will
     prefer `_pid` so old captures are fixed on re-conversion.
+- 24/7 operation (2026-11-02, [OURS] engineering, not in the paper): bounded Loki catch-up (≤ 20 000 lines per
+  provider per poll; the clock is held at the cursor of a provider that is behind, so no line is dropped as late
+  by the slicing), a restart mid-run writes a new `<run>.rN` session folder (never a second raw copy into the
+  old one), a converter error skips that one event (counted as `bad_events`), and a watchdog exits for systemd
+  to restart on a dead worker thread / hung poll. Impact on scoring: none on normal data; a skipped event is an
+  edge missing from its window (visible as a count).
 - Limits: shows near-live node scoring + Alg. 1 on our own data. No detection-quality claim until windows
   are labelled (D6); no claim about Alg. 1 precision; the cut-off (Moderate ≥ 30) is ours, set on one
   benign window, not the paper's.
@@ -234,6 +242,10 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - Impact: the GNN alert is never removed. An LLM `false_positive` shows as a struck-through badge on a
   still-red window. Each red window costs 1 call (benign) or 3 calls (attack) per subgraph, plus 9 when
   ≥ 2 subgraphs are attacks. It runs on its own thread, so scoring is not delayed.
+- Daily budget (user, 2026-11-02, [OURS]): at most `--llm-max-per-day` (default 10) red windows investigated
+  per local day, to cap token spend on a 24/7 server. Windows over the budget keep their red GNN alert and get
+  `skipped` instead of a verdict. Impact: on a busy day, later alerts have no LLM report; it limits nothing
+  about the GNN detection. Budget counter in `sessions/llm_budget.json`.
 - Limits: no claim that the LLM separates attacks from false positives until it is run on labelled
   windows (D6); one benign window is one data point, not a rate. An LLM verdict is not ground truth and is
   not fed back into training: log text (paths, process names) is attacker-controlled, so prompt injection
@@ -282,3 +294,27 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - Limits: collector correctness is shown by the parity check against SilkService (one 20 s window) and the
   lag/lossless checks on one 32-min run with generated (not workload) activity; no claim that it captures
   every kernel event (`EventsLost` is reported, not prevented).
+
+## D11. Linux endpoint `ubuntu-etw`: auditd + own Python shipper (`src/audit-python`, `auditship`), raw logs only
+- What: [PAPER] the paper evaluates Linux hosts only through existing datasets (DARPA TC3 / OpTC
+  provenance records); it runs no collector. [OURS] (user decision 2026-11-02) a second endpoint VM on the
+  Proxmox lab, `ubuntu-etw` 10.21.3.11, records syscalls with **auditd** and ships every record unchanged to the
+  trainer's Loki as `{job="auditd", host="ubuntu-etw"}` (structured metadata `type`, `key`; entry time = the
+  record's own `audit(<epoch>.<ms>:<serial>)` time). Roles `linux_auditd` + `linux_auditship`, playbook
+  `src/ansible/target.yml`. Rules (`50-nt2102.rules`): the shipper's uid is excluded first (`-a never`), then
+  `execve/execveat` (`-k exec`), 64-bit `connect/accept/accept4` (`-k net`), and recursive write/attribute
+  watches (`-k file`) on `/etc /home /root /tmp /var/tmp /usr/local/bin /opt`. No global `open()` rule, so file
+  *reads* outside execs are not seen.
+  - Shipper: own stdlib Python (like D10, not Alloy), reusing `etwcollect.loki.LokiClient`; tails `audit.log`
+    from a saved `{inode, offset}`, finishes the rotated file before the new one, advances only after Loki's 204.
+  - Verified on `ubuntu-etw` (2026-11-02): `curl example.com` and a `/tmp` write appeared in Loki within seconds
+    with `key=exec` / `net` / `file`; 0 records with the shipper's uid (no feedback loop); port 3100 blocked
+    for 40 s with 20 marked execs: backlog ~107 KB, drained on unblock, 20/20 markers in Loki, no duplicates;
+    `target.yml` and `ubuntu.yml --tags loki` re-run with changed=0.
+- Why: a Linux event stream next to the Windows one, from the same lab and the same Loki. The shipper is our own
+  for the same reason as D10 (every line explainable, one push contract), and its uid is excluded so its own
+  connects and file writes don't feed back (the SilkService loop, D8/D10).
+- Impact: Loki gets a second job; the training and live paths select `job="silketw"` and are unchanged.
+- Claims limited: **none of the detection results apply to Linux.** There is no auditd → NODLINK converter, no
+  features and no model for these records; they are not scored. Coverage is limited to the rules above (exec,
+  64-bit connects, writes under the watched dirs), not a full provenance graph.
