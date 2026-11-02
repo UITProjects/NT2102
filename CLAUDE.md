@@ -218,7 +218,9 @@ history of earlier progress) and, if relevant, this section.
   `etwwindow.py` / `src/live/etwship.py`; the collector source is the Vagrant mount `C:\etw-python` locally
   and a git clone on cloud; it also removes the old SilkETW/SilkService and Grafana Alloy),
   `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture),
-  `win_vulnlab` (XAMPP + DVWA). (The `win_benign` role and `src/scripts/` capture scripts were removed
+  `win_vulnlab` (XAMPP + DVWA). Linux endpoint `ubuntu-etw` (group `target`, `target.yml`): `linux_auditd` (auditd rules,
+  shipper uid excluded) + `linux_auditship` (`src/audit-python` rsynced from the control node, systemd `auditship`
+  → Loki `job="auditd"`; raw logs only, D11). (The `win_benign` role and `src/scripts/` capture scripts were removed
   2026-10-31: benign = idle pulled from Loki.)
 - Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw VM from the Server 2022
   eval ISO with manual install, ubuntu-trainer from a cloud image + cloud-init, per-VM firewall rules prefixed

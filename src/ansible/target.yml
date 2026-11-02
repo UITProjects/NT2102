@@ -1,0 +1,13 @@
+---
+# Linux endpoint (group `target`, e.g. ubuntu-etw): auditd records -> auditship -> Loki on the trainer.
+# Run AFTER ubuntu.yml (Loki must exist and its ufw rule must list this host: ubuntu.yml --tags loki):
+#   ansible-playbook -i proxmox.ini ubuntu.yml --tags loki
+#   ansible-playbook -i proxmox.ini target.yml
+- name: Configure the Linux endpoint
+  hosts: target
+  become: true
+  gather_facts: true
+  roles:
+    - { role: ubuntu_base,     tags: [base] }       # time zone, NTP, apt basics, uv
+    - { role: linux_auditd,    tags: [auditd] }     # auditd + rules (shipper uid excluded)
+    - { role: linux_auditship, tags: [auditship] }  # the shipper as a systemd service

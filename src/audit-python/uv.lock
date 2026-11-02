@@ -1,0 +1,19 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[[package]]
+name = "auditship"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "etwcollect" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "etwcollect", directory = "../etw-python" }]
+
+[[package]]
+name = "etwcollect"
+version = "0.1.0"
+source = { directory = "../etw-python" }

@@ -13,8 +13,9 @@ Open: the first-run kfile ship backlog (~2M install events) was draining; LLM of
 trainer yet); `ocr-live` on exp01 (red until a Proxmox model is promoted); no Kali on Proxmox yet.
 
 **ubuntu-etw (2026-11-02):** third Proxmox VM, VM 2104 at 10.21.3.11 (Ubuntu 24.04 cloud image + cloud-init, like
-the trainer); `terraform apply` done, direct SSH over the routed path verified. No collector yet (next: auditd →
-own Python shipper → Loki, `job="auditd"`).
+the trainer), direct SSH over the routed path. auditd → `auditship` (`src/audit-python`) → trainer Loki
+`{job="auditd", host="ubuntu-etw"}` verified: exec/net/file records arrive in seconds, no feedback loop, 20/20
+events after a 40 s Loki outage, `target.yml` re-runs changed=0 (D11). Raw logs only: no converter/model for Linux.
 
 **`ocr-live` hardened for 24/7 (2026-11-02, code + selftests; Proxmox deploy/soak: see Next steps).** Fixed four
 failure modes: the Loki thread died silently on any non-OSError (UI frozen, systemd unaware) → catch-all +
@@ -281,8 +282,10 @@ Repo hygiene:
    ~17:04Z). Option: raise the etwcollect shipper rate (more than one 1 MiB batch per file per second) so kfile
    bursts stop being dropped as late live.
 
-1. **Train on Proxmox:** once the kfile backlog is 0, let ws-etw sit idle (≥30 min, after all provisioning),
-   `lab pull --start … --end … --split test` on the trainer, then train + `lab promote`. Check that idle stays green live.
+1. **Train on Proxmox (exp06):** runbook `docs/notes/proxmox-idle-training.md` (2026-11-02). Idle range from
+   2026-11-02 11:45Z (11:05–11:40Z is a boot + fault-test burst, not idle) up to the trigger (user: ~2 days);
+   no WinRM/RDP/Ansible on ws-etw until then. `lab pull --start … --end … --split test` → `lab train
+   --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
 2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery instead of
    the Vagrant mount), run the DVWA→RCE chain live, expect red + (after saving the DeepSeek key and re-running
    `ubuntu.yml --tags project`) an LLM verdict.
@@ -300,6 +303,5 @@ Earlier backlog (2026-10-31, after the exp05 demo win):
 
 Note: benign = idle pulled from Loki (no capture script). To rebuild benign: `lab pull --start <t>
 --end <t> --split test --yes` on a clean idle range, then `lab train --experiment <id> --model <name>`.
-Training needs `_train_`-named edges, but a Loki idle pull is `--split test` → files are `_test_`: copy
-`SimulatedW10_test_{edges,node_attrs}.csv` to `_train_` in the experiment folder before `lab train`
-(or add split-awareness to `lab train`, which hardcodes `SimulatedW10_train_edges.csv`).
+A Loki idle pull is `--split test` (files `_test_`): train it with `lab train ... --benign-split test`
+(explicit opt-in, recorded in `lineage.json`; added 2026-11-02, replaces the old copy-to-`_train_` workaround).

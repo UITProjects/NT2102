@@ -126,6 +126,21 @@ Enable-PSRemoting -Force                                                       #
 Check with `nc -zv -w3 10.21.3.10 5985`, then run with `-i proxmox.ini -e @group_vars/vault.yml --ask-vault-pass`
 (Ubuntu first; add `-e vulnlab_enabled=true` for DVWA).
 
+The Linux endpoint `ubuntu-etw` 10.21.3.11 (group `target`) ships auditd records to the same Loki with
+`auditship` (`src/audit-python`, DEVIATIONS D11). No vault is needed. The trainer must list it in Loki's ufw
+rule first:
+
+```bash
+ansible-playbook -i proxmox.ini ubuntu.yml --tags loki      # ufw: Loki :3100 from ws-etw + ubuntu-etw
+ansible-playbook -i proxmox.ini target.yml                  # auditd + rules, auditship (rsync of src/audit-python
+                                                            # + src/etw-python from this machine), systemd unit
+```
+
+Check on `ubuntu-etw`: `sudo auditctl -l` (the `never ... uid=<auditship>` rules come first),
+`sudo /opt/auditship/audit-python/.venv/bin/auditship status` (`backlog_bytes` ≈ 0, `last_error` null). In Grafana:
+`{job="auditd", host="ubuntu-etw"} | key="exec"`. `type` and `key` are structured metadata: filter them after the
+`{...}` selector, not inside it.
+
 ### Tamper Protection (Windows, manual, once)
 
 Defender **Tamper Protection** cannot be toggled remotely. Before the first run, RDP into `ws-etw` and

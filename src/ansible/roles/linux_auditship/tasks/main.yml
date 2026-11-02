@@ -1,0 +1,59 @@
+---
+# auditship (src/audit-python) as a systemd service: tail audit.log -> Loki on the trainer.
+# The code is copied from the control node (rsync), not git-cloned: only the two small packages are needed,
+# and it ships exactly what is in your working tree (like the Vagrant mount does for Windows).
+
+- name: Code dir
+  ansible.builtin.file:
+    path: "{{ auditship_code_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy src/audit-python and src/etw-python (its Loki client) from the control node
+  ansible.posix.synchronize:
+    src: "{{ src_dir }}/{{ item }}"
+    dest: "{{ auditship_code_dir }}/"
+    rsync_opts: ["--exclude=.venv", "--exclude=__pycache__", "--exclude=.ruff_cache", "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r"]
+    delete: true
+    owner: false
+    group: false
+  loop: [audit-python, etw-python]
+  notify: restart auditship
+
+- name: State dir (positions.json, status.json), owned by the shipper user
+  ansible.builtin.file:
+    path: "{{ auditship_state_dir }}"
+    state: directory
+    owner: "{{ auditship_user }}"
+    group: "{{ auditship_user }}"
+    mode: "0750"
+
+# A root-owned venv the shipper user can read and run; uv downloads Python 3.12 if the system one differs.
+- name: uv sync (stdlib-only package + the etwcollect path dependency)
+  ansible.builtin.command: uv sync --frozen --no-dev
+  args:
+    chdir: "{{ auditship_code_dir }}/audit-python"
+  environment:
+    UV_PYTHON_INSTALL_DIR: /opt/uv-python
+    UV_CACHE_DIR: /var/cache/uv
+  register: uv_sync
+  changed_when: "'Installed' in uv_sync.stderr or 'Uninstalled' in uv_sync.stderr"
+  notify: restart auditship
+
+- name: Selftest (proves the install runs; not detection)
+  ansible.builtin.command: "{{ auditship_code_dir }}/audit-python/.venv/bin/auditship selftest"
+  changed_when: false
+
+- name: systemd unit
+  ansible.builtin.template:
+    src: auditship.service.j2
+    dest: /etc/systemd/system/auditship.service
+    mode: "0644"
+  notify: restart auditship
+
+- name: auditship enabled and running
+  ansible.builtin.systemd:
+    name: auditship
+    enabled: true
+    state: started
+    daemon_reload: true

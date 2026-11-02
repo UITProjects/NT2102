@@ -51,3 +51,4 @@
     port: "{{ server_port }}"
     proto: tcp
   failed_when: false
+  when: "'ubuntu' in group_names"   # the trainer only; the Linux endpoint (group target) runs no live server
