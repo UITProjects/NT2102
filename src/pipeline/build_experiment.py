@@ -104,8 +104,8 @@ def build(exp, split="train", graph="SimulatedW10", window_min=5, stride_min=2, 
     rec.update({
         "graph": graph, "split": split, "event_source": "etw",
         "source": "loki" if pull else rec.get("source", "local raw"),
-        "label_source": rec.get("label_source", "benign by construction: scripted workload (07/06), no attack "
-                                                "executed; includes background OS activity"
+        "label_source": rec.get("label_source", "benign by construction: capture with no attack run; "
+                                                "includes background OS activity"
                                                 if split == "train" else "unlabelled"),
         "dos_map": dmap,
         "windowing": {"window_min": window_min, "stride_min": stride_min, "max_gap_s": max_gap_s},
