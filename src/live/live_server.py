@@ -9,10 +9,13 @@ live_server.py - HTTP layer around engine.Engine: ingest from Loki or the shippe
     GET  /api/windows/{wid}   one window: top nodes per type, Alg. 1 subgraphs (score, level, kept),
                               LLM verdict + attack report when --llm-provider is set (alg2.py)
     GET  /api/stream          Server-Sent Events: "window" (a window changed), "status" (after 2 s idle)
+    GET  /healthz             200 {"ok": true} | 503 {"ok": false, "reason"}: engine threads alive and (with
+                              --loki-url) a successful Loki poll within 120 s. For monitoring / curl checks.
     GET  /                    the UI (static/index.html)
 
 Usage (from the repo root): ./serve.sh [live|local] [flags] wraps
     uv run python src/live/live_server.py --bind 127.0.0.1 [--loki-url http://127.0.0.1:3100]
+    uv run python src/live/live_server.py --selftest      (/healthz + watchdog logic; no model, no Loki)
   The model comes from the current-model pointer (src/artifacts/current.local.json, else current.json;
   `lab promote <run>` sets it). --run-dir / --scaler / --experiment override it, e.g.
     --run-dir src/artifacts/runs/exp01 --scaler src/artifacts/features/self-dataset/feature_scaler.json
@@ -26,6 +29,8 @@ import gzip
 import json
 import os
 import sys
+import threading
+import time
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -37,6 +42,36 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))          # src/: the `lab` package (current-model pointer)
 from engine import Engine  # noqa: E402
 import alg2  # noqa: E402  (engine put src/pipeline on sys.path; provider list + reasoning efforts)
+
+
+def health(engine, source=None, max_age_s=120.0):
+    """(ok, reason) for /healthz: engine threads alive, and the Loki source polled successfully lately."""
+    ok, why = engine.health()
+    if ok and source is not None:
+        ok, why = source.health(max_age_s)
+    return ok, why
+
+
+def watchdog(engine, source, after_s, every_s=15.0, exit_fn=os._exit, sleep=time.sleep, now=time.monotonic):
+    """24/7 guard: exit (systemd Restart=always starts a fresh process) when a worker thread died or the Loki
+    source hangs for after_s. NOT on Loki merely being down: a restart cannot fix Loki and the source retries."""
+    bad_since = None
+    while True:
+        ok, why = engine.health()
+        why = None if ok else why
+        if why is None and source is not None:
+            why = source.stuck(after_s)
+        t = now()
+        if why is None:
+            bad_since = None
+        elif bad_since is None:
+            bad_since = t
+            print(f"[watchdog] unhealthy: {why}; exiting in {after_s:.0f}s unless it recovers", flush=True)
+        elif t - bad_since >= after_s:
+            print(f"[watchdog] still unhealthy ({why}); exiting so systemd restarts the server", flush=True)
+            exit_fn(3)
+            return
+        sleep(every_s)
 
 
 def create_app(engine: Engine, token: str | None, source=None) -> FastAPI:
@@ -97,6 +132,11 @@ def create_app(engine: Engine, token: str | None, source=None) -> FastAPI:
         return StreamingResponse(gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+    @app.get("/healthz")
+    async def healthz():
+        ok, why = health(engine, source)
+        return JSONResponse({"ok": ok, "reason": why}, status_code=200 if ok else 503)
+
     @app.get("/")
     async def index():
         return FileResponse(os.path.join(HERE, "static", "index.html"))
@@ -155,6 +195,13 @@ def main():
                    help="print each LLM call's raw response / HTTP error body to stderr, keep it in calls.jsonl "
                         "(default from $NT2102_LLM_DEBUG=1)")
     g.add_argument("--llm-max-subgraphs", type=int, default=5, help="kept subgraphs investigated per window")
+    g.add_argument("--llm-max-per-day", type=int, default=10,
+                   help="[OURS] at most this many red windows investigated per local day (token budget; each = 1 triage "
+                        "request per kept subgraph, up to --llm-max-subgraphs, 3 if it is an attack, +9 for >= 2 attack "
+                        "subgraphs); later ones show 'skipped'. 0 = no limit. "
+                        "Count kept in <sessions-dir>/llm_budget.json, so restarts do not reset it")
+    ap.add_argument("--watchdog-s", type=float, default=300,
+                    help="exit (for systemd to restart) when a worker thread died or the Loki poll hangs this long; 0 = off")
     a = ap.parse_args()
     if not (a.run_dir and a.scaler):
         from lab import current
@@ -180,7 +227,7 @@ def main():
                     sg_moderate_from=a.sg_moderate_from, llm_provider=a.llm_provider,
                     llm_model=a.llm_model, llm_base_url=a.llm_base_url, llm_api_key=a.llm_api_key,
                     llm_max_subgraphs=a.llm_max_subgraphs, llm_reasoning_effort=a.llm_reasoning_effort,
-                    llm_debug=a.llm_debug)
+                    llm_debug=a.llm_debug, llm_max_per_day=a.llm_max_per_day)
     print(f"[live] model {engine.run_dir}  tau={engine.run.tau}")
     print(f"[live] Alg. 1 {engine.sg}  train score range {engine.run.score_range}")
     print(f"[live] LLM {engine.llm_cfg}")
@@ -191,9 +238,62 @@ def main():
         source = LokiSource(engine, a.loki_url, split=a.loki_split, poll_s=a.loki_poll_s, lookback_s=a.loki_lookback_s,
                             idle_s=a.loki_idle_s if a.loki_idle_s is not None else 2 * a.lateness_s).start()
         print(f"[live] following Loki {a.loki_url} split={a.loki_split}")
-    print(f"[live] UI: http://{a.bind}:{a.port}/")
+    if a.watchdog_s > 0:
+        threading.Thread(target=watchdog, args=(engine, source, a.watchdog_s), daemon=True, name="watchdog").start()
+    print(f"[live] UI: http://{a.bind}:{a.port}/   health: /healthz   watchdog {a.watchdog_s:.0f}s")
     uvicorn.run(create_app(engine, a.token, source), host=a.bind, port=a.port, log_level="warning")
 
 
+def selftest():
+    """/healthz codes and the watchdog decision with stand-in engine/source (no model, no Loki, no network)."""
+    from fastapi.testclient import TestClient
+
+    class Eng:
+        listeners, ok = [], True
+
+        def health(self):
+            return (True, "ok") if self.ok else (False, "engine thread(s) died: scoring")
+
+    class Src:
+        healthy, stuck_why = True, None
+
+        def health(self, max_age_s):
+            return (True, "ok") if self.healthy else (False, "no successful Loki poll for 130s")
+
+        def stuck(self, after_s):
+            return self.stuck_why
+
+        def status(self):
+            return {}
+    eng, src = Eng(), Src()
+    c = TestClient(create_app(eng, None, src))
+    assert c.get("/healthz").status_code == 200
+    src.healthy = False                                   # Loki down: 503, but the watchdog must NOT exit
+    r = c.get("/healthz")
+    assert r.status_code == 503 and "Loki" in r.json()["reason"], r.text
+
+    def run_wd(ticks):
+        clock, exits = [0.0], []
+
+        def sleep(s):
+            clock[0] += s
+            if clock[0] > ticks * 15:
+                raise StopIteration
+        try:
+            watchdog(eng, src, 60, every_s=15, exit_fn=exits.append, sleep=sleep, now=lambda: clock[0])
+        except StopIteration:
+            pass
+        return exits
+    assert run_wd(10) == [], "exited while Loki was merely down"
+    src.stuck_why = "no Loki poll attempted for 400s (hung?)"
+    assert run_wd(10) == [3], "a hung source must end the process"
+    src.stuck_why, eng.ok = None, False
+    assert c.get("/healthz").status_code == 503 and run_wd(10) == [3], "a dead engine thread must end the process"
+    print("[SELFTEST OK] /healthz 200/503, watchdog exits on a dead thread or hung poll, not on Loki being down")
+
+
 if __name__ == "__main__":
-    main()
+    if "--selftest" in sys.argv:
+        selftest()
+    else:
+        main()

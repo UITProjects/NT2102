@@ -1,9 +1,24 @@
-# PROGRESS (status as of 2026-10-31)
+# PROGRESS (status as of 2026-11-02)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`make-sure-to-support-llm-investigator`**.
+Branch: **`provide-infrastructure`**.
 
 ## Current focus
+
+**Move training + attack to the home Proxmox lab (user, 2026-11-01).** Infrastructure verified: `infrastructure/`
+(Terraform) built ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 on VNet `it2102`; `src/ansible/proxmox.ini`
+provisioned both (ubuntu.yml + windows.yml with vulnlab: first run failed=0, re-runs `changed=0`, verify-windows
+passes, DVWA :3000 = 200, Grafana = 200, Loki receives kproc/kfile/knet from ws-etw, collector 0 lost events).
+Open: the first-run kfile ship backlog (~2M install events) was draining; LLM off (no DeepSeek key on that
+trainer yet); `ocr-live` on exp01 (red until a Proxmox model is promoted); no Kali on Proxmox yet.
+
+**`ocr-live` hardened for 24/7 (2026-11-02, code + selftests; Proxmox deploy/soak: see Next steps).** Fixed four
+failure modes: the Loki thread died silently on any non-OSError (UI frozen, systemd unaware) → catch-all +
+watchdog exit + `Restart=always`; a restart appended a 2nd raw copy into the same session folder → new
+`<run>.rN` folder; an unbounded catch-up read (≤ 1 h backlog in one step, OOM risk on the 6 GB trainer) → ≤ 20k
+lines/provider/poll with the clock held for the lagging provider; the UI never re-synced after a reconnect →
+re-fetch on every SSE open. Added `/healthz`, `OOMScoreAdjust=500`, per-event converter guard, and the [OURS]
+**daily LLM budget** `--llm-max-per-day 10` (user, 2026-11-02; D9). `./selftest.sh` 16/16. src/live/README §5.
 
 **The core concept demo WORKS end to end (2026-10-31, exp05, benign = idle pulled from Loki).** The path to
 it: exp03 (broken SilkService data → all red) → exp04 (etwcollect scripted-workload capture: benign green but
@@ -56,7 +71,7 @@ OPEN (the real limitation):
 - **exp03 vs new data**: exp03 was trained on SilkService captures (wrong NET owners, `N/A` process names,
   thinned kfile). On etwcollect data every live window is red (sg 62–96 during generated DLL-hashing load, not
   a detection result). Needs a new benign capture + `exp04` (Next 3 steps).
-- Live engine vs Loki outages: after a Loki outage longer than `--loki-idle-s`, the backlog reaches the engine
+- Live engine vs Loki push outages (left as is, user 2026-11-02): after a ws-etw → Loki push stall longer than `--loki-idle-s`, the backlog reaches the engine
   after its windows closed and is dropped as late (522k lines after a 2-min outage on 2026-10-26). Files and
   Loki keep every line, so a re-build/replay is complete; only the live windows of the outage are thin.
 - etwcollect lag values go to −3.6 s over 32 min: ETW event timestamps run a few seconds ahead of the system
@@ -248,7 +263,19 @@ Repo hygiene:
 - `src/out/etw/SimulatedW10_train_edges.csv` (old un-windowed capture) sits next to the experiment
   folders and is easy to pick by mistake (it caused the first, collapsed exp01 run).
 
-## Next steps (2026-10-31, after the exp05 demo win)
+## Next steps (2026-11-01: Proxmox)
+
+0. **Deploy + soak the 24/7 fix** on the trainer: `ansible-playbook -i proxmox.ini ubuntu.yml -e
+   repo_branch=provide-infrastructure -e live_llm_args=`; check `/healthz`, a `kill -9` restart (→ `.r2`, no
+   duplicate raw), `docker restart loki` recovery, RSS across one 6-h run rotation.
+
+1. **Train on Proxmox:** once the kfile backlog is 0, let ws-etw sit idle (≥30 min, after all provisioning),
+   `lab pull --start … --end … --split test` on the trainer, then train + `lab promote`. Check that idle stays green live.
+2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery instead of
+   the Vagrant mount), run the DVWA→RCE chain live, expect red + (after saving the DeepSeek key and re-running
+   `ubuntu.yml --tags project`) an LLM verdict.
+
+Earlier backlog (2026-10-31, after the exp05 demo win):
 
 1. **Live UI: render the LLM report as HTML** (user, 2026-10-31). The web UI currently shows the Alg. 2
    report (`sg3_report.md`) as raw markdown text — add markdown→HTML rendering in `src/live/` (the UI /

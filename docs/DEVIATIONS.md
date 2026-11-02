@@ -183,6 +183,12 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     copy as `PID`; `etw2nodlink._net()` reads `pid`, so most NET edges of every capture so far (exp01–exp03
     included) hang off the wrong process. D10 data writes the payload PID as `PID`; the converter will
     prefer `_pid` so old captures are fixed on re-conversion.
+- 24/7 operation (2026-11-02, [OURS] engineering, not in the paper): bounded Loki catch-up (≤ 20 000 lines per
+  provider per poll; the clock is held at the cursor of a provider that is behind, so no line is dropped as late
+  by the slicing), a restart mid-run writes a new `<run>.rN` session folder (never a second raw copy into the
+  old one), a converter error skips that one event (counted as `bad_events`), and a watchdog exits for systemd
+  to restart on a dead worker thread / hung poll. Impact on scoring: none on normal data; a skipped event is an
+  edge missing from its window (visible as a count).
 - Limits: shows near-live node scoring + Alg. 1 on our own data. No detection-quality claim until windows
   are labelled (D6); no claim about Alg. 1 precision; the cut-off (Moderate ≥ 30) is ours, set on one
   benign window, not the paper's.
@@ -234,6 +240,10 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - Impact: the GNN alert is never removed. An LLM `false_positive` shows as a struck-through badge on a
   still-red window. Each red window costs 1 call (benign) or 3 calls (attack) per subgraph, plus 9 when
   ≥ 2 subgraphs are attacks. It runs on its own thread, so scoring is not delayed.
+- Daily budget (user, 2026-11-02, [OURS]): at most `--llm-max-per-day` (default 10) red windows investigated
+  per local day, to cap token spend on a 24/7 server. Windows over the budget keep their red GNN alert and get
+  `skipped` instead of a verdict. Impact: on a busy day, later alerts have no LLM report; it limits nothing
+  about the GNN detection. Budget counter in `sessions/llm_budget.json`.
 - Limits: no claim that the LLM separates attacks from false positives until it is run on labelled
   windows (D6); one benign window is one data point, not a rate. An LLM verdict is not ground truth and is
   not fed back into training: log text (paths, process names) is attacker-controlled, so prompt injection
