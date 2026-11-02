@@ -29,3 +29,8 @@ output "ubuntu_etw_ip" {
   description = "Static IP cloud-init gives ubuntu-etw."
   value       = "${local.ubuntu_etw_ip}/${split("/", local.subnet_cidr)[1]}"
 }
+
+output "vpn_ip" {
+  description = "Static IP cloud-init gives nt2102-vpn (OpenVPN server)."
+  value       = "${local.vpn_ip}/${split("/", local.subnet_cidr)[1]}"
+}

@@ -26,6 +26,24 @@ locals {
   ubuntu_etw_name  = "ubuntu-etw"
   ubuntu_etw_ip    = "10.21.3.11"
 
+  # OpenVPN server: same cloud image + cloud-init as ubuntu-etw.
+  vpn_vm_id = 2105
+  vpn_name  = "nt2102-vpn"
+  vpn_ip    = "10.21.3.50"
+  # Extra rule on top of it2102_rules (only this VM): VPN clients come from outside the lab subnet.
+  vpn_rules = [
+    {
+      type    = "in"
+      action  = "ACCEPT"
+      source  = null
+      dest    = null
+      log     = null
+      proto   = "udp"
+      dport   = "1194"
+      comment = "it2102: OpenVPN clients (UDP 1194)"
+    },
+  ]
+
   it2102_rules = [
     {
       type    = "out"
@@ -370,4 +388,95 @@ resource "proxmox_virtual_environment_firewall_rules" "ubuntu_etw" {
   }
 
   depends_on = [proxmox_virtual_environment_firewall_options.ubuntu_etw]
+}
+
+resource "proxmox_virtual_environment_vm" "vpn" {
+  node_name   = local.node_name
+  vm_id       = local.vpn_vm_id
+  name        = local.vpn_name
+  description = "NT2102 Ubuntu 24.04 OpenVPN server (cloud image + cloud-init). Managed by Terraform."
+  tags        = ["nt2102", "ubuntu", "vpn"]
+
+  operating_system {
+    type = "l26"
+  }
+  cpu {
+    cores = 2
+    type  = "host"
+  }
+  memory {
+    dedicated = 1024
+  }
+
+  scsi_hardware = "virtio-scsi-single"
+  disk {
+    datastore_id = local.vm_datastore_id
+    import_from  = proxmox_download_file.ubuntu_image.id
+    interface    = "scsi0"
+    size         = 10
+    iothread     = true
+    discard      = "on"
+  }
+
+  network_device {
+    bridge   = proxmox_sdn_vnet.lab.id
+    model    = "virtio"
+    firewall = true
+  }
+
+  serial_device {}
+
+  initialization {
+    datastore_id = local.vm_datastore_id
+    ip_config {
+      ipv4 {
+        address = "${local.vpn_ip}/${split("/", local.subnet_cidr)[1]}"
+        gateway = local.subnet_gateway
+      }
+    }
+    dns {
+      servers = ["1.1.1.1", "8.8.8.8"]
+    }
+    user_account {
+      username = local.trainer_user
+      keys     = [local.trainer_ssh_key]
+    }
+  }
+
+  started         = true
+  on_boot         = false
+  stop_on_destroy = true
+
+  depends_on = [proxmox_sdn_applier.apply]
+}
+
+resource "proxmox_virtual_environment_firewall_options" "vpn" {
+  node_name = local.node_name
+  vm_id     = proxmox_virtual_environment_vm.vpn.vm_id
+
+  enabled       = true
+  input_policy  = "ACCEPT"
+  output_policy = "ACCEPT"
+}
+
+resource "proxmox_virtual_environment_firewall_rules" "vpn" {
+  node_name = local.node_name
+  vm_id     = proxmox_virtual_environment_vm.vpn.vm_id
+
+  # Shared it2102 rules first (first match wins), then the OpenVPN accept.
+  dynamic "rule" {
+    for_each = concat(local.it2102_rules, local.vpn_rules)
+    content {
+      type    = rule.value.type
+      action  = rule.value.action
+      source  = rule.value.source
+      dest    = rule.value.dest
+      proto   = try(rule.value.proto, null)
+      dport   = try(rule.value.dport, null)
+      log     = rule.value.log
+      comment = rule.value.comment
+    }
+  }
+
+  depends_on = [proxmox_virtual_environment_firewall_options.vpn]
 }

@@ -116,6 +116,26 @@ Check inside: `curl -sI https://1.1.1.1` answers (internet), `curl -m3 http://19
 The name mirrors ws-etw, but ETW is a Windows-only kernel API: this VM runs no collector yet. A Linux endpoint
 would need auditd or eBPF plus its own converter and model.
 
+## nt2102-vpn (VM 2105)
+
+Ubuntu 24.04 VM for an OpenVPN server. It is built the same way as ubuntu-etw: shared cloud image, and
+cloud-init sets the static `10.21.3.50/24`, gateway `10.21.3.1` and user `it2102` with the `it2102-vms` key.
+It has 2 cores, 1 GB RAM and a 10 GB disk.
+
+```bash
+ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.50
+```
+
+Firewall: the shared `it2102:` rules, plus one rule for this VM only (`local.vpn_rules`): **IN ACCEPT UDP 1194
+from any source** (OpenVPN clients come from outside the lab subnet).
+
+- **OpenVPN is not installed yet.** Terraform builds only the bare VM. The server, PKI and NAT/forwarding
+  come in a later step.
+- Clients on the internet also need a port forward on the home router: UDP 1194 → `10.21.3.50`.
+  The router already routes `10.21.3.0/24` to pve-master.
+- The shared OUT DROP to `192.168.1.0/24` also applies to traffic this VM forwards for VPN clients.
+  Through the tunnel they reach the lab subnet, not the home LAN.
+
 ## Cloud image vs ISO install
 
 The two Ubuntu VMs use a cloud image; ws-etw uses an installer ISO (there's no Windows Server eval cloud image).
