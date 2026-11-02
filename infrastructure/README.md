@@ -131,8 +131,9 @@ from any source** (OpenVPN clients come from outside the lab subnet).
 
 - **OpenVPN is not installed yet.** Terraform builds only the bare VM. The server, PKI and NAT/forwarding
   come in a later step.
-- Clients on the internet also need a port forward on the home router: UDP 1194 → `10.21.3.50`.
-  The router already routes `10.21.3.0/24` to pve-master.
+- Clients on the internet reach it on **external TCP 2102**: the home router forwards TCP 2102 → pve-master
+  `192.168.1.120:2102`, and pve-master DNATs that to `10.21.3.50:1194`
+  (`src/ansible/proxmox-firewall.yml`, iptables rules saved with `netfilter-persistent`). Client configs use `remote <public-ip> 2102`.
 - The shared OUT DROP to `192.168.1.0/24` also applies to traffic this VM forwards for VPN clients.
   Through the tunnel they reach the lab subnet, not the home LAN.
 

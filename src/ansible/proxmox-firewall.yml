@@ -1,0 +1,31 @@
+- name: Forward UDP 2102 on pve-master to nt2102-vpn:1194
+  hosts: pve
+  become: true
+  gather_facts: false
+  vars:
+    vpn_ip: "{{ hostvars['nt2102-vpn'].private_ip }}"
+
+  tasks:
+    - name: Install netfilter-persistent
+      ansible.builtin.apt:
+        name: iptables-persistent
+        state: present
+
+    - name: DNAT external port 2102 to OpenVPN server ({{ vpn_ip }}:1194 TCP)
+      ansible.builtin.iptables:
+        table: nat
+        chain: PREROUTING
+        in_interface: "{{ wan_iface }}"
+        protocol: tcp
+        destination_port: "2102"
+        jump: DNAT
+        to_destination: "{{ vpn_ip }}:1194"
+        action: insert
+        rule_num: "1"
+        state: present
+        comment: "it2102: DNAT OpenVPN: ext 2102/udp -> {{ vpn_ip }}:1194"
+      register: vpn_dnat
+    - name: Save iptables rules persistently
+      ansible.builtin.command: netfilter-persistent save
+      when: vpn_dnat.changed
+      changed_when: true
