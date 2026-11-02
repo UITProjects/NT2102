@@ -38,9 +38,9 @@ locals {
       source  = null
       dest    = null
       log     = null
-      proto   = "udp"
+      proto   = "tcp"
       dport   = "1194"
-      comment = "it2102: OpenVPN clients (UDP 1194)"
+      comment = "it2102: OpenVPN clients (TCP 1194, DNAT from pve-master:2102)"
     },
   ]
 

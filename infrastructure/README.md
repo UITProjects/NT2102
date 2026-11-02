@@ -126,8 +126,10 @@ It has 2 cores, 1 GB RAM and a 10 GB disk.
 ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.50
 ```
 
-Firewall: the shared `it2102:` rules, plus one rule for this VM only (`local.vpn_rules`): **IN ACCEPT UDP 1194
-from any source** (OpenVPN clients come from outside the lab subnet).
+Firewall: the shared `it2102:` rules, plus one rule for this VM only (`local.vpn_rules`): **IN ACCEPT TCP 1194
+from any source** (OpenVPN clients come from outside the lab subnet, DNAT'd as TCP by pve-master). The VM's
+`input_policy` is ACCEPT today, so this rule is what keeps the VPN reachable if that policy is ever set to DROP;
+OpenVPN must listen on TCP (`proto tcp-server`), not the default UDP.
 
 - **OpenVPN is not installed yet.** Terraform builds only the bare VM. The server, PKI and NAT/forwarding
   come in a later step.

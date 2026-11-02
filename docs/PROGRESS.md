@@ -9,8 +9,12 @@ Branch: **`provide-infrastructure`**.
 (Terraform) built ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 on VNet `it2102`; `src/ansible/proxmox.ini`
 provisioned both (ubuntu.yml + windows.yml with vulnlab: first run failed=0, re-runs `changed=0`, verify-windows
 passes, DVWA :3000 = 200, Grafana = 200, Loki receives kproc/kfile/knet from ws-etw, collector 0 lost events).
-Open: the first-run kfile ship backlog (~2M install events) was draining; LLM off (no DeepSeek key on that
-trainer yet); `ocr-live` on exp01 (red until a Proxmox model is promoted); no Kali on Proxmox yet.
+Open: the first-run kfile ship backlog (~2M install events) was draining; LLM on (DeepSeek key saved on the
+trainer); `ocr-live` on exp01 (red until a Proxmox model is promoted); no Kali on Proxmox yet.
+
+**nt2102-vpn (2026-11-02):** VM 2105 at 10.21.3.50, bare (OpenVPN not installed yet). External TCP 2102 → home
+router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
+and the DNAT comment now say TCP (were UDP): needs `terraform apply` + a `proxmox-firewall.yml` re-run.
 
 **ubuntu-etw (2026-11-02):** third Proxmox VM, VM 2104 at 10.21.3.11 (Ubuntu 24.04 cloud image + cloud-init, like
 the trainer), direct SSH over the routed path. auditd → `auditship` (`src/audit-python`) → trainer Loki
@@ -24,7 +28,8 @@ watchdog exit + `Restart=always`; a restart appended a 2nd raw copy into the sam
 lines/provider/poll with the clock held for the lagging provider; the UI never re-synced after a reconnect →
 re-fetch on every SSE open. Added `/healthz`, `OOMScoreAdjust=500`, per-event converter guard, and the [OURS]
 **daily LLM budget** `--llm-max-per-day 10` (user, 2026-11-02; D9). `./selftest.sh` 16/16. src/live/README §5.
-Deployed on the Proxmox trainer (`7dadd1a`, `-e repo_branch=provide-infrastructure -e live_llm_args=`) and
+Deployed on the Proxmox trainer (`7dadd1a`, `-e repo_branch=provide-infrastructure -e live_llm_args=`; the LLM
+was turned on later: DeepSeek key saved, then `ubuntu.yml --tags project` with the inventory's `live_llm_args`) and
 verified there: `/healthz` 200; deploy restart → `.r2`, SIGKILL → systemd restart → `.r3`, both 0 duplicate raw
 lines and 0 late drops during catch-up; Loki container restart → error shown, recovered in < 10 s, no process
 restart. Costs seen: a restart re-reads up to 1 h (catch-up 6–16 min at ~1.6–4k lines/s, the UI is that far
@@ -287,8 +292,7 @@ Repo hygiene:
    no WinRM/RDP/Ansible on ws-etw until then. `lab pull --start … --end … --split test` → `lab train
    --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
 2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery instead of
-   the Vagrant mount), run the DVWA→RCE chain live, expect red + (after saving the DeepSeek key and re-running
-   `ubuntu.yml --tags project`) an LLM verdict.
+   the Vagrant mount), run the DVWA→RCE chain live, expect red + an LLM verdict.
 
 Earlier backlog (2026-10-31, after the exp05 demo win):
 
@@ -302,6 +306,6 @@ Earlier backlog (2026-10-31, after the exp05 demo win):
    `compare_replay.py` on the host (the trainer-side `rejudge.sh` already reproduced the attack subgraph).
 
 Note: benign = idle pulled from Loki (no capture script). To rebuild benign: `lab pull --start <t>
---end <t> --split test --yes` on a clean idle range, then `lab train --experiment <id> --model <name>`.
-A Loki idle pull is `--split test` (files `_test_`): train it with `lab train ... --benign-split test`
-(explicit opt-in, recorded in `lineage.json`; added 2026-11-02, replaces the old copy-to-`_train_` workaround).
+--end <t> --split test --yes` on a clean idle range, then `lab train --experiment <id> --model <name>
+--benign-split test` (a Loki idle pull builds `_test_` files; the flag is an explicit opt-in recorded in
+`lineage.json`, added 2026-11-02, replacing the old copy-to-`_train_` workaround).

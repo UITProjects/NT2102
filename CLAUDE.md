@@ -131,10 +131,12 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
 - DONE (2026-11-01): the lab also runs on the user's home **Proxmox** (`pve-master`). `infrastructure/`
   (Terraform, bpg/proxmox) builds ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 (+ ubuntu-etw 10.21.3.11, Linux
   endpoint, 2026-11-02) on the SDN VNet `it2102`
-  (10.21.3.0/24, LAN-isolated firewall), and `src/ansible/proxmox.ini` provisions them over a routed path. Both
-  are fully provisioned and idempotent (ubuntu.yml + windows.yml with vulnlab, verify passes), and etwcollect →
-  Loki carries all 3 providers. The LLM is off there (`-e live_llm_args=`) until the DeepSeek key is saved on the
-  trainer; `ocr-live` still loads exp01 (red until a Proxmox-trained model is promoted).
+  (10.21.3.0/24, LAN-isolated firewall), and `src/ansible/proxmox.ini` provisions them over a routed path.
+  ws-etw + trainer are fully provisioned and idempotent (ubuntu.yml + windows.yml with vulnlab, verify passes),
+  ubuntu-etw by target.yml, and etwcollect → Loki carries all 3 providers. nt2102-vpn 10.21.3.50 is a bare VM
+  (OpenVPN not installed yet); external TCP 2102 → pve-master DNAT (`proxmox-firewall.yml`) → :1194. The LLM is on
+  there (DeepSeek, key saved on the trainer, inventory `live_llm_args`); `ocr-live` still loads exp01 (red until a
+  Proxmox-trained model is promoted).
 - **Next (user, 2026-11-01): build training and the attack on Proxmox.** (1) Train an idle model from a
   clean idle Loki range of the Proxmox ws-etw. Provisioning time (installs, Ansible runs) is NOT idle.
   (2) Attack: Kali is not on Proxmox yet (it was a Vagrant-only box). It needs a Kali VM on it2102 (planned
@@ -223,8 +225,9 @@ history of earlier progress) and, if relevant, this section.
   → Loki `job="auditd"`; raw logs only, D11). (The `win_benign` role and `src/scripts/` capture scripts were removed
   2026-10-31: benign = idle pulled from Loki.)
 - Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw VM from the Server 2022
-  eval ISO with manual install, ubuntu-trainer from a cloud image + cloud-init, per-VM firewall rules prefixed
-  `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`.
+  eval ISO with manual install, ubuntu-trainer, ubuntu-etw and nt2102-vpn from a cloud image + cloud-init, per-VM
+  firewall rules prefixed `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`; `proxmox-firewall.yml`
+  adds the pve-master DNAT (TCP 2102 → nt2102-vpn:1194).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
   = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
