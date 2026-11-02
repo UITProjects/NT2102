@@ -129,7 +129,8 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   Significant, alert True; flagged the Kali stage IP, `downloaded_tool.bin`, the RCE powershell), LLM triage
   **`attack` 0.85** + report; offline re-judge reproduces it. See PROGRESS, D2, [[live-detector-benign-fp]].
 - DONE (2026-11-01): the lab also runs on the user's home **Proxmox** (`pve-master`). `infrastructure/`
-  (Terraform, bpg/proxmox) builds ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 on the SDN VNet `it2102`
+  (Terraform, bpg/proxmox) builds ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 (+ ubuntu-etw 10.21.3.11, Linux
+  endpoint, 2026-11-02) on the SDN VNet `it2102`
   (10.21.3.0/24, LAN-isolated firewall), and `src/ansible/proxmox.ini` provisions them over a routed path. Both
   are fully provisioned and idempotent (ubuntu.yml + windows.yml with vulnlab, verify passes), and etwcollect →
   Loki carries all 3 providers. The LLM is off there (`-e live_llm_args=`) until the DeepSeek key is saved on the

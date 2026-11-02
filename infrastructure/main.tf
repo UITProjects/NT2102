@@ -21,6 +21,11 @@ locals {
   trainer_ssh_key  = trimspace(file("~/OneDrive/credentials/ssh/it2102-vms/id_rsa.pub"))
   ubuntu_image_url = "https://cloud-images.ubuntu.com/noble/20261017/noble-server-cloudimg-amd64.img"
 
+  # Ubuntu endpoint (Linux counterpart of ws-etw): same cloud image + cloud-init as the trainer.
+  ubuntu_etw_vm_id = 2104
+  ubuntu_etw_name  = "ubuntu-etw"
+  ubuntu_etw_ip    = "10.21.3.11"
+
   it2102_rules = [
     {
       type    = "out"
@@ -277,4 +282,92 @@ resource "proxmox_virtual_environment_firewall_rules" "trainer" {
   }
 
   depends_on = [proxmox_virtual_environment_firewall_options.trainer]
+}
+
+resource "proxmox_virtual_environment_vm" "ubuntu_etw" {
+  node_name   = local.node_name
+  vm_id       = local.ubuntu_etw_vm_id
+  name        = local.ubuntu_etw_name
+  description = "NT2102 Ubuntu 24.04 endpoint (cloud image + cloud-init). Managed by Terraform."
+  tags        = ["nt2102", "ubuntu"]
+
+  operating_system {
+    type = "l26"
+  }
+  cpu {
+    cores = 2
+    type  = "host"
+  }
+  memory {
+    dedicated = 4096
+  }
+
+  scsi_hardware = "virtio-scsi-single"
+  disk {
+    datastore_id = local.vm_datastore_id
+    import_from  = proxmox_download_file.ubuntu_image.id
+    interface    = "scsi0"
+    size         = 40
+    iothread     = true
+    discard      = "on"
+  }
+
+  network_device {
+    bridge   = proxmox_sdn_vnet.lab.id
+    model    = "virtio"
+    firewall = true
+  }
+
+  serial_device {}
+
+  initialization {
+    datastore_id = local.vm_datastore_id
+    ip_config {
+      ipv4 {
+        address = "${local.ubuntu_etw_ip}/${split("/", local.subnet_cidr)[1]}"
+        gateway = local.subnet_gateway
+      }
+    }
+    dns {
+      servers = ["1.1.1.1", "8.8.8.8"]
+    }
+    user_account {
+      username = local.trainer_user
+      keys     = [local.trainer_ssh_key]
+    }
+  }
+
+  started         = true
+  on_boot         = false
+  stop_on_destroy = true
+
+  depends_on = [proxmox_sdn_applier.apply]
+}
+
+resource "proxmox_virtual_environment_firewall_options" "ubuntu_etw" {
+  node_name = local.node_name
+  vm_id     = proxmox_virtual_environment_vm.ubuntu_etw.vm_id
+
+  enabled       = true
+  input_policy  = "ACCEPT"
+  output_policy = "ACCEPT"
+}
+
+resource "proxmox_virtual_environment_firewall_rules" "ubuntu_etw" {
+  node_name = local.node_name
+  vm_id     = proxmox_virtual_environment_vm.ubuntu_etw.vm_id
+
+  dynamic "rule" {
+    for_each = local.it2102_rules
+    content {
+      type    = rule.value.type
+      action  = rule.value.action
+      source  = rule.value.source
+      dest    = rule.value.dest
+      log     = rule.value.log
+      comment = rule.value.comment
+    }
+  }
+
+  depends_on = [proxmox_virtual_environment_firewall_options.ubuntu_etw]
 }

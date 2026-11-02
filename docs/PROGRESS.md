@@ -12,6 +12,10 @@ passes, DVWA :3000 = 200, Grafana = 200, Loki receives kproc/kfile/knet from ws-
 Open: the first-run kfile ship backlog (~2M install events) was draining; LLM off (no DeepSeek key on that
 trainer yet); `ocr-live` on exp01 (red until a Proxmox model is promoted); no Kali on Proxmox yet.
 
+**ubuntu-etw (2026-11-02):** third Proxmox VM, VM 2104 at 10.21.3.11 (Ubuntu 24.04 cloud image + cloud-init, like
+the trainer); `terraform apply` done, direct SSH over the routed path verified. No collector yet (next: auditd →
+own Python shipper → Loki, `job="auditd"`).
+
 **`ocr-live` hardened for 24/7 (2026-11-02, code + selftests; Proxmox deploy/soak: see Next steps).** Fixed four
 failure modes: the Loki thread died silently on any non-OSError (UI frozen, systemd unaware) → catch-all +
 watchdog exit + `Restart=always`; a restart appended a 2nd raw copy into the same session folder → new

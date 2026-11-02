@@ -24,3 +24,8 @@ output "suggested_static_ip" {
 output "trainer_ip" {
   value = local.trainer_ip
 }
+
+output "ubuntu_etw_ip" {
+  description = "Static IP cloud-init gives ubuntu-etw."
+  value       = "${local.ubuntu_etw_ip}/${split("/", local.subnet_cidr)[1]}"
+}
