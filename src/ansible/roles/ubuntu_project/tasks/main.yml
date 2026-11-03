@@ -27,18 +27,19 @@
 # experiment.json, so nothing has to be copied from the control node.
 
 # The Windows capture is always on (win_shipper watchdog) and every live session keeps a raw copy of it
-# (~2 GB/h), so old sessions are pruned hourly. A session goes only when NO file inside changed for
-# live_session_keep_hours (the folder's own mtime does not move while raw/ grows). replay-* and other
-# folders are never touched; a session holding a .keep file is kept forever (touch <session>/.keep).
-- name: Hourly cleanup of old live sessions
+# (~2 GB/h under load), so the raw copies are pruned hourly. Only <session>/raw/ goes, once NO file in it
+# changed for live_raw_keep_hours: the window results (windows/, windows.csv, sessions/history.jsonl) are the
+# persistent, range-queryable history and are kept (2026-11-03). replay-* and other folders are never touched;
+# a session holding a .keep file keeps its raw copy too (touch <session>/.keep).
+- name: Hourly cleanup of old live raw copies (window results are kept)
   become: false
   ansible.builtin.cron:
-    name: "nt2102 live session cleanup"
+    name: "nt2102 live session cleanup"   # same name: replaces the old whole-session cleanup job
     special_time: hourly
     job: >-
-      for d in {{ repo_dest }}/src/live/sessions/live-*/; do [ -d "$d" ] && [ ! -e "$d.keep" ] &&
-      [ -z "$(find "$d" -type f -mmin -{{ live_session_keep_hours | int * 60 }} -print -quit)" ] &&
-      rm -rf "$d"; done; true
+      for d in {{ repo_dest }}/src/live/sessions/live-*/; do [ -d "${d}raw" ] && [ ! -e "$d.keep" ] &&
+      [ -z "$(find "${d}raw" -type f -mmin -{{ live_raw_keep_hours | int * 60 }} -print -quit)" ] &&
+      rm -rf "${d}raw"; done; true
 
 - name: Install the live-server systemd unit
   ansible.builtin.template:

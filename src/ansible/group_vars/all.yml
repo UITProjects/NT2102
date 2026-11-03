@@ -90,7 +90,9 @@ repo_dest: "/home/{{ ansible_user | default('vagrant') }}/NT2102"
 # the `llm` uv group. Deliberately NOT defined in this file: group_vars/all.yml outranks the inventory's
 # [ubuntu:vars], so a default here would silently override inventory.local.ini. Uses say `| default('')`.
 # The API key is NEVER set here: save it once on the trainer (alg2.py --ping prompts, src/live/README.md §5).
-# Live sessions (src/live/sessions/live-*) with no write for this many hours are deleted hourly on the trainer
-# (each holds a raw copy of the capture, ~2 GB/h measured; replay-* folders and any session holding a .keep
-# file are never touched).
-live_session_keep_hours: 12
+# live_sg_moderate_from: SG-Det cut-off for ocr-live (Moderate from this subgraph score). Same rule, not defined
+# here; the unit template defaults it to 10 = [PAPER] §7.2.1 (user, 2026-11-03); 30 = the old [OURS] live scale.
+# Live sessions keep their window results (windows/, windows.csv, sessions/history.jsonl) forever: that is the
+# queryable history. Only the bulky raw copy (<session>/raw/, ~2 GB/h measured under load) is deleted hourly once
+# nothing in it changed for this many hours (replay-* folders and any session holding a .keep file are skipped).
+live_raw_keep_hours: 12

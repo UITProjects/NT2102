@@ -31,7 +31,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   triage `attack` (0.85) + report. [[live-detector-benign-fp]].
 - Impact: an **idle baseline is thin** — the idle set that worked was ~16 min with only 6 net / 13 process
   training nodes, so the per-node net threshold is noisy (`val_fpr=1.0`); the per-subgraph SG-Det cut-off
-  (Moderate ≥ 30) absorbs that noise, keeping idle windows green, but **any real user activity in a benign
+  (Moderate ≥ 30 until 2026-11-03, the paper's ≥ 10 since; D8) absorbs that noise, keeping idle windows green, but **any real user activity in a benign
   window can raise false positives**, so the demo must keep benign windows idle. Not a general detector —
   a concept demo baseline. Converter still drops/unresolves some events (see converter `_summary.json`).
 - Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
@@ -114,20 +114,28 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     `Prediction_probability`, 'linear'); [PAPER] §5.2 only says "sum of the scores", but raw scores
     differ in scale per type (NET is negative). train_min/max from `train_scores.csv` (split = train);
     the saved model reproduces that file to 1.3e-5.
-  - [OURS] level scale (user decision, 2026-10-13): ≤ 1 Negligible, < 30 Minor, 30–100 Moderate,
-    ≤ 1000 Significant, else Critical. [AUTHOR CODE] l.394 has Moderate > 10; other bounds unchanged.
-    `--sg-moderate-from` (default 30; `10.0001` = [AUTHOR CODE] scale). A window alerts only if ≥ 1 subgraph
-    is ≥ Moderate.
+  - Level scale = [PAPER] §7.2.1 since 2026-11-03 (user decision: "exactly the paper"): ≤ 1 Negligible
+    ([AUTHOR CODE] only), < 10 Minor, 10–100 Moderate, ≤ 1000 Significant, else Critical. A score of exactly 10 is
+    Moderate as the paper text reads ("between 10 and 100"); [AUTHOR CODE] l.394 says `<= 10` Minor, so the two
+    differ only at 10.0 (clamped probs often sum to whole numbers). `--sg-moderate-from` (default 10; `10.0001` =
+    [AUTHOR CODE]; `30` = the earlier [OURS] scale, 2026-10-13 → 2026-11-03). `ocr-live` gets it from Ansible
+    `live_sg_moderate_from` (default 10). A window alerts only if ≥ 1 subgraph is ≥ Moderate.
+    Impact measured on the trainer before the switch (exp06, 193 scored idle windows 2026-11-02T23:14Z →
+    11-03T15:25Z): **6 red at ≥ 10 vs 1 red at ≥ 30** (16, 25, 13, 12, 15 + the 129.0 Significant window that is
+    red on both). The exp06 attack windows of 2026-11-02 (max 9.0 / 2.0) stay **Minor (green) at 10 as well**.
+    More red windows also use more of the daily LLM budget (`--llm-max-per-day`, D9).
   - [OURS] no top-k fallback when nothing reaches Moderate ([AUTHOR CODE] l.433–461); live, it would make every
     window red.
   - [OURS] a partition still above max_e is kept whole (`oversize`), not sampled per edge type.
   - [OURS] optional numeric cut-off `--sg-min-score`, to be calibrated on benign sessions only.
   - [OURS] the anomalous set is capped at the 300 highest margins (UI guard).
 - Why: live demo, with the same code path as offline so a replay of the training capture can be checked
-  against the offline artefacts (`compare_replay.py`). Level scale: [PAPER] §5.2 says the subgraph set
-  "can be adjusted based on the desired abnormality threshold". A 5-min window is far smaller than the
-  paper's whole-log graphs, and the [AUTHOR CODE] cut-off (> 10) left the benign 11:25 `updater` window red.
-  30 = that window's score (18) plus margin.
+  against the offline artefacts (`compare_replay.py`). Level scale history: [PAPER] §5.2 says the subgraph set
+  "can be adjusted based on the desired abnormality threshold". The earlier [OURS] 30 was set because a 5-min
+  window is far smaller than the paper's whole-log graphs and the [AUTHOR CODE] cut-off (> 10) left the benign
+  11:25 `updater` window red (30 = its score 18 plus margin). On 2026-11-03 the user chose the paper's own
+  scale instead: no deviation to defend, at the cost of more benign red windows (measured above). The points
+  below about "30" describe that earlier scale and the results it was measured with.
 - Impact:
   - Loki clock [INFERENCE]: while a capture runs, SilkETW emits kernel events continuously, so the event
     clock rarely stalls. When the capture stops, the last full window closes through the idle fallback.
@@ -192,8 +200,18 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   to restart on a dead worker thread / hung poll. Impact on scoring: none on normal data; a skipped event is an
   edge missing from its window (visible as a count).
 - Limits: shows near-live node scoring + Alg. 1 on our own data. No detection-quality claim until windows
-  are labelled (D6); no claim about Alg. 1 precision; the cut-off (Moderate ≥ 30) is ours, set on one
-  benign window, not the paper's.
+  are labelled (D6); no claim about Alg. 1 precision. The cut-off is the paper's (Moderate ≥ 10, §7.2.1) since
+  2026-11-03; the paper set it on DARPA-scale whole-log graphs, not 5-min windows, so it is not calibrated for
+  our window size [INFERENCE].
+- Persistent window history (2026-11-03, [OURS] engineering, `src/live/history.py`): every window state is appended
+  to `sessions/history.jsonl` and each scored window's UI detail to `windows/<wid>/detail.json`; `GET /api/history`
+  (range `from`/`to`, `alert`, `replay`) and the UI's History panel query them across restarts and session
+  rotations. A restart's `.rN` re-read duplicates up to 1 h of windows: the query shows one per window start
+  (scored beats partial, then the later restart). A row keeps the alert and verdict **as judged at the time**,
+  with the cut-off then in force (`moderate_from`), so windows judged at 30 are not silently re-labelled at 10
+  (re-judge offline with `rejudge.sh` for that). Retention: only `<session>/raw/` is pruned (after
+  `live_raw_keep_hours`, 12); window results are kept. Sessions written before the file existed are backfilled
+  once from `windows.csv` + `llm_verdicts.csv` (no LLM report text for those). Impact on scoring: none.
 
 ## D9. LLM step after SG-Det: triage + partial Alg. 2 (`src/pipeline/alg2.py`)
 - What: [PAPER] Alg. 2 (§6, App. B) turns every anomalous subgraph into an attack report. It never

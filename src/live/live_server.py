@@ -33,7 +33,7 @@ import threading
 import time
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
@@ -41,7 +41,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))          # src/: the `lab` package (current-model pointer)
 from engine import Engine  # noqa: E402
-import alg2  # noqa: E402  (engine put src/pipeline on sys.path; provider list + reasoning efforts)
+from history import HistoryStore, parse_time_ms  # noqa: E402
+import alg1  # noqa: E402  (engine put src/pipeline on sys.path; default level scale)
+import alg2  # noqa: E402  (provider list + reasoning efforts)
 
 
 def health(engine, source=None, max_age_s=120.0):
@@ -112,6 +114,35 @@ def create_app(engine: Engine, token: str | None, source=None) -> FastAPI:
             raise HTTPException(404, "unknown window")
         return d
 
+    # ---- persistent history (history.py): every window ever closed, across restarts and session rotations
+    @app.get("/api/history")
+    async def history(start: str | None = Query(None, alias="from"), end: str | None = Query(None, alias="to"),
+                      alert: bool = False, replay: bool = False, limit: int = Query(2000, ge=1, le=20000)):
+        """Windows overlapping [from, to); from/to = ISO-8601 (naive = UTC) or epoch ms; default the last 24 h."""
+        try:
+            to_ms = parse_time_ms(end) or int(time.time() * 1000)
+            from_ms = parse_time_ms(start) or to_ms - 24 * 3600 * 1000
+        except ValueError as e:
+            raise HTTPException(400, f"bad time: {e}")
+        if from_ms >= to_ms:
+            raise HTTPException(400, "from must be before to")
+        return await run_in_threadpool(engine.history.query, from_ms, to_ms, alert, replay, limit)
+
+    @app.get("/api/history/{sdir}/{wid}")
+    async def history_window(sdir: str, wid: str):
+        S = engine.session
+        if S is not None and os.path.basename(S["dir"]) == sdir:   # current session: live memory (LLM pending etc.)
+            d = engine.window_detail(wid)
+            if d is not None:
+                return {**d, "history": {"sdir": sdir, "session": S["id"], "mode": S["mode"]}}
+        try:
+            d = await run_in_threadpool(engine.history.detail, sdir, wid)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if d is None:
+            raise HTTPException(404, "unknown window")
+        return d
+
     @app.get("/api/stream")
     async def stream(request: Request):
         q: asyncio.Queue = asyncio.Queue()
@@ -174,8 +205,9 @@ def main():
     g.add_argument("--max-edges", type=int, default=5000, help="[PAPER] max_e; larger subgraphs are split (0 = no cap)")
     g.add_argument("--sg-min-level", default="Moderate", choices=["Negligible", "Minor", "Moderate", "Significant", "Critical"],
                    help="window alerts only if a subgraph reaches this level (Moderate = score >= --sg-moderate-from)")
-    g.add_argument("--sg-moderate-from", type=float, default=30.0,
-                   help="[OURS] Moderate starts at this subgraph score (default 30; [AUTHOR CODE] scale: 10.0001)")
+    g.add_argument("--sg-moderate-from", type=float, default=alg1.MODERATE_FROM,
+                   help="Moderate starts at this subgraph score (default 10 = [PAPER] §7.2.1; [AUTHOR CODE] > 10: "
+                        "10.0001; old [OURS] live scale: 30)")
     g.add_argument("--sg-min-score", type=float, default=None,
                    help="[OURS] numeric cut-off instead of the level (alert if sg_score > X); calibrate on BENIGN sessions")
     g = ap.add_argument_group("LLM triage + attack report after SG-Det (src/pipeline/alg2.py)")
@@ -248,8 +280,15 @@ def selftest():
     """/healthz codes and the watchdog decision with stand-in engine/source (no model, no Loki, no network)."""
     from fastapi.testclient import TestClient
 
+    import tempfile
+    tmp = tempfile.TemporaryDirectory()
+
     class Eng:
-        listeners, ok = [], True
+        listeners, ok, session = [], True, None
+        history = HistoryStore(tmp.name)
+
+        def window_detail(self, wid):
+            return None
 
         def health(self):
             return (True, "ok") if self.ok else (False, "engine thread(s) died: scoring")
@@ -289,7 +328,26 @@ def selftest():
     assert run_wd(10) == [3], "a hung source must end the process"
     src.stuck_why, eng.ok = None, False
     assert c.get("/healthz").status_code == 503 and run_wd(10) == [3], "a dead engine thread must end the process"
-    print("[SELFTEST OK] /healthz 200/503, watchdog exits on a dead thread or hung poll, not on Loki being down")
+    # /api/history: range in ISO or ms, alerts only, bad input -> 400, unknown -> 404, traversal -> 400
+    base = 1_793_704_800_000
+    for k, (alert, score) in enumerate([(False, 2.0), (True, 12.0), (False, 0.0)]):
+        eng.history.append({"sdir": "live-a", "session": "live-a", "mode": "live", "moderate_from": 10.0,
+                            "window": f"w{k}", "start_ms": base + k * 300_000, "end_ms": base + (k + 1) * 300_000,
+                            "status": "scored", "alert": alert, "max_sg_score": score})
+    r = c.get("/api/history", params={"from": "2026-11-03T11:20:00Z", "to": str(base + 900_000)}).json()
+    assert [w["window"] for w in r["windows"]] == ["w0", "w1", "w2"], r
+    r = c.get("/api/history", params={"from": "2026-11-03T11:20:00Z", "to": "2026-11-03T11:35:00Z", "alert": 1}).json()
+    assert [w["window"] for w in r["windows"]] == ["w1"], r
+    assert c.get("/api/history", params={"from": "yesterday"}).status_code == 400
+    assert c.get("/api/history", params={"from": str(base), "to": str(base)}).status_code == 400
+    assert c.get("/api/history").status_code == 200                        # default: last 24 h
+    d = c.get("/api/history/live-a/w1")
+    assert d.status_code == 200 and d.json()["window"]["max_sg_score"] == 12.0, d.text
+    assert c.get("/api/history/live-a/nope").status_code == 404
+    assert c.get("/api/history/.hidden/w1").status_code == 400
+    tmp.cleanup()
+    print("[SELFTEST OK] /healthz 200/503, watchdog exits on a dead thread or hung poll, not on Loki being down, "
+          "/api/history range (ISO / ms) + alerts-only + 400/404 + traversal refused")
 
 
 if __name__ == "__main__":

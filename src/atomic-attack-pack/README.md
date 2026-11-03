@@ -47,7 +47,7 @@ The launcher + scripts are mounted into the Kali VM at `/opt/attack-pack` by Vag
    # override only if you changed it: --exploit-path /<path> --exploit-field <field>
    ```
 3. Watch that window in the live UI (trainer `ocr-live`): the RCE subtree should push the window to
-   **red (≥ Moderate, sg_score ≥ 30)** while benign windows stay green; `--llm-provider` adds a verdict.
+   **red (≥ Moderate, sg_score ≥ 10, the paper's scale)** while benign windows stay green; `--llm-provider` adds a verdict.
 
 Start just after a 5-min window boundary. Whether the chain clears the cut-off is confirmed here, not
 tuned (`SCENARIOS.md`, DEVIATIONS D8).

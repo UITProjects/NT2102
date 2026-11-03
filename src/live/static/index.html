@@ -103,6 +103,19 @@ td.attr{font-family:var(--mono);word-break:break-all}
 tr.flag td{color:var(--anom);font-weight:600}
 .legend span{margin-right:12px}
 .note{font-size:.8rem;color:var(--muted);margin-top:6px}
+/* history (persistent, across restarts and sessions) */
+.hctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.hctl label{font-size:.8rem;color:var(--muted);display:flex;gap:6px;align-items:center}
+.hctl input[type=datetime-local]{font:400 .85rem var(--mono);color:var(--ink);background:var(--paper);
+  border:1px solid var(--line);border-radius:6px;padding:3px 6px;max-width:100%}
+.hctl button{font:500 .8rem var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);
+  border-radius:6px;padding:4px 10px;cursor:pointer}
+.hctl button.go{border-color:var(--win);color:var(--win)}
+.hwrap{max-height:420px;overflow:auto}
+#hTable tr[data-s]{cursor:pointer}
+#hTable tr[data-s]:hover td{background:var(--win-soft)}
+#hTable tr.alert td{color:var(--anom);font-weight:600}
+#hTable tr.sel td{background:var(--win-soft)}
 </style>
 </head>
 <body>
@@ -124,12 +137,27 @@ tr.flag td{color:var(--anom);font-weight:600}
     <h2>Windows <span class="muted" id="winParams"></span></h2>
     <div class="timeline" id="timeline"></div>
     <div class="note legend">
-      <span>green: scored, no subgraph kept by SG-Det</span><span style="color:var(--anom)">red: ≥ 1 subgraph at or above the cut-off (<span id="cutTxt">default Moderate, score ≥ 30</span>)</span>
+      <span>green: scored, no subgraph kept by SG-Det</span><span style="color:var(--anom)">red: ≥ 1 subgraph at or above the cut-off (<span id="cutTxt">default Moderate, score ≥ 10</span>)</span>
       <span>badge on red windows = LLM verdict (<span style="color:var(--anom)">attack</span> /
         <span style="color:var(--warn)">FP</span>, struck through, still red: the GNN alert is never hidden / ? uncertain / … pending)</span>
       <span>dashed: partial / empty (not scored)</span><span style="color:var(--win)">blue: open window filling up</span>
-      · times are your browser's local time
+      · times are lab time (UTC+7)
     </div>
+  </section>
+
+  <section class="panel">
+    <h2>History <span class="muted">(every window kept on disk, across restarts and sessions; lab time UTC+7)</span></h2>
+    <div class="hctl">
+      <label>from <input type="datetime-local" id="hFrom"></label>
+      <label>to <input type="datetime-local" id="hTo"></label>
+      <label><input type="checkbox" id="hAlert"> alerts only</label>
+      <button class="go" id="hGo">Query</button>
+      <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24">24 h</button><button data-h="168">7 d</button>
+      <span class="muted" id="hInfo"></span>
+    </div>
+    <div class="hwrap"><table id="hTable"></table></div>
+    <div class="note">one row per window start (a restart re-reads up to 1 h into a <span class="mono">.rN</span> folder; the scored copy is shown) ·
+      cut-off = the "Moderate from" score in force when that window was judged · click a row to open it below · the URL keeps the range</div>
   </section>
 
   <section class="panel" id="detail" hidden>
@@ -169,6 +197,7 @@ tr.flag td{color:var(--anom);font-weight:600}
                      uncertain: "LLM: ?", error: "LLM: error", skipped: "LLM: budget"};
   let windows = new Map();       // wid -> summary
   let status = null, selected = null, pinned = false, cy = null, detail = null, sgIdx = 0;
+  let histSel = null;            // {sdir, wid} when the detail panel shows a window picked from History
 
   // ------------------------------------------------------------- status tiles
   function renderStatus() {
@@ -241,14 +270,73 @@ tr.flag td{color:var(--anom);font-weight:600}
   $("timeline").addEventListener("click", e => {
     const el = e.target.closest("[data-w]");
     if (!el) return;
-    selected = el.dataset.w; pinned = true; loadDetail();
+    selected = el.dataset.w; pinned = true; histSel = null; loadDetail();
   });
+
+  // ------------------------------------------------------------- history (api/history, src/live/history.py)
+  const OFF = 7 * 3600e3;                                     // lab zone UTC+7 (no DST)
+  const toInput = ms => new Date(ms + OFF).toISOString().slice(0, 16);
+  const fromInput = v => v ? v + ":00+07:00" : "";
+  const dhm = ms => new Date(ms).toLocaleString([], {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZone:TZ});
+  const utcHm = ms => new Date(ms).toISOString().slice(11, 16) + "Z";
+  let hRows = [];
+
+  async function queryHistory() {
+    const q = new URLSearchParams({from: fromInput($("hFrom").value), to: fromInput($("hTo").value)});
+    if ($("hAlert").checked) q.set("alert", "1");
+    history.replaceState(null, "", "#" + q.toString());
+    $("hInfo").textContent = "querying…";
+    const r = await fetch("api/history?" + q.toString());
+    if (!r.ok) { $("hInfo").textContent = "error: " + (await r.text()); return; }
+    const res = await r.json();
+    hRows = res.windows;
+    const red = hRows.filter(w => w.alert).length;
+    $("hInfo").textContent = `${res.total} window(s), ${red} red` + (res.truncated ? " · newest shown only, narrow the range" : "")
+      + (res.duplicates_hidden ? ` · ${res.duplicates_hidden} restart duplicate(s) hidden` : "");
+    renderHistory();
+  }
+
+  function renderHistory() {
+    $("hTable").innerHTML = hRows.length ? `<tr><th>window (lab)</th><th>UTC</th><th>session</th><th>status</th><th>edges</th>
+      <th>above τ</th><th>max subgraph</th><th>cut-off</th><th>alert</th><th>LLM</th></tr>` + hRows.slice().reverse().map(w => {
+        const sel = histSel && histSel.sdir === w.sdir && histSel.wid === w.window;
+        return `<tr class="${w.alert ? "alert" : ""} ${sel ? "sel" : ""}" data-s="${esc(w.sdir)}" data-w="${esc(w.window)}">
+        <td class="num">${dhm(w.start_ms)}–${hm(w.end_ms)}</td><td class="num">${utcHm(w.start_ms)}</td>
+        <td class="mono">${esc(w.sdir)}</td><td>${esc(w.status)}</td><td class="num">${w.edges ?? "–"}</td>
+        <td class="num">${w.flagged ?? "–"}</td><td class="num">${w.status === "scored" ? `${num(w.max_sg_score,2)} ${esc(w.max_level || "")}` : "–"}</td>
+        <td class="num">${w.moderate_from == null ? "–" : "≥ " + num(w.moderate_from, 0)}</td><td>${w.alert ? "RED" : ""}</td>
+        <td>${esc(w.llm?.status ? (LLM_LABEL[w.llm.status] || w.llm.status) : "")}</td></tr>`;
+      }).join("") : '<tr><td class="muted">no window in this range</td></tr>';
+  }
+  $("hTable").addEventListener("click", e => {
+    const tr = e.target.closest("tr[data-s]");
+    if (!tr) return;
+    histSel = {sdir: tr.dataset.s, wid: tr.dataset.w}; selected = null; pinned = true;
+    renderHistory(); loadDetail().then(() => $("detail").scrollIntoView({behavior: "smooth"}));
+  });
+  $("hGo").addEventListener("click", queryHistory);
+  document.querySelectorAll("[data-h]").forEach(b => b.addEventListener("click", () => {
+    const now = Date.now();
+    $("hTo").value = toInput(now); $("hFrom").value = toInput(now - Number(b.dataset.h) * 3600e3);
+    queryHistory();
+  }));
+  function initHistory() {
+    const h = new URLSearchParams(location.hash.slice(1));
+    const now = Date.now();
+    const parse = v => { const t = Date.parse(v); return Number.isNaN(t) ? null : t; };
+    $("hTo").value = toInput(parse(h.get("to")) ?? now);
+    $("hFrom").value = toInput(parse(h.get("from")) ?? now - 6 * 3600e3);
+    $("hAlert").checked = h.get("alert") === "1";
+    queryHistory();
+  }
 
   // ------------------------------------------------------------- detail
   async function loadDetail() {
     renderTimeline();
-    if (!selected) return;
-    const r = await fetch("api/windows/" + encodeURIComponent(selected));
+    if (!selected && !histSel) return;
+    const url = histSel ? `api/history/${encodeURIComponent(histSel.sdir)}/${encodeURIComponent(histSel.wid)}`
+                        : "api/windows/" + encodeURIComponent(selected);
+    const r = await fetch(url);
     if (!r.ok) return;
     detail = await r.json(); sgIdx = 0;
     renderDetail();
@@ -257,7 +345,8 @@ tr.flag td{color:var(--anom);font-weight:600}
   function renderDetail() {
     const w = detail.window;
     $("detail").hidden = false;
-    $("dTitle").textContent = `Window ${hms(w.start_ms)} – ${hms(w.end_ms)}  (${w.status}${w.alert ? ", ALERT" : ""})`;
+    $("dTitle").textContent = (histSel ? `History · ${histSel.sdir} · ${dhm(w.start_ms)}` : `Window ${hms(w.start_ms)}`)
+      + ` – ${hms(w.end_ms)}  (${w.status}${w.alert ? ", ALERT" : ""})`;
     const by = (o) => Object.entries(o || {}).map(([k,v]) => `${k} ${v}`).join(" · ") || "–";
     $("dTiles").innerHTML = [
       ["edges", w.edges], ["edges by type", by(w.edges_by_type)], ["nodes by type", by(w.nodes_by_type)],
@@ -415,7 +504,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     try {
       const list = await (await fetch("api/windows")).json();
       const st = await (await fetch("api/status")).json();
-      if (st?.session?.id !== status?.session?.id) { selected = null; pinned = false; $("detail").hidden = true; }
+      if (st?.session?.id !== status?.session?.id && !histSel) { selected = null; pinned = false; $("detail").hidden = true; }
       windows = new Map(list.map(w => [w.window, w]));
       status = st;
     } catch (e) {}
@@ -433,7 +522,10 @@ tr.flag td{color:var(--anom);font-weight:600}
       status = st; renderStatus();
       if (changed) resync();                  // the session switched while we were not listening
     });
-    es.addEventListener("session", () => { windows.clear(); selected = null; pinned = false; $("detail").hidden = true; });
+    es.addEventListener("session", () => {
+      windows.clear(); selected = null;
+      if (!histSel) { pinned = false; $("detail").hidden = true; }   // a window opened from History stays open
+    });
     es.addEventListener("window", e => {
       const w = JSON.parse(e.data).window;
       windows.set(w.window, w);
@@ -445,6 +537,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     es.onerror = () => { $("conn").className = "dot off"; $("connTxt").textContent = "UI lost the server, retrying…"; };
   }
   init();
+  initHistory();
 })();
 </script>
 </body>

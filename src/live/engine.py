@@ -14,7 +14,8 @@ engine.py - live windowed OCR-APT scoring, no web code (live_server.py is the th
                          -> alg1.construct (Alg. 1 + SG-Det; window alert = >= 1 subgraph kept)
       -> llm thread (only alerted windows, only with --llm-provider): alg2.investigate
                          -> verdict attack / false_positive / uncertain + attack report (Alg. 2 l.3-15)
-      -> sessions/<id>/windows/<wid>/*.csv|json  + listeners (SSE in live_server.py)
+      -> sessions/<id>/windows/<wid>/*.csv|json (+ detail.json)  + listeners (SSE in live_server.py)
+      -> sessions/history.jsonl (history.py): every window state, kept across restarts, queryable by range
 
 Time: only the shipper's clock is used (clock_ms), never this host's wall clock, so a replay at
 any speed gives the same windows as the live capture would. Deviations: docs/DEVIATIONS.md D8.
@@ -29,7 +30,6 @@ import csv
 import hashlib
 import heapq
 import json
-import math
 import os
 import queue
 import re
@@ -49,6 +49,8 @@ sys.path.insert(0, os.path.join(SRC, "pipeline"))
 import alg1  # noqa: E402
 import alg2  # noqa: E402
 import score_window as sw  # noqa: E402
+sys.path.insert(0, HERE)
+from history import HistoryStore, _f, display_attrs, make_detail, write_json_atomic  # noqa: E402,F401
 
 EDGE_HEADER = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
 DEFAULT_CONVERTER = os.path.join(SRC, "pipeline", "etw2nodlink.py")
@@ -105,18 +107,6 @@ def make_live_graph(conv):
     return LiveGraph
 
 
-def _f(v):
-    return None if v is None or (isinstance(v, float) and math.isnan(v)) else float(v)
-
-
-def display_attrs(attr, ntype: str) -> dict:
-    """UI only: NET attrs decoded from SilkETW's signed integers (alg2.display_attr), raw value kept in
-    attr_raw so a shown IP can be traced back to the raw line. Stored files and node IDs stay raw."""
-    shown = alg2.display_attr(attr, ntype)
-    raw = "" if attr is None or (isinstance(attr, float) and math.isnan(attr)) else str(attr)
-    return {"attr": shown} | ({"attr_raw": raw} if shown != raw else {})
-
-
 def utc_id(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
@@ -151,8 +141,8 @@ class Engine:
         self.lateness_ms = int(lateness_s * 1000)
         self.origin_ms = int(origin_ms)
         self.top_k = top_k
-        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate; [AUTHOR CODE] min_nodes 3;
-        # [OURS] Moderate from sg_score 30 (DEVIATIONS D8)
+        # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate, Moderate from sg_score 10 (§7.2.1);
+        # [AUTHOR CODE] min_nodes 3 (DEVIATIONS D8)
         self.sg = {"n_seed": n_seed, "min_nodes": min_nodes, "max_edges": max_edges,
                    "min_level": sg_min_level, "min_score": sg_min_score, "moderate_from": sg_moderate_from}
 
@@ -172,6 +162,8 @@ class Engine:
         self.llm_max_per_day = int(llm_max_per_day or 0)
         self.today = today or (lambda: datetime.now().astimezone().strftime("%Y-%m-%d"))
         self.budget_path = os.path.join(sessions_dir, "llm_budget.json")
+        # persistent window history (history.py): loaded / backfilled from disk here, appended on every change
+        self.history = HistoryStore(sessions_dir)
 
         self.lock = threading.RLock()
         self.listeners = []                       # callables(event_dict), called from any thread
@@ -358,6 +350,7 @@ class Engine:
                     if self.session and self.session["id"] == sid:
                         rec = self.session["by_id"][wid]
                         rec.update(status="error", error=f"{type(e).__name__}: {e}")
+                        self._persist(self.session, rec)
                         self._emit({"type": "window", "window": rec})
             finally:
                 self.jobs.task_done()
@@ -399,11 +392,6 @@ class Engine:
                        "subgraphs": subgraphs},
                       open(os.path.join(wdir, "subgraphs.json"), "w"), indent=1)
 
-            top = {}
-            for t, g in nodes.groupby("node_type"):
-                g = g.sort_values("margin", ascending=False).head(self.top_k)
-                top[t] = [{"id": r.node_uuid, **display_attrs(r.attr, t), "score": _f(r.score), "tau": _f(r.tau),
-                           "margin": _f(r.margin), "flagged": bool(r.flagged)} for r in g.itertuples()]
             rec = S["by_id"][wid]
             fl = nodes[nodes["flagged"]]
             rec.update(status="scored", nodes=int(len(nodes)), flagged=int(len(fl)),
@@ -412,14 +400,11 @@ class Engine:
                        **sg_sum, alert=sg_sum["subgraphs_kept"] > 0, scoring_ms=ms,
                        edges_dropped_relation=info["edges_dropped_relation"],
                        max_margin=_f(nodes["margin"].max()))
-            # display copy: subgraphs.json and the LLM job keep the raw attrs
-            shown = [{**g, "nodes": [{**n, **display_attrs(n.get("attr"), n["type"])} for n in g["nodes"]]}
-                     for g in subgraphs[:25]]
-            S["details"][wid] = {"top": top, "subgraphs": shown, "truncated": truncated,
-                                 "subgraphs_total": len(subgraphs), "alg1_stats": sg_stats}
+            S["details"][wid] = make_detail(nodes, subgraphs, sg_stats, truncated, self.top_k)
             if rec["alert"] and self.llm:
                 self._queue_llm(S, rec, wdir, subgraphs, edges_norm)
             self._write_index(S, rec, info)
+            write_json_atomic(os.path.join(wdir, "detail.json"), {"window": rec, **S["details"][wid]})
             self._emit({"type": "window", "window": rec})
 
     # ---------------------------------------------------------------- LLM triage + report (alg2.py)
@@ -472,23 +457,46 @@ class Engine:
                     traceback.print_exc()
                     summary, state = None, {"status": "error", "error": f"{type(e).__name__}: {e}"}
                 with self.lock:
+                    # the verdict is kept even if the session rotated meanwhile: it goes to the window's own
+                    # folder (sessions/<sdir>/windows/<wid>) and to history.jsonl; only the UI memory is per session
+                    sdir = os.path.dirname(os.path.dirname(wdir))
                     S = self.session
-                    if S is None or S["id"] != sid:
-                        continue
-                    rec = S["by_id"][wid]
+                    current = S is not None and S["id"] == sid and S["dir"] == sdir
+                    if current:
+                        rec = S["by_id"][wid]
+                        det = S["details"].setdefault(wid, {})
+                        owner = S
+                    else:
+                        row = self.history.get(os.path.basename(sdir), wid) or {"window": wid}
+                        owner = {"dir": sdir, "id": sid, "mode": row.get("mode", "live")}
+                        rec = {k: v for k, v in row.items() if k not in ("sdir", "session", "mode", "moderate_from")}
+                        try:
+                            det = json.load(open(os.path.join(wdir, "detail.json")))
+                        except (OSError, ValueError):
+                            det = {}
+                        det.pop("window", None)
                     rec["llm"] = state
-                    S["details"].setdefault(wid, {})["llm"] = summary
-                    with open(os.path.join(S["dir"], "llm_verdicts.csv"), "a", newline="") as fh:
+                    det["llm"] = summary
+                    with open(os.path.join(sdir, "llm_verdicts.csv"), "a", newline="") as fh:
                         w = csv.writer(fh)
                         if fh.tell() == 0:
                             w.writerow(["window", "verdict", "confidence", "tactics", "ms", "model"])
                         w.writerow([wid, state["status"], state.get("confidence"), " ".join(state.get("tactics", [])),
                                     state.get("ms"), self.llm_cfg["model"]])
-                    self._emit({"type": "window", "window": rec})
+                    self._persist(owner, rec)
+                    write_json_atomic(os.path.join(wdir, "detail.json"), {"window": rec, **det})
+                    if current:
+                        self._emit({"type": "window", "window": rec})
             finally:
                 self.llm_jobs.task_done()
 
+    def _persist(self, S, rec):
+        """One line in sessions/history.jsonl for this window state (history.py)."""
+        self.history.append({"sdir": os.path.basename(S["dir"]), "session": S["id"], "mode": S.get("mode", ""),
+                             "moderate_from": self.sg["moderate_from"], **rec})
+
     def _write_index(self, S, rec, info):
+        self._persist(S, rec)
         with open(os.path.join(S["dir"], "windows.csv"), "a", newline="") as fh:
             csv.writer(fh).writerow([rec["window"], rec["start_ms"], rec["end_ms"], rec["start_utc"], rec["status"],
                                      rec["edges"], rec["nodes"], rec["flagged"], rec["subgraphs"],
@@ -742,6 +750,26 @@ def selftest():
         lv = pd.read_csv(os.path.join(sdir, "llm_verdicts.csv"))
         assert lv["verdict"].tolist()[-1] == "false_positive", lv
 
+        # persistent history (history.py): every closed window is in sessions/history.jsonl, a fresh store (= a
+        # server restart) returns them by range, and the detail on disk matches the in-memory one incl. the verdict
+        hs = HistoryStore(os.path.join(d, "sessions"))
+        q = hs.query(base, base + 20 * 60_000, include_replay=True)   # the selftest session is a replay
+        assert [w["status"] for w in q["windows"]] == ["partial", "scored", "scored", "scored"], q
+        assert all(w["sdir"] == "selftest" and w["moderate_from"] == alg1.MODERATE_FROM for w in q["windows"])
+        assert q["windows"][1]["llm"]["status"] == "false_positive", q["windows"][1]
+        disk, mem = hs.detail("selftest", w1), eng.window_detail(w1)
+        assert disk["top"] == json.loads(json.dumps(mem["top"])), "detail.json differs from the live detail"
+        assert disk["llm"]["verdict"] == "false_positive" and disk["window"]["llm"]["status"] == "false_positive"
+        # a verdict that lands after the session rotated is still persisted (window folder + history)
+        w2 = wins[2]["window"]
+        eng.ingest({"session": "selftest-b", "mode": "replay", "pid": 999, "batches": []})
+        eng.llm_jobs.put(("selftest", w2, os.path.join(sdir, "windows", w2), [fake], en,
+                          {"window": w2, "start_utc": "", "end_utc": ""}))
+        eng.drain()
+        assert eng.history.get("selftest", w2)["llm"]["status"] == "false_positive"
+        assert eng.history.get("selftest", w2)["status"] == "scored", "rotated-session verdict lost the window"
+        assert HistoryStore(os.path.join(d, "sessions")).detail("selftest", w2)["llm"]["verdict"] == "false_positive"
+
         # 24/7 restart: a second engine (= the server restarted) on the same run gets a fresh .r2 folder; the
         # first folder's raw copy is not appended to
         eng2 = Engine(f"{d}/run", f"{d}/scaler.json", f"{d}/sessions", window_min=5, lateness_s=20,
@@ -782,7 +810,8 @@ def selftest():
         assert sorted(pd.read_csv(os.path.join(s2, "llm_verdicts.csv"))["verdict"]) == ["false_positive", "skipped"]
     print("\n[SELFTEST OK] dedup, 409 on gap, late events counted, shipper PID excluded, "
           "partial window skipped, 3 windows scored, Alg. 1 alert fields, artefacts written, "
-          "LLM verdict pending -> final on its own thread, restart -> .r2 folder, bad event skipped, daily LLM budget")
+          "LLM verdict pending -> final on its own thread, history.jsonl + detail.json persisted (also after a session "
+          "rotation), restart -> .r2 folder, bad event skipped, daily LLM budget")
 
 
 if __name__ == "__main__":

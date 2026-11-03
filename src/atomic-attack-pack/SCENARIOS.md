@@ -34,10 +34,10 @@ artefacts above fall under.
 
 ## The alert cut-off (honesty)
 
-A window alerts only if one subgraph holds roughly ≥ 30 anomalous nodes (DEVIATIONS D8), a threshold set
-on ONE benign window. The kill chain is sized (a Discovery burst of several processes + the download +
+A window alerts only if one subgraph holds roughly ≥ 10 anomalous nodes (the paper's Moderate, DEVIATIONS D8;
+it was ≥ 30, set on ONE benign window, until 2026-11-03). The kill chain is sized (a Discovery burst of several processes + the download +
 persistence, all rooted at the unseen RCE shell) to clear it, but this is **confirmed on a capture, not
-tuned to the attack**: if the window scores < 30, widen the chain or justify a lower `--sg-moderate-from`
+tuned to the attack**: if the window scores < 10, widen the chain or justify a lower `--sg-moderate-from`
 from the benign baseline — do not re-tune the threshold to the attack window (that fits the test).
 
 ## Run

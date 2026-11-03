@@ -19,7 +19,7 @@ ACM CCS 2025), built as a live demo. **Not a full reproduction** of the paper. S
   (paper §5.1.2); one one-class GNN per node type (OCRGCN), trained on benign activity only; Alg. 1
   anomalous subgraphs + subgraph-score filter; the paper's Alg. 2 prompts for attack reports.
 - **Adapt:** our own Windows 10 ETW captures instead of NODLINK / DARPA; 5-min windows scored live instead
-  of the whole log offline; own trainer; our alert cut-off (Moderate ≥ 30); an LLM triage verdict before the
+  of the whole log offline; own trainer; the paper's alert cut-off (Moderate ≥ 10, §7.2.1); an LLM triage verdict before the
   paper's report prompts.
 - **Leave out:** the paper's evaluation (datasets, metrics, baselines; none of our numbers compare to its
   tables), GraphDB, Alg. 2 l.16–25.
