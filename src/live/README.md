@@ -74,9 +74,23 @@ C:\scripts\start-live.ps1 -Rotate     # fresh live run now = a clean session bef
 C:\scripts\start-live.ps1 -Pause      # stop live and keep it stopped;  -Resume undoes it
 # benign = idle: keep the desktop idle; the always-on capture ships it to Loki, pull an idle range to train
 ```
-The server follows the newest `split="test"` run, and a new run starts a new session. Old `live-*` session
-folders on the trainer (each holds a raw copy, ~2 GB/h) are deleted after 12 idle hours (`live_session_keep_hours`; a
-session holding a `.keep` file is never deleted). Loki keeps 3 days (`loki_retention`): pull training captures within 3 days.
+The server follows the newest `split="test"` run, and a new run starts a new session. Window results are kept
+forever (the history below); only the raw copy of an old `live-*` session (`<session>/raw/`, ~2 GB/h under load)
+is deleted, after 12 idle hours (`live_raw_keep_hours`; a session holding a `.keep` file keeps it). Loki keeps
+3 days (`loki_retention`): pull training captures within 3 days.
+
+**History: query any time range (2026-11-03, `history.py`).** Every window state (closed, scored, error, LLM
+verdict) is appended to `sessions/history.jsonl`, and each scored window's detail to
+`windows/<wid>/detail.json`, so nothing is lost on a restart or a run rotation. The UI's **History** panel
+(from / to in lab time, 1 h · 6 h · 24 h · 7 d, alerts only; the URL keeps the range) lists one row per window
+start and opens a row in the detail panel. The same from a shell:
+```
+curl -s 'http://<trainer>:8000/api/history?from=2026-11-03T17:00:00Z&to=2026-11-03T18:00:00Z&alert=1'
+curl -s 'http://<trainer>:8000/api/history/<session folder>/<window id>'      # one window's detail
+```
+`from`/`to` take ISO-8601 (no offset = UTC) or epoch ms; default the last 24 h; `replay=1` adds replay sessions.
+A row shows the alert, verdict and cut-off **as judged at the time** (`moderate_from`). The first start after the
+upgrade backfills older sessions from their `windows.csv` (no LLM report text for those).
 
 **LLM on the live server.** `ocr-live` has no terminal, so it cannot prompt for the DeepSeek key. Save it
 once on the trainer, then let Ansible add the flags:
@@ -125,10 +139,11 @@ uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train
 
 ### Alert rule (Alg. 1 + SG-Det, `src/pipeline/alg1.py`, DEVIATIONS D8)
 - Subgraph score = Σ prob over its anomalous nodes; prob = (score − train min) / (train max − train min), clamped to [0, 1].
-- Window is red only if ≥ 1 subgraph is ≥ Moderate = score ≥ 30 (our live scale; [AUTHOR CODE] is > 10).
+- Window is red only if ≥ 1 subgraph is ≥ Moderate = score ≥ 10 ([PAPER] §7.2.1; [AUTHOR CODE] is > 10; until
+  2026-11-03 our own live scale was 30). `ocr-live` takes it from Ansible `live_sg_moderate_from` (default 10).
   Subgraphs below the cut-off are still listed (dashed buttons in the UI).
-- Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate --sg-moderate-from 30 [--sg-min-score X]`.
-- Try another cut-off on a saved session without the VM: `./rejudge.sh <id> "" --sg-moderate-from 10.0001`
+- Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate --sg-moderate-from 10 [--sg-min-score X]`.
+- Try another cut-off on a saved session without the VM: `./rejudge.sh <id> "" --sg-moderate-from 30`
   (writes `subgraphs_alg1.{json,csv}` per window).
 
 ### LLM verdict on red windows (`src/pipeline/alg2.py`, DEVIATIONS D9)

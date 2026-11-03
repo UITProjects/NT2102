@@ -135,8 +135,14 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   ws-etw + trainer are fully provisioned and idempotent (ubuntu.yml + windows.yml with vulnlab, verify passes),
   ubuntu-etw by target.yml, and etwcollect → Loki carries all 3 providers. nt2102-vpn 10.21.3.50 is a bare VM
   (OpenVPN not installed yet); external TCP 2102 → pve-master DNAT (`proxmox-firewall.yml`) → :1194. The LLM is on
-  there (DeepSeek, key saved on the trainer, inventory `live_llm_args`); `ocr-live` still loads exp01 (red until a
-  Proxmox-trained model is promoted).
+  there (DeepSeek, key saved on the trainer, inventory `live_llm_args`). `ocr-live` now loads **exp06** (trained
+  2026-11-03 on a 3 h Proxmox idle range; idle green verified). The live DVWA→RCE attack is detected at the node
+  level but does NOT raise an alert on exp06 (subgraph fragments, max 9.0 < Moderate 30) — the attack is partly
+  in-distribution with the 3 h idle baseline. See `docs/PROGRESS.md` top for the full result + open decision.
+- Decided (user, 2026-11-03): SG-Det uses the **paper's level scale** (Moderate from 10, [PAPER] §7.2.1; the
+  [OURS] 30 is retired, D8), and `ocr-live` keeps a **persistent, range-queryable window history** on disk
+  (`src/live/history.py`, `sessions/history.jsonl`, `/api/history`, UI History panel; only raw copies are pruned).
+  Measured before the switch: exp06 idle windows 6 red at 10 vs 1 at 30; the 2026-11-02 attack (9.0) stays green.
 - **Next (user, 2026-11-01): build training and the attack on Proxmox.** (1) Train an idle model from a
   clean idle Loki range of the Proxmox ws-etw. Provisioning time (installs, Ansible runs) is NOT idle.
   (2) Attack: Kali is not on Proxmox yet (it was a Vagrant-only box). It needs a Kali VM on it2102 (planned
@@ -242,7 +248,8 @@ history of earlier progress) and, if relevant, this section.
 - Live (host): `src/live/loki_source.py` (follows Loki) → `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
   reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
   sessions) → `src/pipeline/alg2.py` (optional LLM thread: triage verdict + Alg. 2 l.3–15 report on red
-  windows); `etwship.py --replay` + `compare_replay.py` check the live path against the offline
+  windows) → `src/live/history.py` (persistent window history, `sessions/history.jsonl`, range queries via
+  `/api/history`); `etwship.py --replay` + `compare_replay.py` check the live path against the offline
   pipeline. Run guide: `src/live/README.md`.
 - Artefacts: `src/out/etw/experiments/<id>/` (raw, converted, windowed edges, `windows.csv`,
   `experiment.json`, `check.json`, `pull.json`, benign ledger in `labels/`), `src/artifacts/runs/<run>/`
@@ -280,7 +287,8 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
 - Labels: indicator + time oracle from injected attacks, not analyst ground truth.
 - Live inference: clock-aligned tumbling windows, partial windows not scored, shipper PID excluded,
   no cross-window dedup. Alg. 1 runs in memory per window with the [AUTHOR CODE] subgraph score (Σ clamped
-  min-max prob, not the paper text's "sum of scores"), [OURS] level scale (Moderate from score 30, [AUTHOR CODE] > 10), no top-k fallback.
+  min-max prob, not the paper text's "sum of scores"), [PAPER] §7.2.1 level scale (Moderate from 10; [AUTHOR CODE]
+  > 10; the [OURS] 30 was retired 2026-11-03), no top-k fallback. Window history persisted to files (history.jsonl).
 - LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
   Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
 

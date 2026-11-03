@@ -12,6 +12,7 @@ steps=(
   "src/pipeline/score_window.py --selftest"
   "src/pipeline/alg1.py --selftest"
   "src/pipeline/alg2.py --selftest"
+  "src/live/history.py --selftest"
   "src/live/engine.py --selftest"
   "src/live/etwship.py --selftest"
   "src/pipeline/etw2nodlink.py --selftest"

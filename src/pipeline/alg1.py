@@ -14,10 +14,10 @@ in memory (no GraphDB). [AUTHOR CODE] l.N = upstream detect_anomalous_subgraphs.
     drop identical subgraphs                                                    Alg. 1 l.19    [AUTHOR CODE] l.650-672
     sg_score = sum over ANOMALOUS nodes of                                      Alg. 1 l.21    [AUTHOR CODE] l.864-871
                prob = clamp((score - train_min_t) / (train_max_t - train_min_t), 0, 1)
-    level    = Negligible / Minor / Moderate / Significant / Critical ([OURS] Moderate from MODERATE_FROM)
+    level    = Negligible / Minor / Moderate / Significant / Critical ([PAPER] §7.2.1: Moderate from 10)
     kept     = level >= min_level (default Moderate, [AUTHOR CODE] l.61)               Alg. 1 l.22-24
 
-Deviations ([OURS] level scale, no top-k fallback, `oversize`, --sg-min-score): docs/DEVIATIONS.md D8.
+Deviations (no top-k fallback, `oversize`, --sg-min-score; --sg-moderate-from 30 = the old [OURS] scale): docs/DEVIATIONS.md D8.
 
 Usage (from the repo root)
     uv run python src/pipeline/alg1.py --selftest
@@ -38,7 +38,7 @@ import networkx as nx
 import pandas as pd
 
 LEVELS = ["Negligible", "Minor", "Moderate", "Significant", "Critical"]
-MODERATE_FROM = 30.0                                    # [OURS] live scale; [AUTHOR CODE] l.394 is > 10
+MODERATE_FROM = 10.0       # [PAPER] §7.2.1 "between 10 and 100 ... moderate" (user, 2026-11-03); [AUTHOR CODE] l.394 is > 10
 TYPE_ORDER = {"net": 1, "process": 2, "file": 3}        # [AUTHOR CODE] node_type_order l.674
 
 
@@ -63,7 +63,9 @@ def node_prob(nodes: pd.DataFrame, score_range: dict) -> pd.Series:
 
 
 def classify_level(score: float, moderate_from: float = MODERATE_FROM) -> str:
-    """[AUTHOR CODE] l.394 bounds (upper bound inclusive) except Minor/Moderate: Moderate from `moderate_from` (inclusive)."""
+    """[AUTHOR CODE] l.394 bounds (upper bound inclusive) except Minor/Moderate: Moderate from `moderate_from` (inclusive).
+
+    Default 10 = [PAPER] §7.2.1 (a score of exactly 10 is Moderate); 10.0001 = [AUTHOR CODE] (> 10); 30 = old [OURS]."""
     if score <= 1:
         return "Negligible"
     if score < moderate_from:
@@ -234,21 +236,23 @@ def selftest():
     nd, _ = mk({"a": ("file", 5.0), "b": ("file", -9.0), "c": ("file", -0.4)}, [])
     p = node_prob(nd, rng).round(6).tolist()
     assert p == [1.0, 0.0, 0.5], p
-    assert [classify_level(x) for x in (1, 1.01, 10, 29.99, 30, 100, 100.5, 1000, 1000.5)] == \
-        ["Negligible", "Minor", "Minor", "Minor", "Moderate", "Moderate", "Significant", "Significant", "Critical"]
+    assert [classify_level(x) for x in (1, 1.01, 9.99, 10, 100, 100.5, 1000, 1000.5)] == \
+        ["Negligible", "Minor", "Minor", "Moderate", "Moderate", "Significant", "Significant", "Critical"]  # [PAPER]
     assert [classify_level(x, moderate_from=10.0001) for x in (10, 10.01)] == ["Minor", "Moderate"]  # [AUTHOR CODE] scale
+    assert [classify_level(x, moderate_from=30) for x in (29.99, 30)] == ["Minor", "Moderate"]       # old [OURS] scale
 
     # (a) the 11:25 'updater' shape: 18 DLLs above the training max, loaded by ONE unflagged process
     spec = {"upd": ("process", 0.0), **{f"dll{i}": ("file", 0.32) for i in range(18)}}
     nd, ed = mk(spec, [("upd", f"dll{i}", "load") for i in range(18)])
-    sgs, st = construct(nd, ed, {}, rng)
+    sgs, st = construct(nd, ed, {}, rng, moderate_from=30)
     assert len(sgs) == 1 and sgs[0]["n_anomalous"] == 18 and sgs[0]["n_connectors"] == 1, sgs
-    assert sgs[0]["sg_score"] == 18.0 and sgs[0]["level"] == "Minor" and not sgs[0]["kept"], sgs[0]
+    assert sgs[0]["sg_score"] == 18.0 and sgs[0]["level"] == "Minor" and not sgs[0]["kept"], sgs[0]   # old [OURS] 30
     assert st["seeds"] == 15 and st["left_out"] == 0, st
-    # [AUTHOR CODE] scale (Moderate > 10) -> kept; a numeric cut-off above it -> not kept again
-    g = construct(nd, ed, {}, rng, moderate_from=10.0001)[0][0]
-    assert g["level"] == "Moderate" and g["kept"], g
-    assert not construct(nd, ed, {}, rng, min_score=20, moderate_from=10.0001)[0][0]["kept"]
+    # [PAPER] scale (default, Moderate from 10) and [AUTHOR CODE] (> 10) -> kept; a numeric cut-off above -> not kept
+    for mf in (MODERATE_FROM, 10.0001):
+        g = construct(nd, ed, {}, rng, moderate_from=mf)[0][0]
+        assert g["level"] == "Moderate" and g["kept"], (mf, g)
+    assert not construct(nd, ed, {}, rng, min_score=20)[0][0]["kept"]
 
     # (b) isolated anomalous node + (c) 2 anomalous joined by 1 connector -> Minor/Negligible, dropped
     nd, ed = mk({"iso": ("file", 1.0), "p": ("process", 0.0), "f1": ("file", 1.0), "f2": ("file", 1.0),
@@ -287,7 +291,8 @@ def selftest():
     assert st["subgraphs_built"] >= 2 and all(g["n_edges"] <= 20 for g in sgs), (st, sgs)
     sgs_big, _ = construct(nd, ed, {}, rng, max_edges=0)       # 0 = no cap, as upstream
     assert len(sgs_big) == 1 and sgs_big[0]["n_edges"] == len(ed), sgs_big
-    print("[SELFTEST OK] prob clamp, levels, 18-DLL subgraph = 18 -> Minor (dropped; Moderate/kept on the repo scale), isolated node left out, "
+    print("[SELFTEST OK] prob clamp, levels, 18-DLL subgraph = 18 -> Moderate/kept on the paper scale (Minor/dropped on the "
+          "old 30 scale), isolated node left out, "
           "2-node story Minor (dropped), chain/seed rules as upstream, dedup, Louvain split")
 
 
@@ -327,7 +332,8 @@ def main():
     ap.add_argument("--sg-min-score", type=float, default=None,
                     help="[OURS] numeric cut-off (kept = sg_score > X); overrides --sg-min-level")
     ap.add_argument("--sg-moderate-from", type=float, default=MODERATE_FROM,
-                    help="[OURS] Moderate starts at sg_score >= X (default 30; [AUTHOR CODE] scale: 10.0001)")
+                    help="Moderate starts at sg_score >= X (default 10 = [PAPER] §7.2.1; [AUTHOR CODE] > 10: 10.0001; "
+                         "old [OURS] live scale: 30)")
     a = ap.parse_args()
     if not 1 < a.sg_moderate_from <= 100:
         ap.error("--sg-moderate-from must be in (1, 100]")

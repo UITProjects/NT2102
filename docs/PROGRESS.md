@@ -1,7 +1,65 @@
-# PROGRESS (status as of 2026-11-02)
+# PROGRESS (status as of 2026-11-03)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`provide-infrastructure`**.
+Branch: **`live-paper-levels-history`** (off `deploy-kali-and-configure-ready-tools`).
+
+## ocr-live: paper level scale + persistent history (2026-11-03, DEPLOYED + verified on the Proxmox trainer)
+
+User decision: SG-Det uses the **paper's scale** (Moderate from 10, [PAPER] §7.2.1; retires the [OURS] 30), and
+`ocr-live` keeps every window on disk, queryable by time range (`src/live/history.py` → `sessions/history.jsonl`
++ `windows/<wid>/detail.json`; `GET /api/history?from=&to=&alert=`; UI **History** panel; restarts and run
+rotations no longer empty the UI). Retention: the hourly cron now prunes only `<session>/raw/`
+(`live_raw_keep_hours` 12), window results are kept. Ansible: `live_sg_moderate_from` (default 10) in the unit.
+`./selftest.sh` 17/17 (new `history.py --selftest`); local server smoke test on copied Oct-25 sessions: range
+query, alerts-only, detail rebuilt from disk, path traversal refused, UI renders. Measured on the trainer BEFORE
+the switch (193 scored exp06 idle windows, 11-02 23:14Z → 11-03 15:25Z): **6 red at ≥ 10 vs 1 at ≥ 30**. The
+2026-11-02 attack session was already pruned by the old 12 h cron (its recorded max 9.0 / 2.0 stays green at 10
+too). All three trainer sessions now hold a `.keep` so their raw copies survive.
+Deploy (`ubuntu.yml --tags project -e repo_branch=live-paper-levels-history`, `8d6f668`): `--check --diff` showed
+only the git checkout, the cron line and the unit (`--sg-moderate-from 10`); applied failed=0, re-run `changed=0`.
+Verified 15:47Z: `/healthz` 200, `/api/status` `moderate_from 10.0`; backfill indexed 199 windows from the 3 sessions;
+`/api/history` from the workstation returns them (12 restart/rotation duplicates hidden; 1 alert = the 05:00Z 129.0
+window, LLM false_positive, judged at 30); the restart's `.r2` re-read scored 11 idle windows at cut-off 10, all
+0.0 green, each with a history line + `detail.json`. Note: a plain `ubuntu.yml` run (default `repo_branch: main`)
+rolls this back until the branch is merged.
+
+## Proxmox demo run (2026-11-03, exp06): idle GREEN verified, attack detected at node level but NO alert
+
+User cut training scope 48 h → **3 h** and set a hard 04:00 +07 (21:00Z) auto-shutdown. Done within budget:
+
+- **exp06 trained + promoted** on a clean 3 h idle Loki range of the Proxmox ws-etw
+  (`range-20261102T123000Z`, **12:30–15:30Z**; burst scan rejected the 11:30–12:00Z boot/backlog and a 16:00Z
+  knet spike). Build: 88 windows, 86,943 edges, 866 nodes, `check.json` ok. Contamination EDA clean (no
+  wsmprovhost/mstsc/rdpclip/msiexec; only OS idle: Windows Update servicing, Defender, XAMPP idling). Gate
+  PASS: models for FILE/PROCESS/NET, `emb_std ≠ 0` all (file 0.070, process 0.106, net 0.089), val_fpr 0,
+  train_flag_rate ≈ contamination. NET thin (n_train=262, n_val=0 so its val_fpr is vacuous — SG-Det absorbs).
+  `lab promote exp06` converter_check = match; `ocr-live` restarted on exp06 (healthz 200, DeepSeek LLM on).
+  Backed up to the workstation `src/artifacts/runs/exp06/`.
+- **Idle GREEN (end-goal half 1 met):** 4 consecutive idle live windows 17:10–17:25Z all `alert False`,
+  0 flagged, subgraph 0.0. exp01 red-everything on Proxmox data is fixed.
+- **Attack delivered live (Vagrant Kali exploit origin BLOCKED → stage served from an it2102 box):** the local
+  Vagrant Kali reaches DVWA :3000 via VBox NAT, but ws-etw CANNOT call back to Kali's stage (10.0.2.15/10.21.2.x
+  are laptop-internal; ws-etw→192.168.1.0/24 is DROPPED by the it2102 firewall). ufw on the trainer also blocks
+  inbound 8080. Working path: serve the stage + run `launch_exploit.py --attacker-ip 10.21.3.50` from
+  **nt2102-vpn** (no ufw, iptables INPUT ACCEPT, same subnet as ws-etw). ws-etw fetched attack-lib/killchain/
+  tool.bin (200) and the **full chain ran on the endpoint**: httpd→cmd→powershell cradle, `downloaded_tool.bin`
+  (T1105), and the complete discovery set (whoami/systeminfo/hostname/tasklist/ipconfig/net/net1/schtasks).
+- **Result — NOT red (end-goal half 2 NOT met):** attack windows 17:30Z (two attempts, one a failed-callback
+  dry run) = 32 flagged / 5 subgraphs / **max 9.0 Minor / alert False**; 17:40Z (one clean attempt) = 4 flagged
+  / **max 2.0 Minor / alert False**. Idle vs attack separate cleanly (0 vs 4–32 flagged) so detection *works at
+  the node level*, but the subgraph score never approaches Moderate=30 (vs exp05's 106.96).
+- **Diagnosis (the real finding):** only 5/44 processes flag; the discovery binaries score BELOW τ and, with no
+  flagged parent linking them, Alg.1 fragments the attack into small disconnected subgraphs instead of one big
+  one. Root cause = the attack is **partly in-distribution**: exp06's 3 h idle baseline already contains
+  `httpd`/`mysqld`/`powershell` idling (XAMPP + scheduled tasks), so the RCE's reuse of those looks normal.
+  More attack activity → more flags (double-attempt 9.0 > single 2.0). **The longer, cleaner baseline that made
+  idle reliably green is the same thing that made the attack under-detected — the exp04 lesson, quantified.**
+- **Open decision (do NOT silently tune):** to get a true red honestly, options are (a) retrain on a THINNER
+  idle slice like exp05's ~16 min (fewer idle binaries in-distribution → attack separates, but more benign-FP
+  risk); (b) recalibrate `--sg-moderate-from` for exp06 — but idle-only data (0.0) gives no benign ceiling, so
+  lowering it now is the thin-baseline trap; (c) accept node-level detection and report it. Left at
+  moderate_from=30 pending the user. See [[live-detector-benign-fp]], DEVIATIONS D2/D8. **Superseded 2026-11-03:**
+  the user chose the paper's 10 (section above); (a)/(c) remain open for getting the attack red.
 
 ## Current focus
 
