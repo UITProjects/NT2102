@@ -3,7 +3,7 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`live-paper-levels-history`** (off `deploy-kali-and-configure-ready-tools`).
 
-## ocr-live: paper level scale + persistent history (2026-11-03, code + selftests; deploy: see below)
+## ocr-live: paper level scale + persistent history (2026-11-03, DEPLOYED + verified on the Proxmox trainer)
 
 User decision: SG-Det uses the **paper's scale** (Moderate from 10, [PAPER] §7.2.1; retires the [OURS] 30), and
 `ocr-live` keeps every window on disk, queryable by time range (`src/live/history.py` → `sessions/history.jsonl`
@@ -15,6 +15,13 @@ query, alerts-only, detail rebuilt from disk, path traversal refused, UI renders
 the switch (193 scored exp06 idle windows, 11-02 23:14Z → 11-03 15:25Z): **6 red at ≥ 10 vs 1 at ≥ 30**. The
 2026-11-02 attack session was already pruned by the old 12 h cron (its recorded max 9.0 / 2.0 stays green at 10
 too). All three trainer sessions now hold a `.keep` so their raw copies survive.
+Deploy (`ubuntu.yml --tags project -e repo_branch=live-paper-levels-history`, `8d6f668`): `--check --diff` showed
+only the git checkout, the cron line and the unit (`--sg-moderate-from 10`); applied failed=0, re-run `changed=0`.
+Verified 15:47Z: `/healthz` 200, `/api/status` `moderate_from 10.0`; backfill indexed 199 windows from the 3 sessions;
+`/api/history` from the workstation returns them (12 restart/rotation duplicates hidden; 1 alert = the 05:00Z 129.0
+window, LLM false_positive, judged at 30); the restart's `.r2` re-read scored 11 idle windows at cut-off 10, all
+0.0 green, each with a history line + `detail.json`. Note: a plain `ubuntu.yml` run (default `repo_branch: main`)
+rolls this back until the branch is merged.
 
 ## Proxmox demo run (2026-11-03, exp06): idle GREEN verified, attack detected at node level but NO alert
 
