@@ -106,12 +106,25 @@ to `it2102_rules` (ws-etw accepts the DVWA exploit; Kali accepts the callback vi
 accept). The 7 base resources are now in state (user ran `apply`). **Fix pending apply:** creating `it2102k`
 gave pve-master a new IP `10.21.4.1`, so every VM could reach the node UI/SSH there, bypassing the existing
 `10.21.3.1` drop — added an `OUT DROP → 10.21.4.1` to the shared `it2102_rules` (user, 2026-11-03). `plan` =
-**0 add / 5 change / 0 destroy** (the drop added to all 5 VMs' rules). Ansible: `proxmox.ini` `[attacker]`
-group (user/password auth, `kali_password` in the gitignored vault, needs `sshpass`), `kali.yml` +
-`kali_attack` role (copies `src/atomic-attack-pack` → `/opt/attack-pack`, selftest ok locally). Auth = Kali's
-public default `kali` / `kali` hardcoded in `proxmox.ini` (user, 2026-11-04; not a secret on the lab subnet,
-like vagrant/vagrant), so no vault for Kali. **Pending (user): `terraform apply` the firewall fix.** Kali VM
-built + ssh ready (10.21.4.30:22 reachable); next action is verifying `kali.yml`. See `infrastructure/README.md` "kali".
+**0 add / 5 change / 0 destroy** (the drop added to all 5 VMs' rules; still **pending user `terraform apply`**).
+Ansible (branch `provision-kali-ansible`): `proxmox.ini` `[attacker]` group + `kali.yml` + `kali_attack` role
+(copies `src/atomic-attack-pack` → `/opt/attack-pack`, launcher selftest). Auth = Kali's public default
+`kali` / `kali` hardcoded in `proxmox.ini` (user, 2026-11-04; not a secret on the lab subnet, like
+vagrant/vagrant), no vault. **Kali VERIFIED (2026-11-04):** ping ok, `kali.yml` first run failed=0 / re-run
+changed=0, pack in place, selftest passes on the VM; Kali→DVWA on ws-etw:3000 = 200 (cross-subnet path works).
+
+**Live scripted attack run on exp07 (2026-11-04 14:55Z) — detected at node level, NO alert.** Launched the
+DVWA→RCE kill chain from the Proxmox Kali (`launch_exploit.py --target http://10.21.3.10:3000`): HTTP 200,
+ws-etw fetched lib/killchain/tool.bin (200) and the chain ran (httpd→cmd→powershell, discovery, T1105, schtask
+`UpdaterSync`). Result in `ocr-live` (session `live-20261104T114407Z.r5`, `moderate_from 10`): idle windows
+14:30–14:50Z green (0 flagged); attack window **14:55Z = 9 flagged / 1 subgraph / max_sg 8.49 / Minor /
+alert False**. `detail.json` shows the flagged subgraph holds the real attack nodes (Kali C2 `10.21.4.30`,
+powershell, cmd.exe, schtasks, whoami, systeminfo) — so detection works at the node level, but the subgraph
+score (8.49) fell **just below Moderate=10**, so no alert and no LLM investigation. Same under-detection as
+exp06 (partly in-distribution idle baseline) and consistent with exp07's seed-dependent replay red. Not tuned.
+LLM budget raised 10→15 beforehand (`9fb38ff`) but unused (LLM is alert-only). Cleanup ran (`cleanup-all.ps1`:
+`UpdaterSync` + `downloaded_tool.bin` removed, shells killed; task confirmed gone). See `infrastructure/README.md`
+"kali"; getting the attack honestly red is the open D2 decision (thinner baseline, etc.).
 
 **nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
 router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
