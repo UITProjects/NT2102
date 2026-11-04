@@ -1,0 +1,10 @@
+{
+ "comment": "Held-out part: excluded from the exp07-val models only, so their replay runs on unseen windows. The final exp07 trains on it.",
+ "ranges": [
+  {
+   "start": "2026-11-03T17:25:00Z",
+   "end": "2026-11-04T11:44:00Z",
+   "reason": "held out for the replay comparison"
+  }
+ ]
+}

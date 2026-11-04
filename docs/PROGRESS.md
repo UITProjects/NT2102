@@ -1,7 +1,34 @@
-# PROGRESS (status as of 2026-11-03)
+# PROGRESS (status as of 2026-11-04)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`live-paper-levels-history`** (off `deploy-kali-and-configure-ready-tools`).
+Branch: **`retrain-2day-exclusions`** (off `deploy-kali`). All work on the Proxmox VMs; **Vagrant is marked for removal**
+(user, 2026-11-04; not deleted yet).
+
+## exp07: retrained on ~41 h of idle (2026-11-04, PROMOTED + live on the Proxmox trainer)
+
+exp06 raised 16 windows ≥ 10 in 431 (all 11 LLM-judged = false_positive). Cause: its 3 h baseline misses jobs on daily
+and ~10 h cycles (11 windows); the other 5 were RDP sessions over the team VPN. Full account:
+`docs/notes/retrain-2day-fp-lesson.md`. Experiment `range-2d-20261104` (11-02 12:30Z → 11-04 11:44Z, 1,415 windows) minus
+174 excluded (attack, RDP sessions, rotation canary): `src/artifacts/exclusions/`. Attack recording saved as
+`attack-20261102`.
+
+Replay of the same 228 windows, cut-off 10, label source operator assertion, LLM off. exp06's replay matched live in
+214/215 windows and the attack exactly. Held-out models trained to 11-03 17:25Z (seeds 360/361/362):
+
+| Label | Windows | exp06 red | Held-out red per seed | exp07 red |
+|---|---|---|---|---|
+| idle | 200 | 4 | 0 / 0 / 0 (0.0 ± 0.0) | 0 (in-sample, not evidence) |
+| human session | 21 | 5 | 3 / 1 / 1 (1.7 ± 1.2) | 5 |
+| attack | 7 | 0 | 2 / 0 / 0 (0.7 ± 1.2) | 2 (35.3, 33.5; exp06 9.0, 2.0) |
+
+**Idle FP fixed on unseen data; attack red on exp07 but seed-dependent** (only seed 360; 361/362 stay ≤ 4.9), and it is one
+recorded attack, not a new live run. exp07 gate: `best_ep` 99 all types, τ file −0.178 / net −0.523 / process −0.210, `n_val`
+10102 / 220 / 712, `val_fpr` 0.003 / 0 / 0, `emb_std` 0.073 / 0.110 / 0.104, converter match. New: `lab train --exclude-file`,
+`lab compare`, trainer `--tnr-tolerance` (D5). A first model was rejected (`best_ep=4`, τ +4.94, passed the old gate).
+
+**Not yet:** ≥ 24 h live soak across the ~05:05Z and ~11:15Z jobs (the only idle test of exp07 itself). Open: teammates to
+confirm the RDP sessions; `powershell.exe` is in every window because our 5-min watchdog starts it (likely why the attack
+scores weakly, [INFERENCE], untested). `ocr-live` code on the trainer is copied by SSH, uncommitted, until the branch is pushed.
 
 ## ocr-live: paper level scale + persistent history (2026-11-03, DEPLOYED + verified on the Proxmox trainer)
 
@@ -68,9 +95,24 @@ User cut training scope 48 h → **3 h** and set a hard 04:00 +07 (21:00Z) auto-
 provisioned both (ubuntu.yml + windows.yml with vulnlab: first run failed=0, re-runs `changed=0`, verify-windows
 passes, DVWA :3000 = 200, Grafana = 200, Loki receives kproc/kfile/knet from ws-etw, collector 0 lost events).
 Open: the first-run kfile ship backlog (~2M install events) was draining; LLM on (DeepSeek key saved on the
-trainer); `ocr-live` on exp01 (red until a Proxmox model is promoted); no Kali on Proxmox yet.
+trainer); `ocr-live` on exp07 (top section).
 
-**nt2102-vpn (2026-11-02):** VM 2105 at 10.21.3.50, bare (OpenVPN not installed yet). External TCP 2102 → home
+**Kali on Proxmox — base infra APPLIED; one firewall fix pending apply (2026-11-03).** `infrastructure/main.tf`
+adds a Kali attacker on its OWN SDN VNet `it2102k` / subnet **10.21.4.0/24** (gw 10.21.4.1, SNAT), VM 2106
+`kali` 10.21.4.30 (2 cores, 4 GB, 40 GB), from the **installer ISO** (`kali-2026.3`, manual install, no
+cloud-init). A dedicated `proxmox_sdn_applier.kali` applies the new VNet (the main applier does not re-run
+for a newly added VNet). The cross-subnet attack path is opened by an `IN ACCEPT ← 10.21.4.0/24` rule added
+to `it2102_rules` (ws-etw accepts the DVWA exploit; Kali accepts the callback via the existing 10.21.3.0/24
+accept). The 7 base resources are now in state (user ran `apply`). **Fix pending apply:** creating `it2102k`
+gave pve-master a new IP `10.21.4.1`, so every VM could reach the node UI/SSH there, bypassing the existing
+`10.21.3.1` drop — added an `OUT DROP → 10.21.4.1` to the shared `it2102_rules` (user, 2026-11-03). `plan` =
+**0 add / 5 change / 0 destroy** (the drop added to all 5 VMs' rules). Ansible: `proxmox.ini` `[attacker]`
+group (user/password auth, `kali_password` in the gitignored vault, needs `sshpass`), `kali.yml` +
+`kali_attack` role (copies `src/atomic-attack-pack` → `/opt/attack-pack`, selftest ok locally). **Pending
+(user): `terraform apply` the firewall fix; manual Kali install (IP+ssh+password); add a 10.21.4.0/24 route
+on the home router; then `kali.yml`.** See `infrastructure/README.md` "kali".
+
+**nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
 router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
 and the DNAT comment now say TCP (were UDP): needs `terraform apply` + a `proxmox-firewall.yml` re-run.
 

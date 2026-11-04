@@ -30,6 +30,20 @@ locals {
   vpn_vm_id = 2105
   vpn_name  = "nt2102-vpn"
   vpn_ip    = "10.21.3.50"
+
+  # Kali attacker: its OWN SDN VNet/subnet (10.21.4.0/24), separate from the lab subnet. Built from the
+  # installer ISO (no Kali cloud image), so it is installed by hand in the console like ws-etw: no
+  # cloud-init, IP/user/SSH set manually. Ansible then provisions it (src/ansible/kali.yml).
+  kali_vnet_id        = "it2102k" # SDN VNet names: <= 8 alnum chars
+  kali_subnet_cidr    = "10.21.4.0/24"
+  kali_subnet_gateway = "10.21.4.1"
+  kali_vm_id          = 2106
+  kali_name           = "kali"
+  kali_ip             = "10.21.4.30" # echoes the Vagrant Kali's .30 (src/Vagrantfile)
+  # Version-pinned installer ISO. [INFERENCE] 2026.3 was the current release when written (verified to
+  # resolve); confirm/bump against https://www.kali.org/get-kali before `apply` (like iso_url above).
+  kali_iso_url       = "https://cdimage.kali.org/kali-2026.3/kali-linux-2026.3-installer-amd64.iso"
+  kali_iso_file_name = "kali-linux-installer-amd64.iso"
   # Extra rule on top of it2102_rules (only this VM): VPN clients come from outside the lab subnet.
   vpn_rules = [
     {
@@ -62,12 +76,28 @@ locals {
       comment = "it2102: VM -> PVE node via VNet gateway (UI/SSH); routing through it still works"
     },
     {
+      type    = "out"
+      action  = "DROP"
+      source  = null
+      dest    = local.kali_subnet_gateway
+      log     = "info"
+      comment = "it2102: VM -> PVE node via the Kali VNet gateway 10.21.4.1 (UI/SSH); the node has an IP on it2102k too"
+    },
+    {
       type    = "in"
       action  = "ACCEPT"
       source  = local.subnet_cidr
       dest    = null
       log     = null
       comment = "it2102: Lab subnet (Kali/trainer -> RDP, DVWA)"
+    },
+    {
+      type    = "in"
+      action  = "ACCEPT"
+      source  = local.kali_subnet_cidr
+      dest    = null
+      log     = null
+      comment = "it2102: Kali attacker subnet -> DVWA exploit + RCE callback (cross-subnet)"
     },
   ]
 }
@@ -98,6 +128,25 @@ resource "proxmox_sdn_subnet" "lab" {
   depends_on = [proxmox_sdn_applier.finalizer]
 }
 
+# Kali's own VNet + subnet in the same zone: a separate L2 segment with its own gateway + SNAT. Traffic
+# to the lab subnet (10.21.3.0/24) is routed between the two gateways by the PVE node (not masqueraded),
+# so ws-etw sees Kali's real 10.21.4.30 source.
+resource "proxmox_sdn_vnet" "kali" {
+  id   = local.kali_vnet_id
+  zone = proxmox_sdn_zone_simple.lab.id
+
+  depends_on = [proxmox_sdn_applier.finalizer]
+}
+
+resource "proxmox_sdn_subnet" "kali" {
+  cidr    = local.kali_subnet_cidr
+  vnet    = proxmox_sdn_vnet.kali.id
+  gateway = local.kali_subnet_gateway
+  snat    = true
+
+  depends_on = [proxmox_sdn_applier.finalizer]
+}
+
 resource "proxmox_sdn_applier" "apply" {
   lifecycle {
     replace_triggered_by = [
@@ -111,6 +160,26 @@ resource "proxmox_sdn_applier" "apply" {
     proxmox_sdn_zone_simple.lab,
     proxmox_sdn_vnet.lab,
     proxmox_sdn_subnet.lab,
+  ]
+}
+
+# A dedicated applier for the Kali VNet/subnet. proxmox_sdn_applier applies pending SDN config on
+# create/replace (on_create defaults true), and replace_triggered_by only fires when a referenced
+# resource is *replaced*, never on first creation. So adding kali to the main "apply" applier above would
+# NOT reload the node the first time. A new applier here, created on this same apply, DOES run on_create
+# and so applies the pending kali VNet/subnet to the node; replace_triggered_by then re-applies on any
+# later change to them.
+resource "proxmox_sdn_applier" "kali" {
+  lifecycle {
+    replace_triggered_by = [
+      proxmox_sdn_vnet.kali,
+      proxmox_sdn_subnet.kali,
+    ]
+  }
+
+  depends_on = [
+    proxmox_sdn_vnet.kali,
+    proxmox_sdn_subnet.kali,
   ]
 }
 
@@ -479,4 +548,99 @@ resource "proxmox_virtual_environment_firewall_rules" "vpn" {
   }
 
   depends_on = [proxmox_virtual_environment_firewall_options.vpn]
+}
+
+# ---- Kali attacker VM (installer ISO, manual install; on its own VNet it2102k) --------------------
+resource "proxmox_download_file" "kali_iso" {
+  content_type   = "iso"
+  datastore_id   = local.iso_datastore_id
+  node_name      = local.node_name
+  url            = local.kali_iso_url
+  file_name      = local.kali_iso_file_name
+  upload_timeout = 3600
+}
+
+resource "proxmox_virtual_environment_vm" "kali" {
+  node_name   = local.node_name
+  vm_id       = local.kali_vm_id
+  name        = local.kali_name
+  description = "NT2102 Kali attacker (manual install from ISO). Managed by Terraform; provisioned by src/ansible/kali.yml."
+  tags        = ["nt2102", "kali", "attacker"]
+
+  operating_system {
+    type = "l26"
+  }
+  cpu {
+    cores = 2
+    type  = "host"
+  }
+  memory {
+    dedicated = 4096
+  }
+
+  # Linux installer: SeaBIOS + virtio disk/NIC (Kali's installer has virtio drivers; no UEFI/TPM or a
+  # driver ISO needed, unlike the Windows VM).
+  scsi_hardware = "virtio-scsi-single"
+  disk {
+    datastore_id = local.vm_datastore_id
+    interface    = "scsi0"
+    size         = 40
+    iothread     = true
+    discard      = "on"
+  }
+  cdrom {
+    file_id   = proxmox_download_file.kali_iso.id
+    interface = "ide2"
+  }
+
+  # Disk first; an empty disk falls through to the CD for the install.
+  boot_order = ["scsi0", "ide2"]
+
+  network_device {
+    bridge   = proxmox_sdn_vnet.kali.id
+    model    = "virtio"
+    firewall = true
+  }
+
+  serial_device {}
+
+  # No initialization{} block: that is cloud-init, which the Kali installer ISO has none of. IP
+  # (10.21.4.30/24, gw 10.21.4.1), the kali user's password and ssh are set by hand in the console.
+
+  started         = true
+  on_boot         = false
+  stop_on_destroy = true
+
+  # The kali applier (not the main one) is what applies the it2102k VNet to the node.
+  depends_on = [proxmox_sdn_applier.kali]
+}
+
+resource "proxmox_virtual_environment_firewall_options" "kali" {
+  node_name = local.node_name
+  vm_id     = proxmox_virtual_environment_vm.kali.vm_id
+
+  enabled       = true
+  input_policy  = "ACCEPT"
+  output_policy = "ACCEPT"
+}
+
+resource "proxmox_virtual_environment_firewall_rules" "kali" {
+  node_name = local.node_name
+  vm_id     = proxmox_virtual_environment_vm.kali.vm_id
+
+  # Shared it2102 rules: Kali accepts inbound from the lab subnet (the ws-etw -> Kali stage callback) and
+  # may send outbound to ws-etw:3000 (the OUT DROPs only target the home LAN + the node gateway).
+  dynamic "rule" {
+    for_each = local.it2102_rules
+    content {
+      type    = rule.value.type
+      action  = rule.value.action
+      source  = rule.value.source
+      dest    = rule.value.dest
+      log     = rule.value.log
+      comment = rule.value.comment
+    }
+  }
+
+  depends_on = [proxmox_virtual_environment_firewall_options.kali]
 }

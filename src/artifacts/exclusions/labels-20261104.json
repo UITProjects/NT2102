@@ -1,0 +1,17 @@
+{
+ "comment": "Labels for lab compare. Windows outside these ranges are idle by operator assertion.",
+ "ranges": [
+  {
+   "start": "2026-11-02T17:25:00Z",
+   "end": "2026-11-02T18:00:00Z",
+   "reason": "live DVWA->RCE attack",
+   "label": "attack"
+  },
+  {
+   "start": "2026-11-04T03:35:00Z",
+   "end": "2026-11-04T05:20:00Z",
+   "reason": "RDP session over the team VPN",
+   "label": "human-session"
+  }
+ ]
+}

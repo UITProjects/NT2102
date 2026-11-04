@@ -133,12 +133,15 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   endpoint, 2026-11-02) on the SDN VNet `it2102`
   (10.21.3.0/24, LAN-isolated firewall), and `src/ansible/proxmox.ini` provisions them over a routed path.
   ws-etw + trainer are fully provisioned and idempotent (ubuntu.yml + windows.yml with vulnlab, verify passes),
-  ubuntu-etw by target.yml, and etwcollect → Loki carries all 3 providers. nt2102-vpn 10.21.3.50 is a bare VM
-  (OpenVPN not installed yet); external TCP 2102 → pve-master DNAT (`proxmox-firewall.yml`) → :1194. The LLM is on
-  there (DeepSeek, key saved on the trainer, inventory `live_llm_args`). `ocr-live` now loads **exp06** (trained
-  2026-11-03 on a 3 h Proxmox idle range; idle green verified). The live DVWA→RCE attack is detected at the node
+  ubuntu-etw by target.yml, and etwcollect → Loki carries all 3 providers. nt2102-vpn 10.21.3.50 runs OpenVPN (team certs); external TCP 2102 → pve-master DNAT (`proxmox-firewall.yml`) → :1194. The LLM is on
+  there (DeepSeek, key saved on the trainer, inventory `live_llm_args`). `ocr-live` loaded **exp06** (trained
+  2026-11-03 on a 3 h Proxmox idle range) until exp07 replaced it on 2026-11-04. The live DVWA→RCE attack is detected at the node
   level but does NOT raise an alert on exp06 (subgraph fragments, max 9.0 < Moderate 30) — the attack is partly
   in-distribution with the 3 h idle baseline. See `docs/PROGRESS.md` top for the full result + open decision.
+- DONE (2026-11-04): **exp07** promoted: ~41 h idle, attack + RDP sessions + rotation canary excluded by window. Held-out
+  replay: idle reds 4 → 0 (3 seeds, 200 windows). Attack replay red on exp07 (35.3, 33.5) but seed-dependent (1 of 3) and one
+  recorded attack. Live soak pending. See `docs/notes/retrain-2day-fp-lesson.md`, PROGRESS, D2, D5.
+- Work happens on the Proxmox VMs, controlled over Ansible/SSH; **Vagrant is marked for removal** (user, 2026-11-04).
 - Decided (user, 2026-11-03): SG-Det uses the **paper's level scale** (Moderate from 10, [PAPER] §7.2.1; the
   [OURS] 30 is retired, D8), and `ocr-live` keeps a **persistent, range-queryable window history** on disk
   (`src/live/history.py`, `sessions/history.jsonl`, `/api/history`, UI History panel; only raw copies are pruned).
@@ -235,7 +238,8 @@ history of earlier progress) and, if relevant, this section.
   firewall rules prefixed `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`; `proxmox-firewall.yml`
   adds the pve-master DNAT (TCP 2102 → nt2102-vpn:1194).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
-  = pull + build → features → train into one run folder; `lab promote <run>` sets the current-model
+  = pull + build → features → train into one run folder; `lab compare` (two models on the same replayed windows); `lab train --exclude-file` (leave windows out);
+  `lab promote <run>` sets the current-model
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
   `live_server.py`, `serve.sh`, `rejudge.sh` and `ocr-live` read.
 - Attack side: `src/atomic-attack-pack/` — one RCE kill chain (`scenarios/rce-killchain.ps1`) delivered
