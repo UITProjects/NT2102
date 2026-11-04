@@ -7,12 +7,15 @@
 #>
 $taskName = "UpdaterSync"                 # must match scenarios/rce-killchain.ps1
 $toolPath = "C:\Users\Public\downloaded_tool.bin"
+$toolsDir = "C:\Users\Public\tools"       # the downloaded hacker-tool markers (T1105)
 
 # Persistence (T1053.005)
 schtasks /delete /tn $taskName /f 2>$null
 
-# Ingress-transfer artefact (T1105)
+# Ingress-transfer artefacts (T1105): the single marker + the tools dir of inert markers.
+# (The MySQL phase is read-only, so there is nothing to undo in the DB.)
 Remove-Item $toolPath -Force -ErrorAction SilentlyContinue
+Remove-Item $toolsDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Kill any shell still running under the exploited service (httpd.exe -> cmd.exe -> powershell), best
 # effort. Match on the cmd.exe injected by DVWA (parent httpd.exe) and the powershell it spawned, so we
@@ -28,5 +31,5 @@ $injectedCmd | ForEach-Object {
     Stop-Process -Id $cmdId -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "cleanup complete ($taskName removed, $toolPath removed, RCE shells killed)." -ForegroundColor Green
+Write-Host "cleanup complete ($taskName removed, $toolPath + $toolsDir removed, RCE shells killed)." -ForegroundColor Green
 Write-Host "Snapshot restore is still the cleanest reset." -ForegroundColor DarkGray

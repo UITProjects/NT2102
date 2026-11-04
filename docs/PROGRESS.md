@@ -126,6 +126,24 @@ LLM budget raised 10→15 beforehand (`9fb38ff`) but unused (LLM is alert-only).
 `UpdaterSync` + `downloaded_tool.bin` removed, shells killed; task confirmed gone). See `infrastructure/README.md`
 "kali"; getting the attack honestly red is the open D2 decision (thinner baseline, etc.).
 
+**Richer attack + NET-boost rollback (2026-11-04, branch `provision-kali-ansible`).** After the 8.49 near-miss
+we briefly added an [OURS] NET ×2 SG-Det weight, then **rolled it back** (offline preview only reached 9.42 with
+one flagged NET node; detector tuning the user rejected) and instead made the *attack* realistic/high-volume so it
+clears Moderate honestly: `rce-killchain.ps1` now does T1046 loud subnet sweep (10.21.3.1-50 + Kali, 7 ports) +
+T1105 five INERT tool markers (mimikatz/psexec/nc/nmap/rclone) + read-only MySQL enumerate/dump (`mysql -uroot`,
+no password) + T1071 beacon loop (`--attack-seconds` default 180) + T1053.005. Benign/lab-only; disclosed [OURS]
+in SCENARIOS/manifest/DEVIATIONS D8. Launcher serves the markers + `/beacon`; cleanup clears the tools dir.
+**Live result (15:50Z, exp07, detector paper-faithful — no net weight):** pre-attack idle 15:45Z green; attack
+window **15:50Z = 20 flagged (13 file + 7 net) / 2 subgraphs / max_sg 11.70 / Moderate / alert True** — the kept
+subgraph holds the real attack NET nodes (C2 `10.21.4.30:8080`, DB `10.21.3.10:3306`, scanned SSH `.11/.20/.30/.50:22`)
++ networking DLLs. **So the richer attack DOES raise a true alert — the scan's NET breadth (not weighting) pushed it
+over 10.** HONEST caveats: (1) margin is thin (11.70 vs 10) and NOT attack-specific — my own bulk WinRM/admin
+activity minutes earlier (15:40Z) also went red at 11.03 (idle model is thin, the known FP mode); (2) the LLM
+triage returned **`uncertain`** (not a confident `attack` like exp05's 0.85), so the LLM layer did not confirm it;
+(3) the NET signal depends on the Linux hosts' SSH being up (open ports = the flagged scan nodes). Cleanup ran;
+idle-green re-confirmation pending (my cleanup WinRM copy dirties 15:55Z). Repo selftests 17/17; attack-pack commit
+staged (GPG cold, handed to user). See [[live-detector-benign-fp]], DEVIATIONS D8.
+
 **nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
 router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
 and the DNAT comment now say TCP (were UDP): needs `terraform apply` + a `proxmox-firewall.yml` re-run.
