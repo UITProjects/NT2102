@@ -34,3 +34,13 @@ output "vpn_ip" {
   description = "Static IP cloud-init gives nt2102-vpn (OpenVPN server)."
   value       = "${local.vpn_ip}/${split("/", local.subnet_cidr)[1]}"
 }
+
+output "kali_subnet_cidr" {
+  description = "Kali's own SDN subnet (VNet it2102k)."
+  value       = local.kali_subnet_cidr
+}
+
+output "kali_ip" {
+  description = "Static IP to set in Kali by hand (no cloud-init on the ISO install)."
+  value       = "${local.kali_ip}/${split("/", local.kali_subnet_cidr)[1]}"
+}

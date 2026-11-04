@@ -57,15 +57,19 @@ firewall stays enabled**: it is enabled on `pve-master` (`policy_in: ACCEPT`) an
 managed here, because the home-lab VMs share it. First match wins:
 
 1. OUT DROP → `192.168.1.0/24` (home LAN), logged
-2. OUT DROP → `10.21.3.1` (the node itself via the VNet gateway: UI :8006, SSH :22), logged. Routing to
+2. OUT DROP → `10.21.3.1` (the node via the it2102 VNet gateway: UI :8006, SSH :22), logged. Routing to
    the internet through the gateway still works.
-3. IN ACCEPT ← `10.21.3.0/24` (lab subnet: RDP, DVWA)
-4. Defaults: input DROP, output ACCEPT. Replies to the VM's own connections pass via connection tracking.
+3. OUT DROP → `10.21.4.1` (the node via the **it2102k** VNet gateway), logged. The node has an IP on the
+   Kali VNet too, so without this a VM could reach the UI/SSH at `10.21.4.1` and bypass rule 2.
+4. IN ACCEPT ← `10.21.3.0/24` (lab subnet: RDP, DVWA)
+5. IN ACCEPT ← `10.21.4.0/24` (Kali attacker subnet: cross-subnet DVWA exploit + RCE callback)
+6. Defaults: input DROP, output ACCEPT. Replies to the VM's own connections pass via connection tracking.
 
 Check from PowerShell inside the VM:
 
 - `Test-NetConnection 192.168.1.1 -Port 80` → `TcpTestSucceeded : False` (LAN blocked)
 - `Test-NetConnection 10.21.3.1 -Port 8006` → `False` (node UI blocked)
+- `Test-NetConnection 10.21.4.1 -Port 8006` → `False` (node UI via the Kali-VNet gateway also blocked)
 - `Test-NetConnection 1.1.1.1 -Port 443` → `True`, and `Resolve-DnsName microsoft.com` resolves (internet + DNS)
 
 Drops appear in the Proxmox UI under VM 2102 → Firewall → Log.
@@ -138,6 +142,51 @@ OpenVPN must listen on TCP (`proto tcp-server`), not the default UDP.
   (`src/ansible/proxmox-firewall.yml`, iptables rules saved with `netfilter-persistent`). Client configs use `remote <public-ip> 2102`.
 - The shared OUT DROP to `192.168.1.0/24` also applies to traffic this VM forwards for VPN clients.
   Through the tunnel they reach the lab subnet, not the home LAN.
+
+## kali (VM 2106)
+
+Kali attacker on its **own** SDN VNet `it2102k` → subnet `10.21.4.0/24` (gateway `10.21.4.1`, SNAT),
+separate from the lab subnet `10.21.3.0/24`. 2 cores, 4 GB RAM, 40 GB disk. Built from the **installer
+ISO** (there is no Kali cloud image for this path), so — like `ws-etw` — it is installed by hand and has
+**no cloud-init**: Terraform builds only the hardware. A dedicated `proxmox_sdn_applier.kali` applies the
+new VNet to the node on `apply` (the main applier does not re-run for a newly added VNet).
+
+`kali_iso_url` in `main.tf` is **version-pinned** (`kali-2026.3` when written); confirm/bump it against
+<https://www.kali.org/get-kali> before `apply`, like the Windows `iso_url`.
+
+One-time manual steps after `apply` (noVNC console):
+
+1. Install Kali from the ISO (guided install; create the user **`kali`** and its password — this password
+   goes in `src/ansible/group_vars/vault.yml` as `kali_password`).
+2. Static networking (no DHCP on `it2102k`): IP `10.21.4.30/24`, gateway `10.21.4.1`, DNS e.g. `1.1.1.1`
+   (output `kali_ip`).
+3. Enable SSH: `sudo systemctl enable --now ssh` (Kali allows password auth by default).
+
+Reaching Kali from the workstation: the home router currently routes **only** `10.21.3.0/24` to
+pve-master. Add the same static route for `10.21.4.0/24 → 192.168.1.120` (pve-master LAN IP), **or** jump
+through the node:
+
+```bash
+ssh -J root@<pve-master-LAN-IP> kali@10.21.4.30
+```
+
+Then provision it (user/password auth, so `sshpass` must be on the control node):
+
+```bash
+sudo apt install sshpass
+ansible-playbook -i proxmox.ini kali.yml -e @group_vars/vault.yml --ask-vault-pass
+```
+
+### Firewall (VM 2106) + the cross-subnet attack path
+
+Kali gets the shared `it2102:` rules (`local.it2102_rules`): no home LAN, no node, inbound only from the
+lab + Kali subnets. To let the attack cross between `10.21.4.0/24` and `10.21.3.0/24`, a rule was added to
+`it2102_rules` for **all** VMs: `IN ACCEPT ← 10.21.4.0/24`. So `ws-etw` accepts Kali's DVWA exploit, and
+Kali accepts the `ws-etw → Kali` stage callback (covered by the existing `IN ACCEPT ← 10.21.3.0/24`).
+pve-master routes between the two VNet gateways and does not masquerade inter-subnet traffic, so `ws-etw`
+sees Kali's real `10.21.4.30` source. (Note: this README describes the effective input default as DROP
+while `firewall_options` sets `input_policy = ACCEPT` — a doc/code mismatch; the explicit accept rule makes
+the path work under either.)
 
 ## Cloud image vs ISO install
 
