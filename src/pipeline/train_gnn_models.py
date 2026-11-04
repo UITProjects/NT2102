@@ -219,6 +219,7 @@ def train_one_type(x, edge_index, edge_type, num_rel, train_idx, val_idx, a, see
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)         # [INFERENCE] PyGOD default: Adam, wd=0
     q = 1.0 - a.contamination
     best = {"tnr": -1.0}
+    peak = -1.0                                                 # highest TNR so far: the tolerance is measured from here
     bad = 0
     t0 = time.time()
     for epoch in range(a.epochs):
@@ -240,7 +241,12 @@ def train_one_type(x, edge_index, edge_type, num_rel, train_idx, val_idx, a, see
             tnr = (s_va <= thr).float().mean().item() if len(val_idx) else 1.0
         # [PAPER] §5.1.2 no malicious validation nodes -> stop when validation TNR declines.
         # [OURS] patience instead of stopping on the first decline; ties keep the later epoch.
-        if tnr >= best["tnr"]:
+        # [OURS] --tnr-tolerance: within this much of the peak counts as a tie. With a large validation set a perfect
+        # TNR only exists before the sphere has tightened, so "highest TNR" alone keeps a barely trained model
+        # (range-2d-20261104: FILE best_ep 4, tau 4.9 vs -0.09 once trained; DEVIATIONS D5). Measured from the peak,
+        # not from the kept epoch, so it cannot slide down epoch by epoch.
+        peak = max(peak, tnr)
+        if tnr >= peak - a.tnr_tolerance:
             best = {"tnr": tnr, "epoch": epoch, "loss": loss.item(),
                     "state": {k: v.clone() for k, v in model.state_dict().items()}}
             bad = 0
@@ -371,6 +377,10 @@ def selftest():
         a2 = parse_args(["--edges", f"{d}/e.csv", "--features", f"{d}/x.csv", "--out-dir", f"{d}/out2",
                          "--epochs", "15", "--runs", "1"])
         assert np.allclose(run(a2)["threshold"].values, r0["threshold"].values), "not reproducible"
+        # a tolerance of 1 makes every epoch a tie: training must run to the last epoch whatever the TNR does
+        a3 = parse_args(["--edges", f"{d}/e.csv", "--features", f"{d}/x.csv", "--out-dir", f"{d}/out3",
+                         "--epochs", "15", "--runs", "1", "--tnr-tolerance", "1.0"])
+        assert (run(a3)["best_epoch"] == 14).all(), "--tnr-tolerance did not keep the later epoch"
     print("\n[SELFTEST OK] graph build, per-type training, thresholds, reproducibility")
 
 
@@ -399,6 +409,9 @@ def parse_args(argv=None):
     p.add_argument("--dropout", type=float, default=0.0)
     p.add_argument("--contamination", type=float, default=0.001, help="[PAPER] Min_con when no labels")
     p.add_argument("--patience", type=int, default=5)
+    p.add_argument("--tnr-tolerance", type=float, default=0.0,
+                   help="[OURS] validation TNR within this of its peak counts as a tie (the later epoch is kept); "
+                        "use > 0 with a large validation set, see train_one_type")
     p.add_argument("--runs", type=int, default=3)
     p.add_argument("--seed", type=int, default=360, help="[AUTHOR CODE] l.728")
     p.add_argument("--verbose", action="store_true")

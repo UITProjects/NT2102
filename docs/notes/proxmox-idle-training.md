@@ -1,5 +1,7 @@
 # Runbook: train the Proxmox idle model (exp06)
 
+Superseded for long ranges by `retrain-2day-fp-lesson.md` (exp07): exclude windows, use a new `--id`, validate on held-out data.
+
 Written 2026-11-02. Scope: training only (the attack / Kali VM on it2102 is a separate step).
 
 ## Why

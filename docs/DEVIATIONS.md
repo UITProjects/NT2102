@@ -34,6 +34,12 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   (Moderate ≥ 30 until 2026-11-03, the paper's ≥ 10 since; D8) absorbs that noise, keeping idle windows green, but **any real user activity in a benign
   window can raise false positives**, so the demo must keep benign windows idle. Not a general detector —
   a concept demo baseline. Converter still drops/unresolves some events (see converter `_summary.json`).
+- 2-day baseline (2026-11-04, exp07): one long idle range minus excluded windows instead of one short clean range.
+  `lab train --exclude-file` drops every window overlapping a listed range (`src/artifacts/exclusions/`): the attack, RDP
+  sessions, and the 6-h rotation canary (`etwctl.ps1` runs `cmd /c whoami`). 174 of 1,415 windows, about 41 h kept. Why: a 3 h
+  range misses daily and ~10 h OS jobs, which were 11 of exp06's 16 windows ≥ 10. Impact: idle reds on held-out windows 4 → 0
+  (3 seeds, 200 windows); interactive sessions stay red, as an idle model should. `powershell.exe` stays in every window,
+  because the 5-min `etwlab-live` watchdog starts it. Details: `docs/notes/retrain-2day-fp-lesson.md`.
 - Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
@@ -58,6 +64,11 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   seeds 360 + run; `use_deterministic_algorithms(warn_only=True)`. For scoring test/live graphs,
   `build_graph(..., relations=<train_meta.json relations>)` reuses the training relation ids and drops
   edges whose relation was never seen in training (counted), instead of re-deriving ids from the data.
+- [OURS] exp07 (2026-11-04): `--val-windows 60` (2 h tail; exp06's single window gave NET `n_val=0`) and `--tnr-tolerance 0.01`:
+  a validation TNR within 0.01 of its peak counts as a tie, so the later epoch is kept. [PAPER] §5.1.2 stops when TNR declines;
+  with a large validation set that keeps a barely trained model (FILE `best_ep=4`, τ +4.94 vs −0.18), because a perfect TNR
+  only exists before the sphere tightens. Default 0 keeps the earlier behaviour. Set on validation data only. Accepts up to
+  1 % validation FPR at the chosen epoch (exp07: 0.3 % FILE, 0 NET, 0 PROCESS).
 - Why: explainable code without the fork; avoid leakage between overlapping windows.
 - Impact: [INFERENCE] centre/radius update and loss follow upstream PyGOD OCGNN, not verified against
   the fork; results may differ from the repo's.
