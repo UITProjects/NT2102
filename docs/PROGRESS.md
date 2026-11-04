@@ -1,7 +1,7 @@
 # PROGRESS (status as of 2026-11-04)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`retrain-2day-exclusions`** (off `deploy-kali`). All work on the Proxmox VMs; **Vagrant is marked for removal**
+Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs; **Vagrant is marked for removal**
 (user, 2026-11-04; not deleted yet).
 
 ## exp07: retrained on ~41 h of idle (2026-11-04, PROMOTED + live on the Proxmox trainer)
@@ -28,7 +28,7 @@ recorded attack, not a new live run. exp07 gate: `best_ep` 99 all types, τ file
 
 **Not yet:** ≥ 24 h live soak across the ~05:05Z and ~11:15Z jobs (the only idle test of exp07 itself). Open: teammates to
 confirm the RDP sessions; `powershell.exe` is in every window because our 5-min watchdog starts it (likely why the attack
-scores weakly, [INFERENCE], untested). `ocr-live` code on the trainer is copied by SSH, uncommitted, until the branch is pushed.
+scores weakly, [INFERENCE], untested). Merged (PR #9) and deployed from `main` (`2fd8b51`, `ubuntu.yml --tags project`, re-run `changed=0`).
 
 ## ocr-live: paper level scale + persistent history (2026-11-03, DEPLOYED + verified on the Proxmox trainer)
 
@@ -108,9 +108,10 @@ gave pve-master a new IP `10.21.4.1`, so every VM could reach the node UI/SSH th
 `10.21.3.1` drop — added an `OUT DROP → 10.21.4.1` to the shared `it2102_rules` (user, 2026-11-03). `plan` =
 **0 add / 5 change / 0 destroy** (the drop added to all 5 VMs' rules). Ansible: `proxmox.ini` `[attacker]`
 group (user/password auth, `kali_password` in the gitignored vault, needs `sshpass`), `kali.yml` +
-`kali_attack` role (copies `src/atomic-attack-pack` → `/opt/attack-pack`, selftest ok locally). **Pending
-(user): `terraform apply` the firewall fix; manual Kali install (IP+ssh+password); add a 10.21.4.0/24 route
-on the home router; then `kali.yml`.** See `infrastructure/README.md` "kali".
+`kali_attack` role (copies `src/atomic-attack-pack` → `/opt/attack-pack`, selftest ok locally). Auth = Kali's
+public default `kali` / `kali` hardcoded in `proxmox.ini` (user, 2026-11-04; not a secret on the lab subnet,
+like vagrant/vagrant), so no vault for Kali. **Pending (user): `terraform apply` the firewall fix.** Kali VM
+built + ssh ready (10.21.4.30:22 reachable); next action is verifying `kali.yml`. See `infrastructure/README.md` "kali".
 
 **nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
 router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule

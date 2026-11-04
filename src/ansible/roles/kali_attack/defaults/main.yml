@@ -1,0 +1,3 @@
+---
+# Where the attack pack lands on Kali (owned by the login user so the launcher runs without sudo).
+attack_pack_dir: /opt/attack-pack

@@ -1,0 +1,37 @@
+---
+# The Proxmox Kali attacker: pull the attack pack to /opt/attack-pack and verify it runs. This REPLACES
+# the local Vagrant synced-folder mount (src/Vagrantfile) with an Ansible-managed copy. The launcher is
+# stdlib-only and Kali already ships the pentest tooling, so this role installs no extra packages beyond
+# python3. The pack is copied from the control node's working tree (not git-cloned): same "ship what's in
+# your tree" idea as linux_auditship, but with copy (not synchronize) because this host authenticates by
+# password and rsync-over-ssh would not get the sshpass password.
+
+- name: Ensure python3 is present (the launcher runs under `python3 -I`)
+  ansible.builtin.apt:
+    name: python3
+    state: present
+    update_cache: false
+  # Kali ships python3, so this is normally changed=0. No apt upgrade here: keep the box as installed.
+
+- name: Attack-pack dir (owned by the login user, so the launcher runs without sudo)
+  ansible.builtin.file:
+    path: "{{ attack_pack_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Copy the attack pack from the control node's working tree
+  ansible.builtin.copy:
+    src: "{{ src_dir }}/atomic-attack-pack/"
+    dest: "{{ attack_pack_dir }}/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: preserve
+  # Recursive directory copy, idempotent by checksum (changed=0 on a re-run of an unchanged tree). The
+  # repo has no __pycache__/.venv under atomic-attack-pack, so there is nothing to exclude.
+
+- name: Selftest — the launcher serves its stage and contacts no target (proves "it runs", not detection)
+  ansible.builtin.command: "python3 -I {{ attack_pack_dir }}/tools/launch_exploit.py --selftest"
+  changed_when: false
+  become: false

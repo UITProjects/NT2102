@@ -7,9 +7,11 @@ Provisions the lab the Vagrantfile builds (or any two cloud VMs in one subnet):
 | `ws-etw` (`windows`) | 10.21.2.10 | ETW collector **`etwcollect`** (`src/etw-python`, SYSTEM task `etwlab-collector`; it also pushes to Loki), DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
 | `ubuntu-trainer` (`ubuntu`) | 10.21.2.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
 
-> The lab also has a **Kali attacker VM** (`10.21.2.30`), but it is **not provisioned by Ansible** — it
-> is a local-only Vagrant box that mounts `src/atomic-attack-pack` at `/opt/attack-pack` via a synced
-> folder (`src/Vagrantfile`), and runs the exploit launcher directly. See that pack's `README.md`.
+> The lab also has a **Kali attacker VM**. In the **local Vagrant** lab (`10.21.2.30`) it is **not
+> Ansible-managed** — it mounts `src/atomic-attack-pack` at `/opt/attack-pack` via a synced folder
+> (`src/Vagrantfile`) and runs the launcher directly. On **Proxmox** it *is* Ansible-managed (group
+> `attacker`, `kali` 10.21.4.30 on its own subnet 10.21.4.0/24, `kali.yml` → `kali_attack` role, which
+> copies the same pack to `/opt/attack-pack`). See the "Proxmox lab" section below and the pack's `README.md`.
 
 ```
 etwcollect (SYSTEM task) -> C:\lab-out\etw\raw\<split>\<run>\{kproc,kfile,knet}.json
@@ -140,6 +142,21 @@ Check on `ubuntu-etw`: `sudo auditctl -l` (the `never ... uid=<auditship>` rules
 `sudo /opt/auditship/audit-python/.venv/bin/auditship status` (`backlog_bytes` ≈ 0, `last_error` null). In Grafana:
 `{job="auditd", host="ubuntu-etw"} | key="exec"`. `type` and `key` are structured metadata: filter them after the
 `{...}` selector, not inside it.
+
+The Kali attacker `kali` 10.21.4.30 (group `attacker`, on its **own** subnet 10.21.4.0/24, `infrastructure/`
+VM 2106) is Ansible-managed on Proxmox — unlike the local Vagrant Kali, which is mount-based. It uses
+**username/password** — Kali's public default `kali` / `kali`, hardcoded in `proxmox.ini` (not a secret on
+the lab subnet, like the vagrant/vagrant defaults), so `sshpass` must be on the control node, no vault.
+The `kali_attack` role copies `src/atomic-attack-pack` to `/opt/attack-pack` and selftests the launcher:
+
+```bash
+sudo apt install sshpass                                          # once, on the workstation
+ansible-playbook -i proxmox.ini kali.yml
+# first boot of a fresh kali is manual (IP + ssh): infrastructure/README.md "kali".
+# live attack, once ocr-live runs a Proxmox model (DVWA on ws-etw; the launcher auto-detects 10.21.4.30):
+#   ssh kali@10.21.4.30
+#   python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.3.10:3000
+```
 
 ### Tamper Protection (Windows, manual, once)
 
@@ -278,7 +295,10 @@ roles/
   ubuntu_base     UTC+7 + timesyncd, apt deps + uv + ufw rule for the live server
   ubuntu_loki     Docker + Loki + Grafana (compose, host network) + ufw (Loki from Windows, Grafana from admin_cidr)
   ubuntu_project  git clone + uv sync + ocr-live systemd unit (--loki-url + live_llm_args) + session cleanup cron
+  kali_attack     (Proxmox, kali.yml) copy src/atomic-attack-pack -> /opt/attack-pack + launcher selftest
 ```
+(Not shown: `linux_auditd`/`linux_auditship` run by `target.yml`; `kali_attack` by `kali.yml` — both
+run on their own, not via `site.yml`.)
 
 The converter and windowing tool (`win_collector`) are deployed from `src/pipeline/`, the same files
 `build_experiment.py` runs on the trainer. See the converter hash rule above.

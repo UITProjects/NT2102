@@ -156,8 +156,8 @@ new VNet to the node on `apply` (the main applier does not re-run for a newly ad
 
 One-time manual steps after `apply` (noVNC console):
 
-1. Install Kali from the ISO (guided install; create the user **`kali`** and its password — this password
-   goes in `src/ansible/group_vars/vault.yml` as `kali_password`).
+1. Install Kali from the ISO (guided install; keep Kali's default account **`kali` / `kali`** — Ansible
+   logs in with it, hardcoded in `src/ansible/proxmox.ini`, not a secret on the lab subnet).
 2. Static networking (no DHCP on `it2102k`): IP `10.21.4.30/24`, gateway `10.21.4.1`, DNS e.g. `1.1.1.1`
    (output `kali_ip`).
 3. Enable SSH: `sudo systemctl enable --now ssh` (Kali allows password auth by default).
@@ -174,7 +174,7 @@ Then provision it (user/password auth, so `sshpass` must be on the control node)
 
 ```bash
 sudo apt install sshpass
-ansible-playbook -i proxmox.ini kali.yml -e @group_vars/vault.yml --ask-vault-pass
+ansible-playbook -i proxmox.ini kali.yml
 ```
 
 ### Firewall (VM 2106) + the cross-subnet attack path

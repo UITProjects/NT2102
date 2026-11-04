@@ -28,8 +28,11 @@ LABELING.md                   labels.jsonl -> node labels, honesty caveats
 tools/build_node_labels.py    labels.jsonl + converted graph -> node labels (sketch; columns not fixed yet)
 ```
 
-The launcher + scripts are mounted into the Kali VM at `/opt/attack-pack` by Vagrant (a synced folder,
-`src/Vagrantfile`); the launcher is run directly from there. Kali is a local-only box, not Ansible-managed.
+The launcher + scripts reach the Kali VM at `/opt/attack-pack`. **Local Vagrant lab:** a synced-folder
+mount (`src/Vagrantfile`); Kali is not Ansible-managed, and the target is `http://10.21.2.10:3000`.
+**Proxmox lab:** Ansible copies this pack there (`src/ansible/kali.yml` → `kali_attack` role; Kali is
+`10.21.4.30` on its own subnet, the target is `http://10.21.3.10:3000`). Either way the launcher is run
+directly from `/opt/attack-pack` and auto-detects the attacker IP, so only `--target` changes.
 
 ## Run during a live session (end-goal path)
 
