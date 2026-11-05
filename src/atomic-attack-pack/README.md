@@ -18,12 +18,13 @@ their limits: `LABELING.md`.
 ## Pieces
 
 ```
-scenarios/rce-killchain.ps1   the ONE attack: runs on the target (RCE child); scan + tool download +
-                              MySQL enumeration + C2 beacon + persistence; custom steps + labels
-tools/launch_exploit.py       Kali side: serves the stage (lib, chain, tool markers, /beacon) + fires
+scenarios/rce-killchain.ps1   the ONE attack: runs on the target (RCE child); scan + REAL tool
+                              download+exec + MySQL enumeration + C2 beacon + persistence; custom + labels
+tools/launch_exploit.py       Kali side: serves the stage (lib, chain, real tool binaries, /beacon) + fires
                               the DVWA command-injection exploit
 lib/attack-lib.ps1            Initialize-AttackLab, Write-AttackLabel, Invoke-LabeledStep/Atomic
-cleanup-all.ps1               undo the task + downloaded tool + RCE shells (snapshot restore is better)
+tools/win/                    real Windows tool binaries staged by Ansible (gitignored; marker fallback)
+cleanup-all.ps1               undo the task + tool procs/PSEXESVC/files + RCE shells (snapshot is better)
 manifest.json                 machine-readable technique/indicator map
 SCENARIOS.md                  phase table, topology, alert cut-off
 LABELING.md                   labels.jsonl -> node labels, honesty caveats
@@ -57,7 +58,7 @@ directly from `/opt/attack-pack` and auto-detects the attacker IP, so only `--ta
    ```
 3. Watch that window in the live UI (trainer `ocr-live`): the RCE subtree should push the window to
    **red (≥ Moderate, sg_score ≥ 10, the paper's scale)** while benign windows stay green; `--llm-provider` adds a verdict.
-   The Proxmox demo also sets `--sg-net-weight 2.0` ([OURS] NET ×2, DEVIATIONS D8).
+   The detector is paper-faithful SG-Det (no per-type weighting; the earlier NET ×2 idea was rolled back).
 
 Start just after a 5-min window boundary (a 180 s attack fits inside one 5-min window). Whether the chain
 clears the cut-off is confirmed here, not tuned (`SCENARIOS.md`, DEVIATIONS D8).

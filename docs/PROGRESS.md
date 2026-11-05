@@ -144,6 +144,29 @@ triage returned **`uncertain`** (not a confident `attack` like exp05's 0.85), so
 idle-green re-confirmation pending (my cleanup WinRM copy dirties 15:55Z). Repo selftests 17/17; attack-pack commit
 staged (GPG cold, handed to user). See [[live-detector-benign-fp]], DEVIATIONS D8.
 
+**Real tool download+EXEC live run (2026-11-05 00:50Z, exp07, paper-faithful SG-Det) — RED, LLM-confirmed, the best
+result to date.** The T1105 phase now downloads AND executes real benign tools: Sysinternals **PsExec** + **rclone**
+(real PEs staged on Kali by `roles/kali_attack` into `tools/win/`, gitignored, 833 KB + 85 MB; nmap/ncat best-effort,
+OFF by default -> markers + the TcpClient sweep). Rationale: the graph uses no content feature, so real binaries add
+nothing over markers UNLESS executed; the signal is the tool's process + sockets (`docs/notes/real-tool-download-exec.md`,
+D6/D8). Live from the Proxmox Kali (`launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180`, launched at
+the 00:50:00Z boundary): exploit HTTP 200; ws-etw fetched PsExec64.exe + rclone.exe (real) + nmap/ncat markers + 8
+beacons. Result (session `live-20261104T235407Z`, moderate_from 10): windows 00:25–00:45Z green (00:45Z = 1 benign file
+flag, sg 0.0); attack **00:50Z = 18 flagged (11 file + 7 net) / 1 KEPT subgraph / max_sg 15.40 / Moderate / alert
+True**. The single connected subgraph holds the REAL attack nodes: `c:\users\public\tools\rclone.exe` (process), C2
+`10.21.4.30:8080`, scan hits `10.21.3.11/.20/.50/.30:22`, DB `10.21.3.10:3306`, + the RAS/proxy & .NET DLLs the
+downloads pulled in. **LLM triage = `attack`, conf 0.85** (TA0011 C2 / TA0010 Exfil / TA0002 Exec); the report names
+PowerShell spawning rclone from a user-writable dir and exfil to the C2. Better than the 11-04 run on every axis:
+higher margin (15.40 vs 11.70), ONE connected subgraph (not fragmented), **LLM-CONFIRMED** (vs "uncertain"), and
+attack-**SPECIFIC** (only 00:50Z red — my deploy was Kali-side, ws-etw stayed idle; no admin-burst FP this time).
+Honest notes: (1) PsExec DID run (its `PsExec64.exe -> PSEXESVC.exe -> cmd.exe -> whoami.exe` tree is in node_attrs)
+but scored below τ, so rclone + the scan/C2/DB carried the score — PsExec's contribution was nil; (2) nmap/ncat were
+markers, so the NET breadth came from the PowerShell TcpClient sweep (the designed fallback); (3) still a thin 5-min
+idle model — Moderate, not Significant. **Cleanup PENDING, handed to the user:** `UpdaterSync` fires `cmd /c <marker>`
+every 5 min and the tools dir (PsExec64/rclone/pulled.bin) + legacy marker remain on ws-etw; removal needs ws-etw WinRM
+(vault), which the attack path (Kali creds) did not. Repo selftests 17/17; attack-pack + ansible + docs changes
+committed signed (handed to the user). See [[live-detector-benign-fp]], DEVIATIONS D6/D8.
+
 **nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
 router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
 and the DNAT comment now say TCP (were UDP): needs `terraform apply` + a `proxmox-firewall.yml` re-run.
@@ -425,6 +448,10 @@ Repo hygiene:
    --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
 2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery instead of
    the Vagrant mount), run the DVWA→RCE chain live, expect red + an LLM verdict.
+3. **Real tool download + execution** in the T1105 phase (user, 2026-11-04; implement next session):
+   download + RUN benign real tools (nmap `-sT` / ncat / PsExec; rclone optional) so tool processes +
+   sockets generate new flagged nodes — the signal is execution, not file content. Full plan:
+   `docs/notes/real-tool-download-exec.md`. Branch `provision-kali-ansible`.
 
 Earlier backlog (2026-10-31, after the exp05 demo win):
 

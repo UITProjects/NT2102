@@ -25,8 +25,9 @@ source and stage/C2 endpoint; phases are separated by port (exploit → :3000, s
 |-------|--------|--------|---------------|
 | Delivery | Initial access / Execution | T1190, T1059.001 | `httpd.exe` -> `cmd.exe` spawns `powershell.exe`; NET to Kali |
 | Discovery | Discovery | T1033, T1082, T1057, T1016 | `whoami`/`systeminfo`/`hostname`/`tasklist`/`ipconfig`/`netstat`/`net` under the RCE shell |
-| Network scan | Discovery | T1046 | `powershell` TCP-connects ~50 lab hosts × 7 ports → **one NET node per `ip:port`** (the big NET signal) |
-| Ingress transfer | Command & Control | T1105 | `powershell` writes `C:\Users\Public\tools\{mimikatz,psexec,nc,nmap,rclone}.exe` (**inert markers**) + `downloaded_tool.bin`; NET to `<kali>:8080` |
+| Network scan | Discovery | T1046 | `powershell` TcpClient sweep ~50 lab hosts × 7 ports (+ real `nmap.exe -sT -Pn` when staged, best-effort) → **one NET node per `ip:port`** (the big NET signal) |
+| Ingress transfer | Command & Control | T1105 | `powershell` downloads **REAL** benign tools `nmap/ncat/PsExec64/rclone.exe` to `C:\Users\Public\tools\` + `downloaded_tool.bin`; NET to `<kali>:8080` |
+| Tool execution | Execution / C2 | T1569.002, T1105 | `PsExec64.exe -s` → `PSEXESVC.exe` → `cmd.exe` → `whoami.exe` (SYSTEM); `rclone.exe copyurl` → `pulled.bin` + NET to C2; `ncat.exe` connect (best-effort) — **new unseen tool process + socket nodes** |
 | DB attack (read-only) | Credential access / Collection | T1552, T1213 | repeated `mysql.exe -uroot` (no password) → `127.0.0.1:3306`; dumps `dvwa.users` + `mysql.user` |
 | C2 beacon | Command & Control | T1071 | `powershell` `GET <kali>:8080/beacon` every ~15 s for the attack duration |
 | Persistence | Persistence | T1053.005 | `schtasks.exe` creates task `UpdaterSync` running the tool |
@@ -36,7 +37,11 @@ and the beacon + DB bursts repeat for `--attack-seconds` (default 180 ≥ 3 min)
 real attacker activity = more flagged nodes = a higher subgraph score **without any detector-side
 weighting** (the earlier NET ×2 idea was rolled back). It also means a large NET/process spike: mind the
 ~7 k ev/s collector ceiling and Loki ingest, and keep the run inside one 5-min window (launch just after
-a boundary). Everything is lab-only and benign: inert markers, read-only DB, isolated subnets.
+a boundary). The T1105 tools are now **real benign signed utilities (PsExec, rclone; nmap/ncat
+best-effort), downloaded and executed** — the added signal is their process + socket nodes, not file
+content (the graph hashes paths/`ip:port`, never content). Everything is lab-only and benign: real but
+non-malicious tools, read-only DB, isolated host-only subnets, Defender off, disposable VM; no
+mimikatz / credential-theft malware.
 
 Only SilkETW-observable techniques are used; registry-only / in-memory-only steps are left out (they
 produce no graph nodes). Kernel-File keywords 0x390 cover name/create/read/write, which the FILE
@@ -50,11 +55,13 @@ persistence, all rooted at the unseen RCE shell) to clear it, but this is **conf
 tuned to the attack**: if the window scores < 10, widen the chain or justify a lower `--sg-moderate-from`
 from the benign baseline — do not re-tune the threshold to the attack window (that fits the test).
 
-Two [OURS] levers added 2026-11-04 after a live near-miss (sg_score 8.49 < 10, exp07), both disclosed in
-DEVIATIONS D8 and default-off: `--attack-seconds` (default 180) loops Discovery + the C2 beacon so the
+To raise the attack signal **honestly** (not by detector tuning), two [OURS] attack-side levers are used,
+disclosed in DEVIATIONS D8: `--attack-seconds` (default 180) loops Discovery + the C2 beacon so the
 attack sustains ≥ 3 min of activity (more flagged nodes + recurring NET telemetry) instead of a ~10 s
-blip; and `--sg-net-weight 2.0` on the detector counts anomalous NET nodes ×2 in sg_score. These lift the
-attack score but keep the Moderate=10 threshold unchanged; the live result is still reported as observed.
+blip; and the T1105 phase now **downloads and executes real benign tools** (PsExec/rclone; nmap/ncat
+best-effort) so their processes + sockets add new unseen nodes. The detector stays paper-faithful SG-Det
+(the earlier `--sg-net-weight` NET ×2 idea was **rolled back** 2026-11-04); the Moderate=10 threshold is
+unchanged and the live result is still reported as observed.
 
 ## Run
 

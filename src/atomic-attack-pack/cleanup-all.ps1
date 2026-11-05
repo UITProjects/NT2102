@@ -1,7 +1,7 @@
 <#
-  cleanup-all.ps1 — undo the RCE kill chain's artefacts on the target VM.
+  cleanup-all.ps1 - undo the RCE kill chain's artefacts on the target VM.
 
-  Run OUTSIDE the labeled capture window so cleanup activity does not pollute the attack labels — or
+  Run OUTSIDE the labeled capture window so cleanup activity does not pollute the attack labels - or
   better, just restore the VM snapshot and skip this. There is no Atomic Red Team dependency anymore:
   the one scenario (scenarios/rce-killchain.ps1) uses only custom steps, so cleanup is deterministic.
 #>
@@ -12,7 +12,13 @@ $toolsDir = "C:\Users\Public\tools"       # the downloaded hacker-tool markers (
 # Persistence (T1053.005)
 schtasks /delete /tn $taskName /f 2>$null
 
-# Ingress-transfer artefacts (T1105): the single marker + the tools dir of inert markers.
+# Stop any tool still running from the exec phase, then remove the PsExec service if it lingers.
+foreach ($n in @("PsExec64","PsExec","PSEXESVC","rclone","nmap","ncat")) {
+    Get-Process -Name $n -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+sc.exe delete PSEXESVC | Out-Null      # PsExec usually self-removes this; delete it if it was left behind
+
+# Ingress-transfer artefacts (T1105): the legacy marker + the tools dir (downloaded exes + pulled.bin).
 # (The MySQL phase is read-only, so there is nothing to undo in the DB.)
 Remove-Item $toolPath -Force -ErrorAction SilentlyContinue
 Remove-Item $toolsDir -Recurse -Force -ErrorAction SilentlyContinue
