@@ -162,10 +162,9 @@ attack-**SPECIFIC** (only 00:50Z red — my deploy was Kali-side, ws-etw stayed 
 Honest notes: (1) PsExec DID run (its `PsExec64.exe -> PSEXESVC.exe -> cmd.exe -> whoami.exe` tree is in node_attrs)
 but scored below τ, so rclone + the scan/C2/DB carried the score — PsExec's contribution was nil; (2) nmap/ncat were
 markers, so the NET breadth came from the PowerShell TcpClient sweep (the designed fallback); (3) still a thin 5-min
-idle model — Moderate, not Significant. **Cleanup PENDING, handed to the user:** `UpdaterSync` fires `cmd /c <marker>`
-every 5 min and the tools dir (PsExec64/rclone/pulled.bin) + legacy marker remain on ws-etw; removal needs ws-etw WinRM
-(vault), which the attack path (Kali creds) did not. Repo selftests 17/17; attack-pack + ansible + docs changes
-committed signed (handed to the user). See [[live-detector-benign-fp]], DEVIATIONS D6/D8.
+idle model — Moderate, not Significant. **Cleanup DONE** (user ran it from RDP on ws-etw, 2026-11-05: `UpdaterSync`
+task deleted, tools dir + legacy marker removed, PSEXESVC/tool processes stopped). Repo selftests 17/17; attack-pack +
+ansible + docs changes committed signed (handed to the user). See [[live-detector-benign-fp]], DEVIATIONS D6/D8.
 
 **nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
 router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule

@@ -141,6 +141,14 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
 - DONE (2026-11-04): **exp07** promoted: ~41 h idle, attack + RDP sessions + rotation canary excluded by window. Held-out
   replay: idle reds 4 → 0 (3 seeds, 200 windows). Attack replay red on exp07 (35.3, 33.5) but seed-dependent (1 of 3) and one
   recorded attack. Live soak pending. See `docs/notes/retrain-2day-fp-lesson.md`, PROGRESS, D2, D5.
+- DONE (2026-11-05): **the end-goal demo now works LIVE on Proxmox.** The Kali attacker (10.21.4.30, own subnet) runs the
+  DVWA→RCE kill chain whose T1105 phase downloads AND **executes real benign tools** (Sysinternals PsExec, rclone), staged on
+  Kali by the `kali_attack` role. Live run (00:50Z, exp07, paper-faithful SG-Det, Moderate=10): attack window **RED** (18
+  flagged, one kept subgraph, sg 15.40 Moderate, alert True; the subgraph holds the real `rclone.exe`, the C2, the scan's
+  open-SSH hits and the DB), **LLM triage `attack` 0.85**, benign windows green, red attack-specific. The real-tool *execution*
+  (process + socket nodes) is what lifts the score honestly — not detector tuning (the earlier NET ×2 weight was rolled back;
+  SG-Det stays paper-faithful). Caveats: thin 5-min idle model (Moderate, not Significant); PsExec ran but scored below τ
+  (rclone + scan/C2/DB carried it). See PROGRESS, `docs/notes/real-tool-download-exec.md`, DEVIATIONS D6/D8.
 - Work happens on the Proxmox VMs, controlled over Ansible/SSH; **Vagrant is marked for removal** (user, 2026-11-04).
 - Decided (user, 2026-11-03): SG-Det uses the **paper's level scale** (Moderate from 10, [PAPER] §7.2.1; the
   [OURS] 30 is retired, D8), and `ocr-live` keeps a **persistent, range-queryable window history** on disk
