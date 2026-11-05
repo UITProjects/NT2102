@@ -1,0 +1,93 @@
+{
+ "model": "exp07",
+ "experiment": "range-2d-20261104",
+ "experiment_source": "loki",
+ "benign_split": "test",
+ "label_source": "benign by operator assertion: idle Loki range 2026-11-02 12:30:00+0000 - 2026-11-04 11:44:00+0000 (split test) minus 174 of 1415 windows listed in `excluded`",
+ "excluded": {
+  "windows_total": 1415,
+  "windows_dropped": 174,
+  "windows_kept": 1241,
+  "edges_kept": 1291287,
+  "edges_dropped": 544099,
+  "ranges": [
+   {
+    "start_ms": 1793633400000,
+    "end_ms": 1793643000000,
+    "reason": "RDP sessions, VM work and the DVWA->RCE attack (17:3x): human and attack activity are not idle",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   },
+   {
+    "start_ms": 1793664300000,
+    "end_ms": 1793665500000,
+    "reason": "RDP session over the team VPN: human activity is not idle",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   },
+   {
+    "start_ms": 1793763300000,
+    "end_ms": 1793769600000,
+    "reason": "RDP session over the team VPN (cmd, nslookup, ping): human activity is not idle",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   },
+   {
+    "start_ms": 1793661180000,
+    "end_ms": 1793661360000,
+    "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   },
+   {
+    "start_ms": 1793683080000,
+    "end_ms": 1793683260000,
+    "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   },
+   {
+    "start_ms": 1793704980000,
+    "end_ms": 1793705160000,
+    "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   },
+   {
+    "start_ms": 1793726880000,
+    "end_ms": 1793727060000,
+    "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   },
+   {
+    "start_ms": 1793748780000,
+    "end_ms": 1793748960000,
+    "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   },
+   {
+    "start_ms": 1793770680000,
+    "end_ms": 1793770860000,
+    "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity",
+    "label": null,
+    "file": "proxmox-20261104.json"
+   }
+  ]
+ },
+ "seeds": 1,
+ "epochs": null,
+ "created_utc": "2026-11-04T13:55:19.103748+00:00",
+ "git_commit": "8d6f668",
+ "pipeline_uncommitted_changes": true,
+ "converter_sha256": "514da4ef0eb5b89f6c53018eced6feeb8b18c1e1b7e8dc7705e776507e9f4734",
+ "tools": {
+  "encode_to_features.py": "7d07efb74f3361a3a212cca1cae652e2b73f786a9bba43fecd6cd23180455e36",
+  "train_gnn_models.py": "ec91cb89ca50d8fe3ccc36819ead1c9f929b0c5d474e23a2abcf35e9de45226c"
+ },
+ "commands": [
+  "src/pipeline/encode_to_features.py --edges src/artifacts/runs/exp07/train_edges.csv --out-dir src/artifacts/runs/exp07/features",
+  "src/pipeline/train_gnn_models.py --edges src/artifacts/runs/exp07/train_edges.csv --features src/artifacts/runs/exp07/features/features_model.csv --scaler src/artifacts/runs/exp07/features/feature_scaler.json --out-dir src/artifacts/runs/exp07 --runs 1 --val-windows 60 --tnr-tolerance 0.01"
+ ]
+}

@@ -1,0 +1,50 @@
+{
+ "comment": "Windows left out of idle training for range-2d-20261104 (Proxmox ws-etw). UTC. See docs/notes/retrain-2day-fp-lesson.md.",
+ "ranges": [
+  {
+   "start": "2026-11-02T15:30:00Z",
+   "end": "2026-11-02T18:10:00Z",
+   "reason": "RDP sessions, VM work and the DVWA->RCE attack (17:3x): human and attack activity are not idle"
+  },
+  {
+   "start": "2026-11-03T00:05:00Z",
+   "end": "2026-11-03T00:25:00Z",
+   "reason": "RDP session over the team VPN: human activity is not idle"
+  },
+  {
+   "start": "2026-11-04T03:35:00Z",
+   "end": "2026-11-04T05:20:00Z",
+   "reason": "RDP session over the team VPN (cmd, nslookup, ping): human activity is not idle"
+  },
+  {
+   "start": "2026-11-02T23:13:00Z",
+   "end": "2026-11-02T23:16:00Z",
+   "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity"
+  },
+  {
+   "start": "2026-11-03T05:18:00Z",
+   "end": "2026-11-03T05:21:00Z",
+   "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity"
+  },
+  {
+   "start": "2026-11-03T11:23:00Z",
+   "end": "2026-11-03T11:26:00Z",
+   "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity"
+  },
+  {
+   "start": "2026-11-03T17:28:00Z",
+   "end": "2026-11-03T17:31:00Z",
+   "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity"
+  },
+  {
+   "start": "2026-11-03T23:33:00Z",
+   "end": "2026-11-03T23:36:00Z",
+   "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity"
+  },
+  {
+   "start": "2026-11-04T05:38:00Z",
+   "end": "2026-11-04T05:41:00Z",
+   "reason": "etwctl.ps1 run rotation: its canary runs cmd.exe /c whoami, an attack-shaped process tree that is not idle activity"
+  }
+ ]
+}
