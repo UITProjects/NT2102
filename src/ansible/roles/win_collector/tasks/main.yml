@@ -100,23 +100,20 @@
   changed_when: false
 
 # ---------- 4. etw-python collector (src/etw-python, DEVIATIONS D10) ----------
-# Source: mount (local lab: src/Vagrantfile shares src/etw-python as C:\etw-python, inventory.local.ini sets
-# etwpy_mode=mount) or clone (cloud default: git clone of repo_url@repo_branch). uv builds the venv on the VM's
-# own disk and downloads its own CPython 3.12 (.python-version); the embeddable Python above stays for the
+# Source: a git clone of repo_url@repo_branch to etwpy_clone_dir. uv builds the venv on the VM's own disk
+# and downloads its own CPython 3.12 (.python-version); the embeddable Python above stays for the
 # converter/windowing/shipper scripts.
-- name: Resolve the collector source (mount or clone)
+- name: Resolve the collector source
   ansible.builtin.set_fact:
-    etwpy_mode_r: "{{ etwpy_mode | default('clone') }}"
-    etwpy_src_r: "{{ etwpy_src | default(etwpy_clone_dir ~ '\\src\\etw-python') }}"
+    etwpy_src_r: "{{ etwpy_clone_dir }}\\src\\etw-python"
     uv_exe: "{{ uv_dir }}\\{{ uv_version }}\\uv.exe"
 
-- name: Install git (clone mode)
+- name: Install git
   chocolatey.chocolatey.win_chocolatey:
     name: git
     state: present
-  when: etwpy_mode_r == 'clone'
 
-- name: Clone or fast-forward the repo (clone mode)
+- name: Clone or fast-forward the repo
   ansible.windows.win_shell: |
     $ErrorActionPreference = 'Continue'
     $d = '{{ etwpy_clone_dir }}'
@@ -133,7 +130,6 @@
     }
   register: etwpy_git
   changed_when: "'unchanged' not in etwpy_git.stdout"
-  when: etwpy_mode_r == 'clone'
 
 - name: Collector source present ({{ etwpy_src_r }})
   ansible.windows.win_stat:
@@ -143,9 +139,7 @@
 - name: Fail if the collector source is missing
   ansible.builtin.assert:
     that: etwpy_pp.stat.exists
-    fail_msg: >-
-      {{ etwpy_src_r }}\pyproject.toml not found. mount mode: `vagrant reload ws-etw` so src/Vagrantfile mounts
-      src/etw-python at C:\etw-python; clone mode: check repo_url / repo_branch.
+    fail_msg: "{{ etwpy_src_r }}\\pyproject.toml not found after cloning; check repo_url / repo_branch."
 
 - name: Download uv {{ uv_version }}
   ansible.windows.win_get_url:
@@ -161,8 +155,8 @@
     dest: "{{ uv_dir }}\\{{ uv_version }}"
     creates: "{{ uv_exe }}"
 
-# UV_PROJECT_ENVIRONMENT puts the venv outside the source: a venv inside the VirtualBox share would break
-# (no symlinks there) and would clash with a host .venv. --frozen = install exactly uv.lock, never rewrite it.
+# UV_PROJECT_ENVIRONMENT puts the venv outside the source clone, so a re-clone/checkout never disturbs it.
+# --frozen = install exactly uv.lock, never rewrite it.
 - name: Build the collector venv (uv sync; the first run downloads CPython 3.12)
   ansible.windows.win_command: '"{{ uv_exe }}" sync --frozen --project "{{ etwpy_src_r }}"'
   environment:

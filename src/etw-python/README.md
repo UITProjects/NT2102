@@ -35,11 +35,10 @@ Settings come from `C:\ProgramData\etwlab\etwlab.json` (or `$ETWLAB_CONFIG`): `C
 
 ## Where the code runs
 
-- **Local lab:** the Vagrant box mounts this folder at `C:\etw-python`. Ansible runs
-  `uv sync --frozen` with the venv on the VM's own disk (`UV_PROJECT_ENVIRONMENT=C:\Tools\etw-python-venv`).
-  A venv on the VirtualBox share would break and would also clash with a host `.venv`. A code change on
-  the host is live after the next `etwctl stop` / `etwctl start`.
-- **Cloud:** Ansible clones the repo, and the source is `C:\lab\NT2102\src\etw-python`.
+- Ansible clones the repo on the VM, and the source is `C:\lab\NT2102\src\etw-python`. `uv sync --frozen`
+  builds the venv on the VM's own disk (`UV_PROJECT_ENVIRONMENT=C:\Tools\etw-python-venv`), separate from
+  the clone. A code change lands after the next Ansible run (re-clone/fast-forward); on the VM itself, a
+  change is live after the next `etwctl stop` / `etwctl start`.
 - The SYSTEM scheduled task `etwlab-collector` runs `<venv>\Scripts\python.exe -m etwcollect run`.
   `etwctl start` / `stop` start and stop it.
 

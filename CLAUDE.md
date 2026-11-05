@@ -149,16 +149,12 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   (process + socket nodes) is what lifts the score honestly — not detector tuning (the earlier NET ×2 weight was rolled back;
   SG-Det stays paper-faithful). Caveats: thin 5-min idle model (Moderate, not Significant); PsExec ran but scored below τ
   (rclone + scan/C2/DB carried it). See PROGRESS, `docs/notes/real-tool-download-exec.md`, DEVIATIONS D6/D8.
-- Work happens on the Proxmox VMs, controlled over Ansible/SSH; **Vagrant is marked for removal** (user, 2026-11-04).
+- Work happens on the Proxmox VMs, controlled over Ansible/SSH.
 - Decided (user, 2026-11-03): SG-Det uses the **paper's level scale** (Moderate from 10, [PAPER] §7.2.1; the
   [OURS] 30 is retired, D8), and `ocr-live` keeps a **persistent, range-queryable window history** on disk
   (`src/live/history.py`, `sessions/history.jsonl`, `/api/history`, UI History panel; only raw copies are pruned).
   Measured before the switch: exp06 idle windows 6 red at 10 vs 1 at 30; the 2026-11-02 attack (9.0) stays green.
-- **Next (user, 2026-11-01): build training and the attack on Proxmox.** (1) Train an idle model from a
-  clean idle Loki range of the Proxmox ws-etw. Provisioning time (installs, Ansible runs) is NOT idle.
-  (2) Attack: Kali is not on Proxmox yet (it was a Vagrant-only box). It needs a Kali VM on it2102 (planned
-  10.21.3.30) with the attack pack, then run DVWA→RCE live and get it red. Earlier backlog: (a) render the LLM
-  report as HTML in the live UI; (b) a larger idle pull; (c) concepts 2–4.
+- **Next:** render the LLM report as HTML in the live UI; a larger idle pull; concepts 2–4.
 - Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
   (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
   host names.
@@ -189,17 +185,16 @@ history of earlier progress) and, if relevant, this section.
   the trainer with the training converter code, scaler and relation list; the live clock is event time
   (newest event − lateness), with a host-clock fallback when idle (DEVIATIONS D8). The HTTP shipper
   (`etwship.py`) remains for replay only.
-- Collection lab: three VMs provisioned by Ansible (`src/ansible/`, cloud-portable via inventory): Windows
-  Server 2022 `ws-etw` (own Python ETW collector `etwcollect` on Kernel-Process, Kernel-File,
-  Kernel-Network, pushing to Loki, + the DVWA vulnlab on XAMPP, no training; user, 2026-10-26: replaces
-  SilkETW/SilkService v0.8, whose per-event file writes feed back into Kernel-File and which has no exclude
-  filter), Ubuntu `ubuntu-trainer` (Loki + Grafana, training, live server), and
-  Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, same host-only subnet;
-  LOCAL LAB ONLY and NOT Ansible-managed — it mounts `src/atomic-attack-pack` via a Vagrant synced
-  folder). The Vagrantfile only
-  builds the bare VMs. Two deployments of the same roles: local Vagrant (`inventory.local.ini`, 10.21.2.0/24)
-  and home Proxmox (user, 2026-10-31/11-01: `infrastructure/` Terraform builds the bare VMs, `proxmox.ini`,
-  10.21.3.0/24). Terraform rules: the user runs `apply`/`destroy`, Claude only writes config and runs `plan`;
+- Collection lab: four VMs on the home Proxmox hypervisor (`infrastructure/` Terraform builds them,
+  `src/ansible/` provisions them, cloud-portable via inventory): Windows Server 2022 `ws-etw` (own Python
+  ETW collector `etwcollect` on Kernel-Process, Kernel-File, Kernel-Network, pushing to Loki, + the DVWA
+  vulnlab on XAMPP, no training; user, 2026-10-26: replaces SilkETW/SilkService v0.8, whose per-event file
+  writes feed back into Kernel-File and which has no exclude filter), Ubuntu `ubuntu-trainer` (Loki +
+  Grafana, training, live server), Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, on
+  its own SDN VNet `it2102k` 10.21.4.0/24; Ansible-managed, `kali.yml` → role `kali_attack` copies
+  `src/atomic-attack-pack` to `/opt/attack-pack`), and Linux endpoint `ubuntu-etw` (auditd, not scored,
+  D11). `ws-etw`/`ubuntu-trainer`/`ubuntu-etw` sit on VNet `it2102` 10.21.3.0/24. Terraform rules: the user
+  runs `apply`/`destroy`, Claude only writes config and runs `plan`;
   values are hardcoded in `main.tf` locals and only credentials are variables (`TF_VAR_*`); `terraform.tfstate`
   is committed (public repo, no secrets). Windows WinRM creds come from the gitignored `group_vars/vault.yml`.
 - Target schema (NODLINK W10, as the repo expects): 3 node types `PROCESS`, `FILE`, `NET`
@@ -234,8 +229,8 @@ history of earlier progress) and, if relevant, this section.
 
 - VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (uv + `src/etw-python`
   collector as SYSTEM task `etwlab-collector`, `etwctl`, copies `src/pipeline/etw2nodlink.py` /
-  `etwwindow.py` / `src/live/etwship.py`; the collector source is the Vagrant mount `C:\etw-python` locally
-  and a git clone on cloud; it also removes the old SilkETW/SilkService and Grafana Alloy),
+  `etwwindow.py` / `src/live/etwship.py`; the collector source is a git clone of this repo; it also
+  removes the old SilkETW/SilkService and Grafana Alloy),
   `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture),
   `win_vulnlab` (XAMPP + DVWA). Linux endpoint `ubuntu-etw` (group `target`, `target.yml`): `linux_auditd` (auditd rules,
   shipper uid excluded) + `linux_auditship` (`src/audit-python` rsynced from the control node, systemd `auditship`
@@ -251,8 +246,8 @@ history of earlier progress) and, if relevant, this section.
   pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
   `live_server.py`, `serve.sh`, `rejudge.sh` and `ocr-live` read.
 - Attack side: `src/atomic-attack-pack/` — one RCE kill chain (`scenarios/rce-killchain.ps1`) delivered
-  from the Kali VM by `tools/launch_exploit.py` (pack mounted at `/opt/attack-pack` by Vagrant, not
-  Ansible); exploits DVWA (OS command injection) then runs Discovery→T1105→T1053.005. `LABELING.md`, `tools/build_node_labels.py`.
+  from the Kali VM by `tools/launch_exploit.py` (pack deployed to `/opt/attack-pack` by Ansible's
+  `kali_attack` role); exploits DVWA (OS command injection) then runs Discovery→T1105→T1053.005. `LABELING.md`, `tools/build_node_labels.py`.
 - Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py`
   (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
 - Host side: `src/pipeline/encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →

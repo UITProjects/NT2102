@@ -95,7 +95,7 @@ upgrade backfills older sessions from their `windows.csv` (no LLM report text fo
 **LLM on the live server.** `ocr-live` has no terminal, so it cannot prompt for the DeepSeek key. Save it
 once on the trainer, then let Ansible add the flags:
 ```
-vagrant ssh ubuntu-trainer
+ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.20
 cd ~/NT2102 && uv run --group llm python src/pipeline/alg2.py --ping --llm-provider deepseek   # prompts, saves, answers OK
 ```
 The key lands in `~/.config/nt2102/credentials.json` on the trainer (plain text, mode 600). With

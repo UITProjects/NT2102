@@ -8,12 +8,13 @@ their limits: `LABELING.md`.
 
 ## Safety
 
-- Lab only. The target (`ws-etw`) is isolated during the run: `LAB_ISOLATED=1 vagrant reload ws-etw`
-  (NAT unplugged, host-only network only). Defender is off there. `DVWA` is opt-in
-  (`vulnlab_enabled=true`) and firewalled to the lab subnet only.
-- **Snapshot before running**; `vagrant snapshot restore ws-etw clean-baseline` is the clean reset.
-  `cleanup-all.ps1` is best effort.
-- Kali keeps its NAT (for apt) but attacks the target only over the host-only subnet.
+- Lab only. The target (`ws-etw`) is isolated by the Proxmox SDN firewall rules
+  (`infrastructure/README.md`), not by unplugging a NIC: `it2102`/`it2102k` only route to each other and
+  to the internet for provisioning, never to the home LAN. Defender is off on `ws-etw`. `DVWA` is opt-in
+  (`vulnlab_enabled=true`) and firewalled to the lab subnets only.
+- **No snapshot/rollback exists yet** (known gap — nothing in `infrastructure/` automates a Proxmox
+  snapshot restore). `cleanup-all.ps1` is the only reset today and is best effort.
+- Kali keeps its own NAT (for apt) but reaches the target only over the routed lab subnets.
 
 ## Pieces
 
@@ -31,11 +32,10 @@ LABELING.md                   labels.jsonl -> node labels, honesty caveats
 tools/build_node_labels.py    labels.jsonl + converted graph -> node labels (sketch; columns not fixed yet)
 ```
 
-The launcher + scripts reach the Kali VM at `/opt/attack-pack`. **Local Vagrant lab:** a synced-folder
-mount (`src/Vagrantfile`); Kali is not Ansible-managed, and the target is `http://10.21.2.10:3000`.
-**Proxmox lab:** Ansible copies this pack there (`src/ansible/kali.yml` → `kali_attack` role; Kali is
-`10.21.4.30` on its own subnet, the target is `http://10.21.3.10:3000`). Either way the launcher is run
-directly from `/opt/attack-pack` and auto-detects the attacker IP, so only `--target` changes.
+Ansible copies this pack to the Kali VM at `/opt/attack-pack` (`src/ansible/kali.yml` → `kali_attack`
+role; Kali is `10.21.4.30` on its own subnet `it2102k`, the target is `http://10.21.3.10:3000`). The
+launcher is run directly from `/opt/attack-pack` and auto-detects the attacker IP, so the only required
+flag is `--target`.
 
 ## Run during a live session (end-goal path)
 
@@ -46,7 +46,7 @@ directly from `/opt/attack-pack` and auto-detects the attacker IP, so only `--ta
    Keep the desktop **idle** (the idle benign baseline); the attack window's own background activity is
    the benign noise. (The always-on live task usually already runs; `start-live.ps1 -Rotate` starts a fresh
    session for the demo.)
-2. **Kali attacker** (pack at `/opt/attack-pack`; Proxmox: Ansible-managed, target `http://10.21.3.10:3000`),
+2. **Kali attacker** (pack at `/opt/attack-pack`, Ansible-managed, target `http://10.21.3.10:3000`),
    the only required input is the vulnerable web URL:
    ```bash
    python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180

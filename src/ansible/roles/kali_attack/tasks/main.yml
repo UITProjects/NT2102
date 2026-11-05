@@ -1,6 +1,5 @@
 ---
-# The Proxmox Kali attacker: pull the attack pack to /opt/attack-pack and verify it runs. This REPLACES
-# the local Vagrant synced-folder mount (src/Vagrantfile) with an Ansible-managed copy. The launcher is
+# The Proxmox Kali attacker: pull the attack pack to /opt/attack-pack and verify it runs. The launcher is
 # stdlib-only and Kali already ships the pentest tooling, so this role installs no extra packages beyond
 # python3. The pack is copied from the control node's working tree (not git-cloned): same "ship what's in
 # your tree" idea as linux_auditship, but with copy (not synchronize) because this host authenticates by

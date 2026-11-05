@@ -41,11 +41,11 @@
       loop:
         - "{{ uv_dir }}\\{{ uv_version }}\\uv.exe"
         - "{{ etwpy_python }}"
-        - "{{ etwpy_src | default(etwpy_clone_dir ~ '\\src\\etw-python') }}\\pyproject.toml"
+        - "{{ etwpy_clone_dir }}\\src\\etw-python\\pyproject.toml"
       register: etwpy_files
     - ansible.builtin.assert:
         that: etwpy_files.results | map(attribute='stat.exists') | min
-        fail_msg: "uv, the collector venv or its source is missing — run role win_collector (mount mode: vagrant reload ws-etw)"
+        fail_msg: "uv, the collector venv or its source is missing — re-run windows.yml (role win_collector)"
         success_msg: "uv, collector venv and source present"
 
     - name: Collector task registered (win_collector)

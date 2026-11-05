@@ -1,6 +1,6 @@
 ---
 # Full lab: Windows collector/shipper/vulnlab + Ubuntu trainer. Run both, or one at a time with
-# --limit windows / --limit ubuntu. The Kali attacker is NOT here: local Vagrant Kali is mount-based
-# (src/Vagrantfile), and the Proxmox Kali runs on its own via kali.yml (like target.yml).
+# --limit windows / --limit ubuntu. The Kali attacker is NOT here: it is provisioned on its own via
+# kali.yml (like the Linux endpoint via target.yml).
 - import_playbook: windows.yml
 - import_playbook: ubuntu.yml

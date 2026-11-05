@@ -3,7 +3,7 @@
 Creates on one Proxmox node:
 
 - SDN Simple zone `nt2102` → VNet **`it2102`** → subnet `10.21.3.0/24` (gateway `10.21.3.1` on the node,
-  SNAT for internet). Separate from the Vagrant host-only lab `10.21.2.0/24` (`src/Vagrantfile`).
+  SNAT for internet).
 - The Windows Server 2022 ISO, downloaded by PVE from `iso_url`.
 - One VM (`ws-etw` by default): q35, UEFI (OVMF, Secure Boot keys), TPM 2.0, SATA disk, e1000e NIC on
   `it2102`, booting the ISO. **Install Windows by hand from the console.**

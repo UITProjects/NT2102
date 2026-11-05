@@ -6,7 +6,7 @@
   "attacker": {
     "vm": "kali",
     "launcher": "tools/launch_exploit.py",
-    "input": "the vulnerable web URL (e.g. http://10.21.2.10:3000); the pack is mounted on Kali at /opt/attack-pack (Vagrant)",
+    "input": "the vulnerable web URL (e.g. http://10.21.3.10:3000); the pack is deployed to Kali at /opt/attack-pack by Ansible (kali_attack role)",
     "stage_endpoints": ["/attack-lib.ps1", "/killchain.ps1", "/tool.bin", "/beacon", "/nmap.exe", "/ncat.exe", "/PsExec64.exe", "/rclone.exe"],
     "note": "DVWA's command-injection page (/vulnerabilities/exec/, field 'ip', security=low) is a documented, intentional OS-command sink; the launcher logs in (admin/password), sets security low, and injects '127.0.0.1 & <cradle>'. Override with --exploit-path/--exploit-field if needed."
   },

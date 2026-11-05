@@ -1,8 +1,7 @@
 # PROGRESS (status as of 2026-11-04)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs; **Vagrant is marked for removal**
-(user, 2026-11-04; not deleted yet).
+Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
 ## exp07: retrained on ~41 h of idle (2026-11-04, PROMOTED + live on the Proxmox trainer)
 
@@ -371,12 +370,6 @@ OPEN (the real limitation):
   calibrate, attack-test (Next 3 steps; the collector is ready). Gate on `lab status` per-provider coverage (kfile ≈ full
   span) and Read/Write per window before trusting it.
 
-- Run the RCE kill chain end to end against DVWA. DVWA provisioning is verified on `ws-etw`
-  (`ansible-playbook -i inventory.local.ini windows.yml -e vulnlab_enabled=true` serves DVWA on :3000,
-  login admin/password, security low — see Done). Remaining: `vagrant up kali` (mounts the pack at
-  `/opt/attack-pack`), then `python3 -I /opt/attack-pack/tools/launch_exploit.py --target
-  http://10.21.2.10:3000` during a live session, and check the window reaches ≥ Moderate (sg_score ≥ 30)
-  while benign stays green.
 - Concepts 2 (rest) to 9. Phase 0 toy exercises; Phase 1 one-page paper summary + hyperparameter list.
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
@@ -424,7 +417,6 @@ Code bugs found in the 2026-10-13 docs pass (verified in code, not fixed yet):
 - `build_node_labels.py` expects `node_id,type,name,timestamp`; the converter writes `node,node_type,node_attr`
   (no timestamp, types `PROCESS/FILE/NET`), and NET is checked as `network`. It cannot run as is.
 - `selftest.sh` skips `encode_to_features.py --selftest`.
-- `src/Vagrantfile:13` names `./host-setup.sh`; the file is `src/setup-virtualbox.sh`.
 - `live_server.py --sg-moderate-from` hard-codes 30.0 instead of `alg1.MODERATE_FROM`.
 - Scenarios 05 (lsass handle access) and 09 (timestomp) may be invisible to the collector's file keywords
   (0x390 = name/create/read/write) [INFERENCE]; check on a capture.
@@ -445,8 +437,8 @@ Repo hygiene:
    2026-11-02 11:45Z (11:05–11:40Z is a boot + fault-test burst, not idle) up to the trigger (user: ~2 days);
    no WinRM/RDP/Ansible on ws-etw until then. `lab pull --start … --end … --split test` → `lab train
    --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
-2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery instead of
-   the Vagrant mount), run the DVWA→RCE chain live, expect red + an LLM verdict.
+2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery),
+   run the DVWA→RCE chain live, expect red + an LLM verdict.
 3. **Real tool download + execution** in the T1105 phase (user, 2026-11-04; implement next session):
    download + RUN benign real tools (nmap `-sT` / ncat / PsExec; rclone optional) so tool processes +
    sockets generate new flagged nodes — the signal is execution, not file content. Full plan:

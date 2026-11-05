@@ -41,8 +41,8 @@ xampp_package: "xampp-81"    # Chocolatey package: Apache + PHP 8.1 + MariaDB bu
 dvwa_db_name: "dvwa"         # DVWA schema; created at provision time (DVWA builds tables via setup.php)
 dvwa_db_user: "dvwa"         # DVWA on MariaDB needs a dedicated app user (its README); NOT root
 dvwa_db_password: "p@ssw0rd" # lab-only DB password on a host-only network; DVWA's documented default
-# The Kali attacker (exploit + RCE kill chain) is a local-only Vagrant box, NOT managed by Ansible: it
-# gets the attack pack via a synced-folder mount (src/Vagrantfile). No attacker vars here.
+# The Kali attacker (exploit + RCE kill chain) is provisioned by Ansible (kali.yml, role kali_attack);
+# its vars live in that role's defaults, not here.
 
 # ---- pinned tool versions -------------------------------------------------------------------------
 python_embed_version: "3.12.7"
@@ -65,13 +65,12 @@ raw_root: 'C:\lab-out\etw\raw'
 # ---- ETW collector: our own Python collector (src/etw-python, DEVIATIONS D10) --------------------------
 collector_task: "etwlab-collector"     # SYSTEM scheduled task that runs `python -m etwcollect run`
 collector_session: "etwlab-collector"  # its ETW session name (etwcollect stop stops it by this name)
-# Where the collector source comes from: etwpy_mode = clone (cloud default: git clone repo_url@repo_branch to
-# etwpy_clone_dir) or mount (local Vagrant lab: src/Vagrantfile mounts src/etw-python at etwpy_src). etwpy_mode
-# and etwpy_src are deliberately NOT defined here (this file outranks the inventory's [windows:vars]); the
-# win_collector role reads them with | default(clone, <clone dir>\src\etw-python).
+# Where the collector source comes from: a git clone of repo_url@repo_branch to etwpy_clone_dir.
+# etwpy_clone_dir is deliberately NOT a var the role branches on (this file outranks the inventory's
+# [windows:vars]); win_collector always clones.
 etwpy_clone_dir: 'C:\lab\NT2102'
 uv_dir: 'C:\Tools\uv'                   # uv.exe, its cache and the CPython it downloads
-etwpy_venv: 'C:\Tools\etw-python-venv'  # on the VM's own disk: never inside the VirtualBox share
+etwpy_venv: 'C:\Tools\etw-python-venv'  # on the VM's own disk, separate from the git clone
 etwpy_python: "{{ etwpy_venv }}\\Scripts\\python.exe"
 
 # ---- always-on live capture (win_shipper: C:\scripts\start-live.ps1 run by a SYSTEM scheduled task) ----
@@ -83,7 +82,7 @@ live_keep_days: 1                 # raw test/live-* runs with no write for this 
 # ---- Ubuntu trainer -------------------------------------------------------------------------------
 repo_url: "https://github.com/UITProjects/NT2102.git"
 repo_branch: "main"
-repo_dest: "/home/{{ ansible_user | default('vagrant') }}/NT2102"
+repo_dest: "/home/{{ ansible_user }}/NT2102"
 # The model ocr-live loads is NOT set here: it is the repo's pointer src/artifacts/current.json, or
 # current.local.json on the trainer (`lab promote <run>`). No run_id / experiment_id to keep in sync.
 # live_llm_args: extra live_server.py LLM flags for ocr-live; unset/empty = LLM off. Non-empty also installs

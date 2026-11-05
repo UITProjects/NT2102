@@ -28,7 +28,7 @@
 param(
     # Where this script fetched its stage from (the Kali attacker). The launcher substitutes these;
     # defaults keep a manual run on the VM working. ${attacker}:${StagePort} is the T1105/C2 endpoint.
-    [string]$Attacker  = $(if ($env:LAB_ATTACKER)   { $env:LAB_ATTACKER }   else { "10.21.2.30" }),
+    [string]$Attacker  = $(if ($env:LAB_ATTACKER)   { $env:LAB_ATTACKER }   else { "10.21.4.30" }),
     [int]   $StagePort = $(if ($env:LAB_STAGE_PORT) { [int]$env:LAB_STAGE_PORT } else { 8080 }),
     # Sustain the attack for this many seconds by looping the C2 beacon + DB bursts (scan/tool-download
     # run once). 0 = single pass (manual default). The launcher sets it from --attack-seconds via

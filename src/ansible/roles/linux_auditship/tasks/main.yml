@@ -1,7 +1,7 @@
 ---
 # auditship (src/audit-python) as a systemd service: tail audit.log -> Loki on the trainer.
 # The code is copied from the control node (rsync), not git-cloned: only the two small packages are needed,
-# and it ships exactly what is in your working tree (like the Vagrant mount does for Windows).
+# and it ships exactly what is in your working tree.
 
 - name: Code dir
   ansible.builtin.file:
