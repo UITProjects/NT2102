@@ -180,7 +180,7 @@ def main():
     ap.add_argument("--run-dir", help="train_gnn_models.py output (models/, train_meta.json); default: current model")
     ap.add_argument("--scaler", help="TRAIN feature_scaler.json; default: current model's")
     ap.add_argument("--experiment", help="training experiment.json (converter sha256 check); default: current model's")
-    ap.add_argument("--bind", default="10.21.2.1", help="host-only IP the VM can reach (127.0.0.1 for replay)")
+    ap.add_argument("--bind", default="127.0.0.1", help="bind address (0.0.0.0 to listen on all interfaces)")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--window-min", type=float, default=5, help="MUST equal the training window length")
     ap.add_argument("--stride-min", type=float, default=None, help="default = window (tumbling)")

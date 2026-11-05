@@ -1,0 +1,100 @@
+{
+ "id": "range-20261102T123000Z",
+ "graph": "SimulatedW10",
+ "split": "test",
+ "event_source": "etw",
+ "source": "loki",
+ "label_source": "unlabelled",
+ "dos_map": {
+  "\\device\\harddiskvolume3": "c:",
+  "\\device\\cdrom0": "d:"
+ },
+ "windowing": {
+  "window_min": 5,
+  "stride_min": 2,
+  "max_gap_s": 120
+ },
+ "results": {
+  "windows": 88,
+  "edges_in": 34391,
+  "edges_out": 86943,
+  "edges_in_no_window": 136,
+  "nodes_unique": 866,
+  "node_window_copies": 16046,
+  "contract_ok": true
+ },
+ "tools": {
+  "converter": "514da4ef0eb5b89f6c53018eced6feeb8b18c1e1b7e8dc7705e776507e9f4734",
+  "etwwindow": "1b82fba8a70675fb6e7cea022803097dda378bc5424985756fe777577dc28787",
+  "checker": "490e5ca74e04960c31ef53a4f3ee922b13eb51d35b5e255764c1f636886bda49",
+  "builder": "29a622a9fb2f8d554dd9019985fbc9ef4f342caa163c7ff1c53e88fde5e28d87"
+ },
+ "pull": {
+  "source": "loki",
+  "loki": "http://127.0.0.1:3100",
+  "pulled_utc": "2026-11-02T17:15:08.318694+00:00",
+  "selection": {
+   "mode": "range",
+   "split": "test",
+   "providers": [
+    "kproc",
+    "kfile",
+    "knet"
+   ]
+  },
+  "range_ns": [
+   1793622600000000000,
+   1793633400000000000
+  ],
+  "range_utc": [
+   "2026-11-02 12:30:00+0000",
+   "2026-11-02 15:30:00+0000"
+  ],
+  "queries": [
+   "{job=\"silketw\", split=\"test\", provider=\"kproc\"}",
+   "{job=\"silketw\", split=\"test\", provider=\"kfile\"}",
+   "{job=\"silketw\", split=\"test\", provider=\"knet\"}"
+  ],
+  "streams": [
+   {
+    "split": "test",
+    "run": "live-20261102T110409Z",
+    "provider": "kfile",
+    "lines": 172561,
+    "duplicates_dropped": 0,
+    "sha256": "4925faaac7be1e7d5e964b238e1188208d15560681a4f91232a33367cdb0d86d"
+   },
+   {
+    "split": "test",
+    "run": "live-20261102T110409Z",
+    "provider": "knet",
+    "lines": 483,
+    "duplicates_dropped": 0,
+    "sha256": "75963fab79875c9070d95745a38d5be1d65bda87e0d89cec7bc3767a53d53ab2"
+   },
+   {
+    "split": "test",
+    "run": "live-20261102T110409Z",
+    "provider": "kproc",
+    "lines": 15126,
+    "duplicates_dropped": 0,
+    "sha256": "939c703425ad4f3a4be37faae58b391677b45e7a6d672c326204a457a61da4a5"
+   }
+  ],
+  "runs": {
+   "live-20261102T110409Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   }
+  },
+  "ledger_lines": 0,
+  "tools": {
+   "loki_pull": "4882d0598048137131c8ad61b26008f43864f4dc042c2aa604111826693f87b3",
+   "lokiclient": "020b85cea95ce2faeb34059c9812cdd6101fc07ae9add4b6436fcaa87f1bab55"
+  }
+ },
+ "postprocessed_utc": "2026-11-02T17:15:14.921122+00:00"
+}

@@ -36,3 +36,6 @@ __pycache__/
 /src/etw-python/.venv/
 # audit-python shipper (uv project, Linux endpoint)
 /src/audit-python/.venv/
+
+# Real Windows tool binaries staged onto Kali at provision time (T1105 executed tools); never committed.
+/src/atomic-attack-pack/tools/win/

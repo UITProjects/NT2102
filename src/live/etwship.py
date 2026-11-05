@@ -1,7 +1,7 @@
 """etwship.py - ship SilkETW JSON-lines files to the OCR-APT live server. Stdlib only (VM embeddable Python).
 
 Live mode (on the VM, while SilkService writes C:\\lab-out\\etw\\raw\\test\\live-<UTC>\\*.json):
-    python etwship.py --dir C:\\lab-out\\etw\\raw\\test\\live-20261011T100000Z --server http://10.21.2.1:8000
+    python etwship.py --dir C:\\lab-out\\etw\\raw\\test\\live-20261011T100000Z --server http://<trainer-ip>:8000
   Every --interval s: read each *.json from its last offset up to the last complete line, POST
   {session, clock_ms, pid, dos_map, batches:[{stream, offset_start, lines, ends}]}. A POST is sent even
   with no new lines (heartbeat): the server closes windows by the VM clock, so quiet periods still advance.
@@ -278,7 +278,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dir", help="live: SilkETW run folder to tail")
     ap.add_argument("--replay", help="replay: recorded run folder (*.json)")
-    ap.add_argument("--server", default="http://10.21.2.1:8000")
+    ap.add_argument("--server", default="http://127.0.0.1:8000")
     ap.add_argument("--session", help="default: run folder name")
     ap.add_argument("--token", default=os.environ.get("LAB_TOKEN"))
     ap.add_argument("--interval", type=float, default=1.0, help="seconds between POSTs (virtual seconds in replay)")

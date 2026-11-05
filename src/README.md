@@ -57,9 +57,8 @@ trained model is never overwritten.
 
 | folder | kind | runs where | in git |
 |---|---|---|---|
-| `Vagrantfile`, `setup-virtualbox.sh` | builds the two bare lab VMs (Windows collector + Ubuntu trainer) | host | yes |
-| `etw-python/` | the ETW collector `etwcollect` (uv project, stdlib + ctypes): ETW -> SilkETW-format lines -> Loki; mounted at `C:\etw-python` locally, cloned on cloud | VM | yes |
-| `ansible/` | provisions both VMs (Windows: etw-python collector, vulnlab; Ubuntu: Loki/Grafana, repo, `ocr-live`); cloud-portable via inventory | control node | yes |
+| `etw-python/` | the ETW collector `etwcollect` (uv project, stdlib + ctypes): ETW -> SilkETW-format lines -> Loki; cloned onto the VM by Ansible | VM | yes |
+| `ansible/` | provisions the lab VMs (Windows: etw-python collector, vulnlab; Ubuntu: Loki/Grafana, repo, `ocr-live`; Kali: attack pack); cloud-portable via inventory | control node | yes |
 | `lab/` | the `lab` CLI (the loop above) | trainer / host | yes |
 | `pipeline/` | stage scripts: Loki pull, convert, window, features, training, scoring, Alg. 1/2 | trainer / host | yes |
 | `live/` | live demo: server, engine, Loki source, web UI, replay tools | trainer | yes (`sessions/` no) |
@@ -73,14 +72,13 @@ trained model is never overwritten.
 
 Read in this order (about 30 minutes):
 
-1. `../docs/reports/professor.md`: the 5-minute overview, with architecture diagrams.
-2. `../docs/notes/data-flow.md`: how Windows logs become the model's input, end to end (raw events → edges → windows → features → tensors).
+1. `../docs/notes/data-flow.md`: how Windows logs become the model's input, end to end (raw events → edges → windows → features → tensors).
    Then, in a browser: `../docs/explainers/edges-to-node-features.html` (edges → the 15 node features),
    `../docs/explainers/live-windows.html` (how one live window is scored; windows vs stride),
    `../docs/explainers/training-windows.html` (20-min capture → 5-min windows → purge → one pooled graph → idle features) and
    `../docs/explainers/inference.html` (how a score maps back to a real process / file / network node).
-3. `../docs/reports/teammate.md`: how to run things, known pitfalls, open tasks.
-4. `ansible/README.md` (the two VMs) and `live/README.md` (the live demo).
+2. `../docs/reports/teammate.md`: how to run things, known pitfalls, open tasks.
+3. `ansible/README.md` (the lab VMs) and `live/README.md` (the live demo).
 
 Then pick a path. All commands run from the **repo root** after `uv sync`; `lab` also needs
 `source .venv/bin/activate`.
@@ -102,9 +100,6 @@ copy of `out/etw/experiments/20261009T145632Z/`.
 
 ```
 src/
-├── Vagrantfile               the two bare VMs: ws-etw (Windows Server 2022, 10.21.2.10, 3D off) and
-│                             ubuntu-trainer (Ubuntu 24.04, 10.21.2.20); no provisioners (Ansible does that)
-├── setup-virtualbox.sh       one-time host prep: allow 10.21.2.0/24 in VirtualBox, warn about KVM
 ├── etw-python/               the ETW collector `etwcollect` (README.md: commands, modules, format differences)
 ├── ansible/                  site.yml / windows.yml / ubuntu.yml, roles/, inventories (ansible/README.md)
 ├── lab/cli.py                the `lab` command (status, pull, train, loop, promote, current, selftest)

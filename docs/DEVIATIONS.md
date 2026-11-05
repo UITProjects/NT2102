@@ -80,12 +80,28 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   attack time range.
 - [OURS] the injected attack is now ONE RCE kill chain (`scenarios/rce-killchain.ps1`), delivered from a
   Kali attacker VM (`tools/launch_exploit.py`): Kali exploits DVWA via its documented OS-command-injection
-  page (T1190/T1059.001), then the RCE shell runs Discovery (T1033/T1082/T1057/T1016) → ingress transfer
-  (T1105) → persistence (T1053.005). The external origin means the attack subtree is rooted at the vuln
-  service (`httpd.exe → cmd.exe → powershell → …`), which is itself the anomalous signal; indicators are
-  the tool image names, the downloaded file, the `UpdaterSync` task, and `<attacker>:8080`. DVWA's
-  command-injection page (`/vulnerabilities/exec/`, security=low) is a real, documented and intentional
-  OS-command sink, so the exploited RCE is faithful. (Earlier: 10 Atomic/custom scenarios run on the VM.)
+  page (T1190/T1059.001), then the RCE shell runs Discovery (T1033/T1082/T1057/T1016) → loud network scan
+  (T1046) → ingress transfer + tool execution (T1105/T1569.002) → read-only MySQL enumeration/dump
+  (T1552/T1213) → C2 beacon (T1071) → persistence (T1053.005). The external origin means the attack subtree
+  is rooted at the vuln service (`httpd.exe → cmd.exe → powershell → …`), which is itself the anomalous
+  signal; indicators are the tool image names, the downloaded files, the `UpdaterSync` task, and
+  `<attacker>:8080`. DVWA's command-injection page (`/vulnerabilities/exec/`, security=low) is a real,
+  documented and intentional OS-command sink, so the exploited RCE is faithful. (Earlier: 10 Atomic/custom
+  scenarios run on the VM.)
+- [OURS] attack realism, to raise the signal **honestly** (not by detector tuning): the chain is
+  deliberately high-volume (user, 2026-11-04) and the **T1105 phase downloads and EXECUTES real benign
+  signed tools** — Sysinternals **PsExec** (as SYSTEM: `PsExec64.exe → PSEXESVC.exe → cmd.exe → whoami`)
+  and **rclone** (`copyurl` fetch from the C2), with **nmap/ncat best-effort** (staged on Kali by
+  `roles/kali_attack`, default-off, falling back to the PowerShell TcpClient sweep). Rationale: the graph
+  keys FILE nodes by path-hash and NET nodes by `ip:port`-hash (CLAUDE.md §9) and uses **no content
+  feature**, so real binaries on disk add nothing over the earlier inert markers — the added signal is the
+  tool's **process + socket nodes** (unseen in the idle baseline), which only appear when the tool is
+  *executed*. Lab-only and benign: real but non-malicious tools, read-only DB, isolated host-only subnets,
+  Defender off, disposable VM; no mimikatz / credential-theft malware. Each exec is timeout-guarded
+  (`Invoke-ToolWithTimeout`) and skipped unless a real PE was delivered, so the chain never hangs. The
+  detector stays **paper-faithful SG-Det** — an earlier `--sg-net-weight` NET ×2 lever was **rolled back**
+  (2026-11-04); the Moderate=10 threshold is unchanged and the live result is reported as observed.
+  (Plan + rationale: `docs/notes/real-tool-download-exec.md`.)
 - Why: exact knowledge of what was run, no external ground truth available.
 - Impact: weak oracle; benign processes with the same image name inside an attack window can be
   over-labelled.

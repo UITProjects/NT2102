@@ -1,0 +1,13 @@
+---
+# Kali attacker (infrastructure/ kali VM, group `attacker`): pull the attack pack + verify it. Run on its
+# own; NOT part of site.yml (that is the Windows + Ubuntu core lab), like target.yml.
+# Kali authenticates by username/password — its public default kali / kali, hardcoded in proxmox.ini
+# [attacker:vars] (not a secret on the lab subnet). Just make sure `sshpass` is on the control node:
+#   sudo apt install sshpass          # once, on the workstation
+#   ansible-playbook -i proxmox.ini kali.yml
+- name: Provision the Kali attacker
+  hosts: attacker
+  become: true
+  gather_facts: true
+  roles:
+    - { role: kali_attack, tags: [attack] }

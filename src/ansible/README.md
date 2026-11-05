@@ -1,15 +1,17 @@
-# Ansible: two-VM lab provisioning
+# Ansible: lab provisioning
 
-Provisions the lab the Vagrantfile builds (or any two cloud VMs in one subnet):
+Provisions the lab VMs (`infrastructure/` builds them on Proxmox, or point this at any cloud VMs in one
+subnet):
 
 | host (group) | address | role |
 |---|---|---|
-| `ws-etw` (`windows`) | 10.21.2.10 | ETW collector **`etwcollect`** (`src/etw-python`, SYSTEM task `etwlab-collector`; it also pushes to Loki), DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
-| `ubuntu-trainer` (`ubuntu`) | 10.21.2.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
+| `ws-etw` (`windows`) | 10.21.3.10 | ETW collector **`etwcollect`** (`src/etw-python`, SYSTEM task `etwlab-collector`; it also pushes to Loki), DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
+| `ubuntu-trainer` (`ubuntu`) | 10.21.3.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
 
-> The lab also has a **Kali attacker VM** (`10.21.2.30`), but it is **not provisioned by Ansible** — it
-> is a local-only Vagrant box that mounts `src/atomic-attack-pack` at `/opt/attack-pack` via a synced
-> folder (`src/Vagrantfile`), and runs the exploit launcher directly. See that pack's `README.md`.
+> The lab also has a **Kali attacker VM**: `kali` 10.21.4.30 on its own subnet 10.21.4.0/24 (group
+> `attacker`), Ansible-managed via `kali.yml` → role `kali_attack`, which copies
+> `src/atomic-attack-pack` to `/opt/attack-pack`. See the "Proxmox lab" section below and the pack's
+> `README.md`.
 
 ```
 etwcollect (SYSTEM task) -> C:\lab-out\etw\raw\<split>\<run>\{kproc,kfile,knet}.json
@@ -40,12 +42,12 @@ sum by (provider) (count_over_time({job="silketw", run="live-20261017T040000Z"}[
 
 > DVWA (Damn Vulnerable Web Application) is a deliberately vulnerable PHP lab target, installed for
 > **defensive detection practice** in an isolated network. `win_vulnlab` installs XAMPP (Apache + PHP +
-> MariaDB) via Chocolatey and serves DVWA on `vulnlab_port`; the local Kali box drives the exploit during
-> the demo, running the launcher from the mounted pack:
+> MariaDB) via Chocolatey and serves DVWA on `vulnlab_port`; the Kali box drives the exploit during
+> the demo, running the launcher from the deployed pack:
 >
 > ```bash
-> # on Kali (pack mounted at /opt/attack-pack by Vagrant):
-> python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.2.10:3000   # only input is the URL
+> # on Kali (pack deployed to /opt/attack-pack by the kali_attack role):
+> python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.3.10:3000   # only input is the URL
 > python3 -I /opt/attack-pack/tools/launch_exploit.py --selftest                        # serve+fetch, no target
 > ```
 >
@@ -81,9 +83,9 @@ Nothing hardcodes an IP. Each host has two addresses:
 
 `trainer_host` defaults to the Ubuntu host's `private_ip`, and `loki_url` = `http://<trainer_host>:3100`.
 The trainer also needs `admin_cidr` (who may open Grafana) and `grafana_admin_password`. Both are in
-`inventory.local.ini` for the lab; for cloud, `admin_cidr` goes in the cloud inventory and the password in
-the vault. To move to cloud, `cp inventory.cloud.ini.example inventory.cloud.ini`, fill in both addresses
-per host, and add `-i inventory.cloud.ini` to every command.
+`proxmox.ini` for the lab; for another cloud, `admin_cidr` goes in the cloud inventory and the password in
+the vault. To move to another cloud, `cp inventory.cloud.ini.example inventory.cloud.ini`, fill in both
+addresses per host, and add `-i inventory.cloud.ini` to every command.
 
 ## One-time setup
 
@@ -97,11 +99,7 @@ ansible-galaxy collection install -r requirements.yml     # win modules, chocola
 Re-activate the venv (`source .venv/bin/activate`) in any new shell before running `ansible` or
 `ansible-playbook`.
 
-**Local mode needs no vault.** `inventory.local.ini` already carries:
-- the box's public default account (`vagrant` / `vagrant`)
-- a lab-only Grafana password (`labadmin`)
-
-**Cloud creds (cloud mode only):**
+**Cloud/Proxmox creds:**
 ```bash
 cp group_vars/vault.yml.example group_vars/vault.yml      # fill win_user / win_password / grafana_admin_password
 ansible-vault encrypt group_vars/vault.yml                # vault.yml is gitignored
@@ -141,6 +139,21 @@ Check on `ubuntu-etw`: `sudo auditctl -l` (the `never ... uid=<auditship>` rules
 `{job="auditd", host="ubuntu-etw"} | key="exec"`. `type` and `key` are structured metadata: filter them after the
 `{...}` selector, not inside it.
 
+The Kali attacker `kali` 10.21.4.30 (group `attacker`, on its **own** subnet 10.21.4.0/24, `infrastructure/`
+VM 2106) is Ansible-managed on Proxmox. It uses **username/password** — Kali's public default `kali` /
+`kali`, hardcoded in `proxmox.ini` (not a secret on the lab subnet), so `sshpass` must be on the control
+node, no vault.
+The `kali_attack` role copies `src/atomic-attack-pack` to `/opt/attack-pack` and selftests the launcher:
+
+```bash
+sudo apt install sshpass                                          # once, on the workstation
+ansible-playbook -i proxmox.ini kali.yml
+# first boot of a fresh kali is manual (IP + ssh): infrastructure/README.md "kali".
+# live attack, once ocr-live runs a Proxmox model (DVWA on ws-etw; the launcher auto-detects 10.21.4.30):
+#   ssh kali@10.21.4.30
+#   python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.3.10:3000
+```
+
 ### Tamper Protection (Windows, manual, once)
 
 Defender **Tamper Protection** cannot be toggled remotely. Before the first run, RDP into `ws-etw` and
@@ -151,14 +164,14 @@ continues.
 ## Run
 
 ```bash
-# local lab (default inventory.local.ini, no vault needed). Ubuntu FIRST: etwcollect needs Loki to push to.
-vagrant up                                   # from src/, builds both bare VMs
-ansible ubuntu -m ping
-ansible windows -m ansible.windows.win_ping  # use win_ping on Windows, NOT ping
-ansible-playbook site.yml --limit ubuntu     # Loki + Grafana + repo + ocr-live
-ansible-playbook site.yml --limit windows    # etwcollect (uv) + start-live.ps1 (+ vulnlab with -e vulnlab_enabled=true)
+# Proxmox lab (proxmox.ini; VMs from infrastructure/). Ubuntu FIRST: etwcollect needs Loki to push to.
+ansible -i proxmox.ini ubuntu -m ping
+ansible -i proxmox.ini windows -m ansible.windows.win_ping  # use win_ping on Windows, NOT ping
+ansible-playbook -i proxmox.ini ubuntu.yml                                    # Loki + Grafana + repo + ocr-live
+ansible-playbook -i proxmox.ini windows.yml -e @group_vars/vault.yml --ask-vault-pass -e vulnlab_enabled=true
+                                              # etwcollect (uv) + start-live.ps1 + DVWA vulnlab
 
-# cloud (the vault supplies the Windows + Grafana creds):
+# any other cloud (the vault supplies the Windows + Grafana creds):
 ansible-playbook -i inventory.cloud.ini site.yml -e @group_vars/vault.yml --ask-vault-pass
 ```
 
@@ -166,9 +179,9 @@ ansible-playbook -i inventory.cloud.ini site.yml -e @group_vars/vault.yml --ask-
 (`group_vars/all.yml`, default `main`), and `ocr-live` starts `live_server.py --loki-url`. A branch
 without `src/live/loki_source.py` makes the service fail with an unknown-argument error. Push this branch
 and set `repo_branch` to it, or merge it first. One-off, without editing the file:
-`ansible-playbook -i inventory.local.ini ubuntu.yml --tags project -e repo_branch=<branch>`.
+`ansible-playbook -i proxmox.ini ubuntu.yml --tags project -e repo_branch=<branch>`.
 
-**LLM on `ocr-live`: `live_llm_args`** (default empty = off; `inventory.local.ini` sets the DeepSeek flags).
+**LLM on `ocr-live`: `live_llm_args`** (default empty = off; `proxmox.ini` sets the DeepSeek flags).
 Non-empty also makes `uv sync` install the `llm` group. The API key is never an Ansible variable: save it once
 on the trainer (`alg2.py --ping`, `src/live/README.md` §5) BEFORE the flags are applied, or `ocr-live` exits
 at start (no terminal to prompt). `-e live_llm_args=` turns the LLM off for one run.
@@ -176,11 +189,10 @@ at start (no terminal to prompt). `-e live_llm_args=` turns the LLM off for one 
 `python_embed_sha256` and `uv_sha256` in `group_vars/all.yml` are pinned (the latter from the release's
 checksum file).
 
-**Collector source (`etwpy_mode`).** Local lab: `inventory.local.ini` sets `etwpy_mode=mount`, and
-`src/Vagrantfile` shares `src/etw-python` as `C:\etw-python` (needs `vagrant reload ws-etw` once). A host
-edit is live after `etwctl stop; etwctl start`; re-run `--tags collector` only when `pyproject.toml` /
-`uv.lock` change. Cloud: the default `clone` git-clones `repo_url@repo_branch` to `C:\lab\NT2102`. Either way
-`uv sync --frozen` builds the venv at `C:\Tools\etw-python-venv` (never in the share).
+**Collector source.** `win_collector` git-clones `repo_url@repo_branch` to `C:\lab\NT2102`; `uv sync
+--frozen` builds the venv at `C:\Tools\etw-python-venv`, separate from the clone. Re-run `--tags collector`
+after a `src/etw-python` change (a re-clone/fast-forward on every run; the venv rebuilds only when
+`pyproject.toml` / `uv.lock` changed).
 
 ## Rebuild training data (from scratch, through Loki)
 
@@ -267,7 +279,7 @@ windows stay green; the teammate's attack turns its window red.
 
 ```
 ansible.cfg  requirements.yml  requirements.txt  site.yml  windows.yml  ubuntu.yml
-inventory.local.ini  inventory.cloud.ini.example
+proxmox.ini  inventory.cloud.ini.example
 group_vars/   all.yml  windows.yml  ubuntu.yml  vault.yml.example
 roles/
   win_base        OS config: net profile, UTC+7, no-sleep, RDP, folders, Defender
@@ -278,7 +290,10 @@ roles/
   ubuntu_base     UTC+7 + timesyncd, apt deps + uv + ufw rule for the live server
   ubuntu_loki     Docker + Loki + Grafana (compose, host network) + ufw (Loki from Windows, Grafana from admin_cidr)
   ubuntu_project  git clone + uv sync + ocr-live systemd unit (--loki-url + live_llm_args) + session cleanup cron
+  kali_attack     (Proxmox, kali.yml) copy src/atomic-attack-pack -> /opt/attack-pack + launcher selftest
 ```
+(Not shown: `linux_auditd`/`linux_auditship` run by `target.yml`; `kali_attack` by `kali.yml` — both
+run on their own, not via `site.yml`.)
 
 The converter and windowing tool (`win_collector`) are deployed from `src/pipeline/`, the same files
 `build_experiment.py` runs on the trainer. See the converter hash rule above.

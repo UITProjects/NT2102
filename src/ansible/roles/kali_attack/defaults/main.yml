@@ -1,0 +1,23 @@
+---
+# Where the attack pack lands on Kali (owned by the login user so the launcher runs without sudo).
+attack_pack_dir: /opt/attack-pack
+
+# --- Real Windows tool binaries served at the T1105 stage and EXECUTED on the target (ws-etw) ----------
+# These are downloaded onto Kali at provision time (Kali has NAT/internet) into win_tools_dir, served by
+# tools/launch_exploit.py, and run by scenarios/rce-killchain.ps1. They are benign, signed utilities
+# (Sysinternals PsExec, rclone); the detector signal comes from EXECUTING them (new unseen process/socket
+# nodes), not their file content. win_tools_dir is gitignored and never committed. [OURS], lab-only.
+win_tools_dir: "{{ attack_pack_dir }}/tools/win"
+
+# Set a URL to stage that tool; leave empty to skip it (the chain degrades to an inert marker + the
+# PowerShell TcpClient sweep, so provisioning never breaks on a flaky source). Optionally pin *_sha256
+# (bare hex, no "sha256:" prefix) to verify the download; empty = no checksum check (still idempotent via
+# force:no + creates:). Sysinternals' URL is not versioned, so its content changes -> left unpinned.
+pstools_url: "https://download.sysinternals.com/files/PSTools.zip"   # -> PsExec64.exe (SYSTEM process tree)
+pstools_sha256: ""
+rclone_url: "https://downloads.rclone.org/rclone-current-windows-amd64.zip"  # -> rclone.exe (transfer + C2 fetch)
+rclone_sha256: ""
+# nmap on Windows needs its DLLs (and Npcap for raw scans); -sT -Pn needs no driver. Portable packaging is
+# fragile, so nmap is OPTIONAL and OFF by default: empty url -> the TcpClient sweep carries the scan signal.
+nmap_zip_url: ""                                                     # -> nmap.exe + ncat.exe (+ DLLs), best-effort
+nmap_sha256: ""

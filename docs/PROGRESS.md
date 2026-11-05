@@ -1,8 +1,7 @@
 # PROGRESS (status as of 2026-11-04)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`retrain-2day-exclusions`** (off `deploy-kali`). All work on the Proxmox VMs; **Vagrant is marked for removal**
-(user, 2026-11-04; not deleted yet).
+Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
 ## exp07: retrained on ~41 h of idle (2026-11-04, PROMOTED + live on the Proxmox trainer)
 
@@ -28,7 +27,7 @@ recorded attack, not a new live run. exp07 gate: `best_ep` 99 all types, τ file
 
 **Not yet:** ≥ 24 h live soak across the ~05:05Z and ~11:15Z jobs (the only idle test of exp07 itself). Open: teammates to
 confirm the RDP sessions; `powershell.exe` is in every window because our 5-min watchdog starts it (likely why the attack
-scores weakly, [INFERENCE], untested). `ocr-live` code on the trainer is copied by SSH, uncommitted, until the branch is pushed.
+scores weakly, [INFERENCE], untested). Merged (PR #9) and deployed from `main` (`2fd8b51`, `ubuntu.yml --tags project`, re-run `changed=0`).
 
 ## ocr-live: paper level scale + persistent history (2026-11-03, DEPLOYED + verified on the Proxmox trainer)
 
@@ -106,11 +105,65 @@ to `it2102_rules` (ws-etw accepts the DVWA exploit; Kali accepts the callback vi
 accept). The 7 base resources are now in state (user ran `apply`). **Fix pending apply:** creating `it2102k`
 gave pve-master a new IP `10.21.4.1`, so every VM could reach the node UI/SSH there, bypassing the existing
 `10.21.3.1` drop — added an `OUT DROP → 10.21.4.1` to the shared `it2102_rules` (user, 2026-11-03). `plan` =
-**0 add / 5 change / 0 destroy** (the drop added to all 5 VMs' rules). Ansible: `proxmox.ini` `[attacker]`
-group (user/password auth, `kali_password` in the gitignored vault, needs `sshpass`), `kali.yml` +
-`kali_attack` role (copies `src/atomic-attack-pack` → `/opt/attack-pack`, selftest ok locally). **Pending
-(user): `terraform apply` the firewall fix; manual Kali install (IP+ssh+password); add a 10.21.4.0/24 route
-on the home router; then `kali.yml`.** See `infrastructure/README.md` "kali".
+**0 add / 5 change / 0 destroy** (the drop added to all 5 VMs' rules; still **pending user `terraform apply`**).
+Ansible (branch `provision-kali-ansible`): `proxmox.ini` `[attacker]` group + `kali.yml` + `kali_attack` role
+(copies `src/atomic-attack-pack` → `/opt/attack-pack`, launcher selftest). Auth = Kali's public default
+`kali` / `kali` hardcoded in `proxmox.ini` (user, 2026-11-04; not a secret on the lab subnet, like
+vagrant/vagrant), no vault. **Kali VERIFIED (2026-11-04):** ping ok, `kali.yml` first run failed=0 / re-run
+changed=0, pack in place, selftest passes on the VM; Kali→DVWA on ws-etw:3000 = 200 (cross-subnet path works).
+
+**Live scripted attack run on exp07 (2026-11-04 14:55Z) — detected at node level, NO alert.** Launched the
+DVWA→RCE kill chain from the Proxmox Kali (`launch_exploit.py --target http://10.21.3.10:3000`): HTTP 200,
+ws-etw fetched lib/killchain/tool.bin (200) and the chain ran (httpd→cmd→powershell, discovery, T1105, schtask
+`UpdaterSync`). Result in `ocr-live` (session `live-20261104T114407Z.r5`, `moderate_from 10`): idle windows
+14:30–14:50Z green (0 flagged); attack window **14:55Z = 9 flagged / 1 subgraph / max_sg 8.49 / Minor /
+alert False**. `detail.json` shows the flagged subgraph holds the real attack nodes (Kali C2 `10.21.4.30`,
+powershell, cmd.exe, schtasks, whoami, systeminfo) — so detection works at the node level, but the subgraph
+score (8.49) fell **just below Moderate=10**, so no alert and no LLM investigation. Same under-detection as
+exp06 (partly in-distribution idle baseline) and consistent with exp07's seed-dependent replay red. Not tuned.
+LLM budget raised 10→15 beforehand (`9fb38ff`) but unused (LLM is alert-only). Cleanup ran (`cleanup-all.ps1`:
+`UpdaterSync` + `downloaded_tool.bin` removed, shells killed; task confirmed gone). See `infrastructure/README.md`
+"kali"; getting the attack honestly red is the open D2 decision (thinner baseline, etc.).
+
+**Richer attack + NET-boost rollback (2026-11-04, branch `provision-kali-ansible`).** After the 8.49 near-miss
+we briefly added an [OURS] NET ×2 SG-Det weight, then **rolled it back** (offline preview only reached 9.42 with
+one flagged NET node; detector tuning the user rejected) and instead made the *attack* realistic/high-volume so it
+clears Moderate honestly: `rce-killchain.ps1` now does T1046 loud subnet sweep (10.21.3.1-50 + Kali, 7 ports) +
+T1105 five INERT tool markers (mimikatz/psexec/nc/nmap/rclone) + read-only MySQL enumerate/dump (`mysql -uroot`,
+no password) + T1071 beacon loop (`--attack-seconds` default 180) + T1053.005. Benign/lab-only; disclosed [OURS]
+in SCENARIOS/manifest/DEVIATIONS D8. Launcher serves the markers + `/beacon`; cleanup clears the tools dir.
+**Live result (15:50Z, exp07, detector paper-faithful — no net weight):** pre-attack idle 15:45Z green; attack
+window **15:50Z = 20 flagged (13 file + 7 net) / 2 subgraphs / max_sg 11.70 / Moderate / alert True** — the kept
+subgraph holds the real attack NET nodes (C2 `10.21.4.30:8080`, DB `10.21.3.10:3306`, scanned SSH `.11/.20/.30/.50:22`)
++ networking DLLs. **So the richer attack DOES raise a true alert — the scan's NET breadth (not weighting) pushed it
+over 10.** HONEST caveats: (1) margin is thin (11.70 vs 10) and NOT attack-specific — my own bulk WinRM/admin
+activity minutes earlier (15:40Z) also went red at 11.03 (idle model is thin, the known FP mode); (2) the LLM
+triage returned **`uncertain`** (not a confident `attack` like exp05's 0.85), so the LLM layer did not confirm it;
+(3) the NET signal depends on the Linux hosts' SSH being up (open ports = the flagged scan nodes). Cleanup ran;
+idle-green re-confirmation pending (my cleanup WinRM copy dirties 15:55Z). Repo selftests 17/17; attack-pack commit
+staged (GPG cold, handed to user). See [[live-detector-benign-fp]], DEVIATIONS D8.
+
+**Real tool download+EXEC live run (2026-11-05 00:50Z, exp07, paper-faithful SG-Det) — RED, LLM-confirmed, the best
+result to date.** The T1105 phase now downloads AND executes real benign tools: Sysinternals **PsExec** + **rclone**
+(real PEs staged on Kali by `roles/kali_attack` into `tools/win/`, gitignored, 833 KB + 85 MB; nmap/ncat best-effort,
+OFF by default -> markers + the TcpClient sweep). Rationale: the graph uses no content feature, so real binaries add
+nothing over markers UNLESS executed; the signal is the tool's process + sockets (`docs/notes/real-tool-download-exec.md`,
+D6/D8). Live from the Proxmox Kali (`launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180`, launched at
+the 00:50:00Z boundary): exploit HTTP 200; ws-etw fetched PsExec64.exe + rclone.exe (real) + nmap/ncat markers + 8
+beacons. Result (session `live-20261104T235407Z`, moderate_from 10): windows 00:25–00:45Z green (00:45Z = 1 benign file
+flag, sg 0.0); attack **00:50Z = 18 flagged (11 file + 7 net) / 1 KEPT subgraph / max_sg 15.40 / Moderate / alert
+True**. The single connected subgraph holds the REAL attack nodes: `c:\users\public\tools\rclone.exe` (process), C2
+`10.21.4.30:8080`, scan hits `10.21.3.11/.20/.50/.30:22`, DB `10.21.3.10:3306`, + the RAS/proxy & .NET DLLs the
+downloads pulled in. **LLM triage = `attack`, conf 0.85** (TA0011 C2 / TA0010 Exfil / TA0002 Exec); the report names
+PowerShell spawning rclone from a user-writable dir and exfil to the C2. Better than the 11-04 run on every axis:
+higher margin (15.40 vs 11.70), ONE connected subgraph (not fragmented), **LLM-CONFIRMED** (vs "uncertain"), and
+attack-**SPECIFIC** (only 00:50Z red — my deploy was Kali-side, ws-etw stayed idle; no admin-burst FP this time).
+Honest notes: (1) PsExec DID run (its `PsExec64.exe -> PSEXESVC.exe -> cmd.exe -> whoami.exe` tree is in node_attrs)
+but scored below τ, so rclone + the scan/C2/DB carried the score — PsExec's contribution was nil; (2) nmap/ncat were
+markers, so the NET breadth came from the PowerShell TcpClient sweep (the designed fallback); (3) still a thin 5-min
+idle model — Moderate, not Significant. **Cleanup DONE** (user ran it from RDP on ws-etw, 2026-11-05: `UpdaterSync`
+task deleted, tools dir + legacy marker removed, PSEXESVC/tool processes stopped). Repo selftests 17/17; attack-pack +
+ansible + docs changes committed signed (handed to the user). See [[live-detector-benign-fp]], DEVIATIONS D6/D8.
 
 **nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
 router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
@@ -317,12 +370,6 @@ OPEN (the real limitation):
   calibrate, attack-test (Next 3 steps; the collector is ready). Gate on `lab status` per-provider coverage (kfile ≈ full
   span) and Read/Write per window before trusting it.
 
-- Run the RCE kill chain end to end against DVWA. DVWA provisioning is verified on `ws-etw`
-  (`ansible-playbook -i inventory.local.ini windows.yml -e vulnlab_enabled=true` serves DVWA on :3000,
-  login admin/password, security low — see Done). Remaining: `vagrant up kali` (mounts the pack at
-  `/opt/attack-pack`), then `python3 -I /opt/attack-pack/tools/launch_exploit.py --target
-  http://10.21.2.10:3000` during a live session, and check the window reaches ≥ Moderate (sg_score ≥ 30)
-  while benign stays green.
 - Concepts 2 (rest) to 9. Phase 0 toy exercises; Phase 1 one-page paper summary + hyperparameter list.
 - LLM container; hardware recorded.
 - Replay equivalence check (`compare_replay.py`); user-confirmed runs of the selftests of
@@ -370,7 +417,6 @@ Code bugs found in the 2026-10-13 docs pass (verified in code, not fixed yet):
 - `build_node_labels.py` expects `node_id,type,name,timestamp`; the converter writes `node,node_type,node_attr`
   (no timestamp, types `PROCESS/FILE/NET`), and NET is checked as `network`. It cannot run as is.
 - `selftest.sh` skips `encode_to_features.py --selftest`.
-- `src/Vagrantfile:13` names `./host-setup.sh`; the file is `src/setup-virtualbox.sh`.
 - `live_server.py --sg-moderate-from` hard-codes 30.0 instead of `alg1.MODERATE_FROM`.
 - Scenarios 05 (lsass handle access) and 09 (timestomp) may be invisible to the collector's file keywords
   (0x390 = name/create/read/write) [INFERENCE]; check on a capture.
@@ -391,8 +437,12 @@ Repo hygiene:
    2026-11-02 11:45Z (11:05–11:40Z is a boot + fault-test burst, not idle) up to the trigger (user: ~2 days);
    no WinRM/RDP/Ansible on ws-etw until then. `lab pull --start … --end … --split test` → `lab train
    --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
-2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery instead of
-   the Vagrant mount), run the DVWA→RCE chain live, expect red + an LLM verdict.
+2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery),
+   run the DVWA→RCE chain live, expect red + an LLM verdict.
+3. **Real tool download + execution** in the T1105 phase (user, 2026-11-04; implement next session):
+   download + RUN benign real tools (nmap `-sT` / ncat / PsExec; rclone optional) so tool processes +
+   sockets generate new flagged nodes — the signal is execution, not file content. Full plan:
+   `docs/notes/real-tool-download-exec.md`. Branch `provision-kali-ansible`.
 
 Earlier backlog (2026-10-31, after the exp05 demo win):
 

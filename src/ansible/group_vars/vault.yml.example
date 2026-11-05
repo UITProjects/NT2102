@@ -12,3 +12,4 @@ win_password: "vagrant"
 
 # Grafana admin on the Ubuntu trainer (cloud). Local mode uses inventory.local.ini instead.
 grafana_admin_password: "CHANGE_ME"
+# (Kali needs no vault entry: it uses its public default kali / kali, hardcoded in proxmox.ini.)

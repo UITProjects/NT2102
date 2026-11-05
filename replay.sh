@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# replay.sh - replay a recorded capture into a local live server (start it first: ./serve.sh local).
+# replay.sh - replay a recorded capture into a local live server (start it first: ./serve.sh).
 #
 # Usage: ./replay.sh <session-id | raw-dir> [speed]
 #   session-id  a folder in src/live/sessions/ -> replays its raw/ copy
@@ -24,7 +24,7 @@ elif [[ ! -d "$src" ]]; then
   exit 1
 fi
 if ! curl -sf "http://127.0.0.1:$PORT/api/status" >/dev/null; then
-  echo "[replay] no live server on 127.0.0.1:$PORT. Start one first: ./serve.sh local" >&2
+  echo "[replay] no live server on 127.0.0.1:$PORT. Start one first: ./serve.sh" >&2
   exit 1
 fi
 exec uv run python src/live/etwship.py --server "http://127.0.0.1:$PORT" --speed "$speed" --replay "$src" "${name[@]}"

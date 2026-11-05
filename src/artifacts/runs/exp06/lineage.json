@@ -1,0 +1,21 @@
+{
+ "model": "exp06",
+ "experiment": "range-20261102T123000Z",
+ "experiment_source": "loki",
+ "benign_split": "test",
+ "label_source": "benign by operator assertion: idle Loki range 2026-11-02 12:30:00+0000 - 2026-11-02 15:30:00+0000 (split test), no attack run",
+ "seeds": 3,
+ "epochs": null,
+ "created_utc": "2026-11-02T17:18:43.949235+00:00",
+ "git_commit": "283d2a0",
+ "pipeline_uncommitted_changes": false,
+ "converter_sha256": "514da4ef0eb5b89f6c53018eced6feeb8b18c1e1b7e8dc7705e776507e9f4734",
+ "tools": {
+  "encode_to_features.py": "7d07efb74f3361a3a212cca1cae652e2b73f786a9bba43fecd6cd23180455e36",
+  "train_gnn_models.py": "6792183daf4cc3742a5e53f75ca270d3e1782f70cc4b9895d1154e544d08634b"
+ },
+ "commands": [
+  "src/pipeline/encode_to_features.py --edges src/out/etw/experiments/range-20261102T123000Z/SimulatedW10_test_edges.csv --out-dir src/artifacts/runs/exp06/features",
+  "src/pipeline/train_gnn_models.py --edges src/out/etw/experiments/range-20261102T123000Z/SimulatedW10_test_edges.csv --features src/artifacts/runs/exp06/features/features_model.csv --scaler src/artifacts/runs/exp06/features/feature_scaler.json --out-dir src/artifacts/runs/exp06 --runs 3"
+ ]
+}

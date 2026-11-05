@@ -1,0 +1,83 @@
+---
+# The Proxmox Kali attacker: pull the attack pack to /opt/attack-pack and verify it runs. The launcher is
+# stdlib-only and Kali already ships the pentest tooling, so this role installs no extra packages beyond
+# python3. The pack is copied from the control node's working tree (not git-cloned): same "ship what's in
+# your tree" idea as linux_auditship, but with copy (not synchronize) because this host authenticates by
+# password and rsync-over-ssh would not get the sshpass password.
+
+- name: Ensure python3 is present (the launcher runs under `python3 -I`)
+  ansible.builtin.apt:
+    name: python3
+    state: present
+    update_cache: false
+  # Kali ships python3, so this is normally changed=0. No apt upgrade here: keep the box as installed.
+
+- name: Attack-pack dir (owned by the login user, so the launcher runs without sudo)
+  ansible.builtin.file:
+    path: "{{ attack_pack_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Copy the attack pack from the control node's working tree
+  ansible.builtin.copy:
+    src: "{{ src_dir }}/atomic-attack-pack/"
+    dest: "{{ attack_pack_dir }}/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: preserve
+  # Recursive directory copy, idempotent by checksum (changed=0 on a re-run of an unchanged tree). The
+  # repo has no __pycache__/.venv under atomic-attack-pack, so there is nothing to exclude.
+
+# --- Stage the real Windows tool binaries (T1105 executed tools) -------------------------------------
+# Runs on Kali, which has NAT/internet. Each tool is skipped when its *_url is empty, so a flaky source
+# never fails provisioning (the chain then uses an inert marker + the TcpClient sweep). Idempotent:
+# get_url force:no won't re-fetch, and the unarchive `creates:` short-circuits once the exe is present.
+- name: Attack-pack win-tools dir (holds the downloaded Windows binaries; gitignored)
+  ansible.builtin.file:
+    path: "{{ win_tools_dir }}/_dl"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Download the Windows tool zips (skip any with an empty URL)
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ win_tools_dir }}/_dl/{{ item.name }}.zip"
+    checksum: "{{ ('sha256:' + item.sha256) if item.sha256 else omit }}"
+    force: false
+    mode: "0644"
+  loop:
+    - { name: pstools, url: "{{ pstools_url }}", sha256: "{{ pstools_sha256 }}" }
+    - { name: rclone,  url: "{{ rclone_url }}",  sha256: "{{ rclone_sha256 }}" }
+    - { name: nmap,    url: "{{ nmap_zip_url }}", sha256: "{{ nmap_sha256 }}" }
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.url | length > 0
+
+# Extract with `unzip -j` directly (flatten paths): the unarchive module mis-verifies a flattened
+# `include:` member. `creates:` keeps it idempotent; the member pattern is matched by unzip, not the shell.
+- name: Extract PsExec64.exe (zip root -> win dir, flattened)
+  ansible.builtin.command:
+    cmd: "unzip -o -j {{ win_tools_dir }}/_dl/pstools.zip PsExec64.exe -d {{ win_tools_dir }}"
+    creates: "{{ win_tools_dir }}/PsExec64.exe"
+  when: pstools_url | length > 0
+
+- name: Extract rclone.exe (versioned subdir -> flattened into win dir)
+  ansible.builtin.command:
+    cmd: "unzip -o -j {{ win_tools_dir }}/_dl/rclone.zip */rclone.exe -d {{ win_tools_dir }}"
+    creates: "{{ win_tools_dir }}/rclone.exe"
+  when: rclone_url | length > 0
+
+- name: Extract nmap.exe + ncat.exe + DLLs (best-effort; flattened into win dir)
+  ansible.builtin.command:
+    cmd: "unzip -o -j {{ win_tools_dir }}/_dl/nmap.zip -d {{ win_tools_dir }}"
+    creates: "{{ win_tools_dir }}/nmap.exe"
+  when: nmap_zip_url | length > 0
+
+- name: Selftest — the launcher serves its stage and contacts no target (proves "it runs", not detection)
+  ansible.builtin.command: "python3 -I {{ attack_pack_dir }}/tools/launch_exploit.py --selftest"
+  changed_when: false
+  become: false
