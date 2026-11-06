@@ -15,6 +15,7 @@
     Credential access / DB ....... T1552 / T1213      (MySQL as root/no-password: enumerate + dump, READ-ONLY)
     C2 beacon .................... T1071              (periodic callback; loops to sustain >= DurationSeconds)
     Persistence .................. T1053.005          (scheduled task)
+    Defense evasion .............. T1070.001 T1070.004 (clear Windows event logs; delete the ingress tools)
 
   EVERYTHING is lab-only and benign: the "tools" are inert marker files (not real binaries), the DB
   phase is read-only enumeration of the lab's own DVWA DB, and the scan targets the isolated lab subnets.
@@ -240,6 +241,33 @@ Invoke-LabeledStep -Technique "T1053.005" -Tactic "persistence" `
     -FileIndicators @($legacyTool,"C:\Windows\System32\Tasks\$taskName") `
     -Note "Scheduled task persistence ($taskName)" -Action {
         & schtasks /create /tn $taskName /tr "cmd /c `"$legacyTool`"" /sc minute /mo 5 /f | Out-Null
+    }
+
+# --- Defense evasion / anti-forensics (T1070): cover tracks at the very end of the chain -----------
+# T1070.001 Clear Windows event logs. wevtutil.exe run as a child of the RCE powershell is a distinctive
+# unseen PROCESS node (+ a Start edge from the anomalous shell) and touches the .evtx FILE nodes under
+# C:\Windows\System32\winevt\Logs. SAFE for our telemetry: etwcollect reads live ETW real-time sessions
+# (Kernel-Process/File/Network), NOT the .evtx event logs, so clearing them does not stop collection.
+Invoke-LabeledStep -Technique "T1070.001" -Tactic "defense-evasion" `
+    -ProcessIndicators @("wevtutil.exe") `
+    -FileIndicators @("C:\Windows\System32\winevt\Logs\Security.evtx",
+                      "C:\Windows\System32\winevt\Logs\System.evtx",
+                      "C:\Windows\System32\winevt\Logs\Application.evtx") `
+    -Note "Clear Windows event logs (Security/System/Application)" -Action {
+        foreach ($log in @("Security","System","Application")) {
+            & wevtutil.exe cl $log 2>$null
+        }
+    }
+
+# T1070.004 File deletion. The attacker removes its own ingress tools (the T1105 downloads) to cover
+# tracks; the deleting process (the RCE powershell) is the signal. cleanup-all.ps1 stays idempotent if
+# this already removed them.
+Invoke-LabeledStep -Technique "T1070.004" -Tactic "defense-evasion" `
+    -ProcessIndicators @("powershell.exe") `
+    -FileIndicators (@($legacyTool) + ($toolNames | ForEach-Object { "$toolsDir\$_" })) `
+    -Note "Delete downloaded ingress tools (anti-forensics)" -Action {
+        Remove-Item $toolsDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $legacyTool -Force -ErrorAction SilentlyContinue
     }
 
 Write-Host "[rce] killchain complete. Labels appended to C:\lab-labels\attack-labels.jsonl" -ForegroundColor Magenta

@@ -82,10 +82,13 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   Kali attacker VM (`tools/launch_exploit.py`): Kali exploits DVWA via its documented OS-command-injection
   page (T1190/T1059.001), then the RCE shell runs Discovery (T1033/T1082/T1057/T1016) → loud network scan
   (T1046) → ingress transfer + tool execution (T1105/T1569.002) → read-only MySQL enumeration/dump
-  (T1552/T1213) → C2 beacon (T1071) → persistence (T1053.005). The external origin means the attack subtree
-  is rooted at the vuln service (`httpd.exe → cmd.exe → powershell → …`), which is itself the anomalous
-  signal; indicators are the tool image names, the downloaded files, the `UpdaterSync` task, and
-  `<attacker>:8080`. DVWA's command-injection page (`/vulnerabilities/exec/`, security=low) is a real,
+  (T1552/T1213) → C2 beacon (T1071) → persistence (T1053.005) → defense evasion / anti-forensics (T1070.001
+  clear the Security/System/Application event logs via `wevtutil.exe`, T1070.004 delete the downloaded
+  ingress tools). The external origin means the attack subtree is rooted at the vuln service
+  (`httpd.exe → cmd.exe → powershell → …`), which is itself the anomalous signal; indicators are the tool
+  image names, the downloaded files, the `UpdaterSync` task, `wevtutil.exe` + the `.evtx` logs it clears,
+  and `<attacker>:8080`. Clearing the event logs is observable but does **not** disturb collection
+  (`etwcollect` reads live ETW real-time sessions, not the `.evtx` event logs). DVWA's command-injection page (`/vulnerabilities/exec/`, security=low) is a real,
   documented and intentional OS-command sink, so the exploited RCE is faithful. (Earlier: 10 Atomic/custom
   scenarios run on the VM.)
 - [OURS] attack realism, to raise the signal **honestly** (not by detector tuning): the chain is

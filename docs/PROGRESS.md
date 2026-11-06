@@ -3,6 +3,24 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## 2026-11-06 branch `attack-t1070-and-llm-leak-fix`: LLM-leak fix + T1070 phase (deploying)
+
+Two changes on this branch, being deployed to the VMs from the feature branch and verified before the
+merge to `main`:
+- **LLM-leak fix** (`b53c41e`, `src/pipeline/lab_filters.py`): drops our own `c:\lab-labels\attack-labels.jsonl`
+  FILE node (keeping the attacker's writing process) from the training build **and live scoring**, before
+  Alg. 1 + the LLM doc. Fixes the 2026-11-05 C2 case where the detector alerted RED but the LLM read
+  "attack-labels" as a harness and returned `uncertain` (D9). Post-conversion ⇒ converter sha still
+  `cbbf6dc`, **exp08 not invalidated, no retrain**.
+- **T1070 anti-forensics phase** added to `scenarios/rce-killchain.ps1` after persistence: T1070.001 clear
+  Windows event logs (`wevtutil.exe` → new unseen process + `.evtx` FILE nodes) and T1070.004 delete the
+  downloaded ingress tools. Safe for collection (etwcollect reads live ETW, not `.evtx`).
+
+Deploy/verify sequence: push the branch → `ubuntu.yml --tags project` + `windows.yml` + `kali.yml` with
+`-e repo_branch=attack-t1070-and-llm-leak-fix` → `verify-windows.yml` → offline `rejudge.sh` of a 11-05 C2
+session (expect LLM `uncertain`→`attack`, node gone) + a live attack run (expect RED + `attack` + the
+`wevtutil.exe` node). Then open a PR to `main` for the user to merge; re-point the VMs at `main` after.
+
 ## 2026-11-06 second Windows VM: live and pushing to Loki (verified)
 
 `ubuntu-etw` is replaced by `ws-etw-1` (VM 2107, 10.21.3.11, manual install, collector only, no DVWA) and `ws-etw` is
