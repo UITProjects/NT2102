@@ -194,6 +194,7 @@ def main():
     g = ap.add_argument_group("Loki source (src/live/loki_source.py); without --loki-url only POST /ingest feeds the engine")
     g.add_argument("--loki-url", default=None, help="e.g. http://127.0.0.1:3100 (Loki on this host)")
     g.add_argument("--loki-split", default="test", choices=["train", "test"], help="follow the newest run of this split")
+    g.add_argument("--loki-host", default=None, help="follow only this Loki host label (default: newest run of any host)")
     g.add_argument("--loki-poll-s", type=float, default=1.0)
     g.add_argument("--loki-lookback-s", type=float, default=3600,
                    help="how far back to look for the newest run (raise it to follow an old replayed run)")
@@ -268,8 +269,8 @@ def main():
     if a.loki_url:
         from loki_source import LokiSource
         source = LokiSource(engine, a.loki_url, split=a.loki_split, poll_s=a.loki_poll_s, lookback_s=a.loki_lookback_s,
-                            idle_s=a.loki_idle_s if a.loki_idle_s is not None else 2 * a.lateness_s).start()
-        print(f"[live] following Loki {a.loki_url} split={a.loki_split}")
+                            idle_s=a.loki_idle_s if a.loki_idle_s is not None else 2 * a.lateness_s, host=a.loki_host).start()
+        print(f"[live] following Loki {a.loki_url} split={a.loki_split} host={a.loki_host or 'any'}")
     if a.watchdog_s > 0:
         threading.Thread(target=watchdog, args=(engine, source, a.watchdog_s), daemon=True, name="watchdog").start()
     print(f"[live] UI: http://{a.bind}:{a.port}/   health: /healthz   watchdog {a.watchdog_s:.0f}s")

@@ -3,6 +3,18 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## 2026-11-06 second Windows VM: live and pushing to Loki (verified)
+
+`ubuntu-etw` is replaced by `ws-etw-1` (VM 2107, 10.21.3.11, manual install, collector only, no DVWA) and `ws-etw` is
+renamed `ws-etw-0` in place. Verified 13:49Z: Loki carries kproc, kfile and knet from both hosts, `verify-windows.yml`
+passes on both (DVWA checked on `ws-etw-0`), `ocr-live` runs `--loki-host ws-etw-0` and stayed on that run with both
+hosts pushing, `lab pull --list` shows both. Added `lab --host` (one host or both) and `merge_experiments()` (D12):
+selftests only, not yet run on real two-host data. No both-host model exists; exp08 stays current for `ws-etw-0`.
+
+Open: the trainer checkout is on branch `provide-a-second-windows`, so after merging set it back to `main`, or pass
+`-e repo_branch=` on `ubuntu.yml`. Keep 13:33-13:47Z (11-06, provisioning) out of idle training pulls. Lines before
+13:34Z are labelled `host="ws-etw"`. The attack has not been re-run since `.11` became Windows.
+
 ## 2026-11-05 live attack run (exp07): RED but FALSE POSITIVE, attack missed — root-caused + exp08 retrain (IN PROGRESS)
 
 A live DVWA→RCE run (session `live-20261105T120407Z`, exp07) delivered cleanly and was fully captured, but

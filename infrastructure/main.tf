@@ -9,7 +9,7 @@ locals {
   subnet_cidr      = "10.21.3.0/24"
   subnet_gateway   = "10.21.3.1"
   vm_id            = 2102
-  vm_name          = "ws-etw"
+  vm_name          = "ws-etw-0"
   disk_interface   = "sata0"
   nic_model        = "e1000e"
   lan_cidr         = "192.168.1.0/24"
@@ -21,12 +21,14 @@ locals {
   trainer_ssh_key  = trimspace(file("~/OneDrive/credentials/ssh/it2102-vms/id_rsa.pub"))
   ubuntu_image_url = "https://cloud-images.ubuntu.com/noble/20261017/noble-server-cloudimg-amd64.img"
 
-  # Ubuntu endpoint (Linux counterpart of ws-etw): same cloud image + cloud-init as the trainer.
-  ubuntu_etw_vm_id = 2104
-  ubuntu_etw_name  = "ubuntu-etw"
-  ubuntu_etw_ip    = "10.21.3.11"
+  # Second Windows endpoint: same hardware and ISO as ws-etw-0, installed by hand, static IP set in Windows.
+  # vm_id is 2107, not the old ubuntu-etw 2104: Terraform does not order a destroy and a create of two
+  # different addresses, so reusing the ID could fail with "VM already exists".
+  windows_1_vm_id = 2107
+  windows_1_name  = "ws-etw-1"
+  windows_1_ip    = "10.21.3.11"
 
-  # OpenVPN server: same cloud image + cloud-init as ubuntu-etw.
+  # OpenVPN server: same cloud image + cloud-init as the trainer.
   vpn_vm_id = 2105
   vpn_name  = "nt2102-vpn"
   vpn_ip    = "10.21.3.50"
@@ -275,6 +277,98 @@ resource "proxmox_virtual_environment_firewall_rules" "windows" {
   depends_on = [proxmox_virtual_environment_firewall_options.windows]
 }
 
+# Second Windows VM. Same build as ws-etw-0 (manual install from the shared ISO); no cloud-init, so the
+# static IP local.windows_1_ip is set by hand in Windows.
+resource "proxmox_virtual_environment_vm" "windows_1" {
+  node_name   = local.node_name
+  vm_id       = local.windows_1_vm_id
+  name        = local.windows_1_name
+  description = "NT2102 second Windows Server 2022 lab VM (manual install from ISO). Managed by Terraform."
+  tags        = ["nt2102", "windows"]
+  machine     = "q35"
+  bios        = "ovmf"
+
+  # Proxmox pins a Windows VM's machine version after first boot (pc-q35-11.0+pve2). Without this, every apply
+  # would try to set it back to q35 and reboot the VM.
+  lifecycle {
+    ignore_changes = [machine]
+  }
+
+  efi_disk {
+    datastore_id      = local.vm_datastore_id
+    type              = "4m"
+    pre_enrolled_keys = true
+  }
+
+  tpm_state {
+    datastore_id = local.vm_datastore_id
+    version      = "v2.0"
+  }
+
+  operating_system {
+    type = "win11"
+  }
+  cpu {
+    cores = 4
+    type  = "host"
+  }
+  memory {
+    dedicated = 8192
+  }
+  disk {
+    datastore_id = local.vm_datastore_id
+    interface    = local.disk_interface
+    size         = 256
+    file_format  = "raw"
+  }
+  cdrom {
+    file_id   = proxmox_download_file.windows_iso.id
+    interface = "ide2"
+  }
+
+  boot_order = [local.disk_interface, "ide2"]
+
+  network_device {
+    bridge   = proxmox_sdn_vnet.lab.id
+    model    = local.nic_model
+    firewall = true
+  }
+
+  started         = true
+  on_boot         = false
+  stop_on_destroy = true
+
+  depends_on = [proxmox_sdn_applier.apply]
+}
+
+resource "proxmox_virtual_environment_firewall_options" "windows_1" {
+  node_name = local.node_name
+  vm_id     = proxmox_virtual_environment_vm.windows_1.vm_id
+
+  enabled       = true
+  input_policy  = "ACCEPT"
+  output_policy = "ACCEPT"
+}
+
+resource "proxmox_virtual_environment_firewall_rules" "windows_1" {
+  node_name = local.node_name
+  vm_id     = proxmox_virtual_environment_vm.windows_1.vm_id
+
+  dynamic "rule" {
+    for_each = local.it2102_rules
+    content {
+      type    = rule.value.type
+      action  = rule.value.action
+      source  = rule.value.source
+      dest    = rule.value.dest
+      log     = rule.value.log
+      comment = rule.value.comment
+    }
+  }
+
+  depends_on = [proxmox_virtual_environment_firewall_options.windows_1]
+}
+
 resource "proxmox_download_file" "ubuntu_image" {
   content_type = "import"
   datastore_id = local.iso_datastore_id
@@ -369,94 +463,6 @@ resource "proxmox_virtual_environment_firewall_rules" "trainer" {
   }
 
   depends_on = [proxmox_virtual_environment_firewall_options.trainer]
-}
-
-resource "proxmox_virtual_environment_vm" "ubuntu_etw" {
-  node_name   = local.node_name
-  vm_id       = local.ubuntu_etw_vm_id
-  name        = local.ubuntu_etw_name
-  description = "NT2102 Ubuntu 24.04 endpoint (cloud image + cloud-init). Managed by Terraform."
-  tags        = ["nt2102", "ubuntu"]
-
-  operating_system {
-    type = "l26"
-  }
-  cpu {
-    cores = 2
-    type  = "host"
-  }
-  memory {
-    dedicated = 4096
-  }
-
-  scsi_hardware = "virtio-scsi-single"
-  disk {
-    datastore_id = local.vm_datastore_id
-    import_from  = proxmox_download_file.ubuntu_image.id
-    interface    = "scsi0"
-    size         = 40
-    iothread     = true
-    discard      = "on"
-  }
-
-  network_device {
-    bridge   = proxmox_sdn_vnet.lab.id
-    model    = "virtio"
-    firewall = true
-  }
-
-  serial_device {}
-
-  initialization {
-    datastore_id = local.vm_datastore_id
-    ip_config {
-      ipv4 {
-        address = "${local.ubuntu_etw_ip}/${split("/", local.subnet_cidr)[1]}"
-        gateway = local.subnet_gateway
-      }
-    }
-    dns {
-      servers = ["1.1.1.1", "8.8.8.8"]
-    }
-    user_account {
-      username = local.trainer_user
-      keys     = [local.trainer_ssh_key]
-    }
-  }
-
-  started         = true
-  on_boot         = false
-  stop_on_destroy = true
-
-  depends_on = [proxmox_sdn_applier.apply]
-}
-
-resource "proxmox_virtual_environment_firewall_options" "ubuntu_etw" {
-  node_name = local.node_name
-  vm_id     = proxmox_virtual_environment_vm.ubuntu_etw.vm_id
-
-  enabled       = true
-  input_policy  = "ACCEPT"
-  output_policy = "ACCEPT"
-}
-
-resource "proxmox_virtual_environment_firewall_rules" "ubuntu_etw" {
-  node_name = local.node_name
-  vm_id     = proxmox_virtual_environment_vm.ubuntu_etw.vm_id
-
-  dynamic "rule" {
-    for_each = local.it2102_rules
-    content {
-      type    = rule.value.type
-      action  = rule.value.action
-      source  = rule.value.source
-      dest    = rule.value.dest
-      log     = rule.value.log
-      comment = rule.value.comment
-    }
-  }
-
-  depends_on = [proxmox_virtual_environment_firewall_options.ubuntu_etw]
 }
 
 resource "proxmox_virtual_environment_vm" "vpn" {

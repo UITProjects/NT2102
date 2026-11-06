@@ -37,8 +37,9 @@ NS, MS = 1_000_000_000, 1_000_000
 
 class LokiSource:
     def __init__(self, engine, url, split="test", poll_s=1.0, idle_s=40.0, overlap_s=10.0, lookback_s=3600.0,
-                 grace_s=600.0, max_lines=20_000, now_ns=time.time_ns, log=print):
+                 grace_s=600.0, max_lines=20_000, now_ns=time.time_ns, log=print, host=None):
         self.engine, self.lk, self.split = engine, Loki(url), split
+        self.only_host = host   # follow this Loki host label only; None = newest run of any host
         self.poll_s, self.idle_ns, self.overlap_ns = poll_s, int(idle_s * NS), int(overlap_s * NS)
         self.lookback_ns, self.grace_ns, self.now_ns, self.log = int(lookback_s * NS), int(grace_s * NS), now_ns, log
         self.run = self.host = None
@@ -62,19 +63,22 @@ class LokiSource:
         self.first_ns = first_ns
         self.clock_ms = self.lag_ns = None
         self.last_new = self.now_ns()
-        rows = self.lk.query_range(selector(job="etw-meta", run=run), first_ns - 86400 * NS,
+        rows = self.lk.query_range(selector(job="etw-meta", host=self.only_host, run=run), first_ns - 86400 * NS,
                                    self.now_ns() + self.grace_ns, limit=1, direction="backward")
         self.dmap = json.loads(rows[0][2]) if rows else {}
         self.log(f"[loki] following run {run} ({self.split}, host {host})  dos_map={self.dmap or 'none (etw-meta missing)'}")
 
     def _current_run(self, now):
-        rows = self.lk.query_range(selector(job="silketw", split=self.split), now - self.lookback_ns,
+        rows = self.lk.query_range(selector(job="silketw", host=self.only_host, split=self.split), now - self.lookback_ns,
                                    now + self.grace_ns, limit=1, direction="backward")
         if not rows:
             return None
         lab = rows[0][1]
         if lab["run"] != self.run:
-            edge = self.lk.edge_ts(selector(job="silketw", split=self.split, run=lab["run"]),
+            if self.host and lab["host"] != self.host and not self.only_host:
+                self.log(f"[loki] WARNING: host changed {self.host} -> {lab['host']}: several hosts are pushing, "
+                         "set --loki-host or windows never complete")
+            edge = self.lk.edge_ts(selector(job="silketw", host=self.only_host, split=self.split, run=lab["run"]),
                                    now - self.lookback_ns, now + self.grace_ns)
             self._reset(lab["run"], lab["host"], edge[0] if edge else now)
         return self.run
@@ -86,7 +90,7 @@ class LokiSource:
         if self._current_run(now) is None:
             return 0
         provs = self.lk.label_values("provider", self.first_ns - NS, now + self.grace_ns,
-                                     query=selector(job="silketw", split=self.split, run=self.run))
+                                     query=selector(job="silketw", host=self.only_host, split=self.split, run=self.run))
         batches, newest, truncated = [], None, {}
         for p in sorted(provs):
             cur = self.cursor.get(p)
@@ -94,7 +98,7 @@ class LokiSource:
             seen = self.seen.setdefault(p, set())
             lines, ends = [], []
             off = self.offset.get(p, 0)
-            for ts, _, line in self.lk.query_all(selector(job="silketw", split=self.split, run=self.run, provider=p),
+            for ts, _, line in self.lk.query_all(selector(job="silketw", host=self.only_host, split=self.split, run=self.run, provider=p),
                                                  start, now + self.grace_ns):
                 if (ts, line) in seen:
                     continue
@@ -284,6 +288,16 @@ def selftest():
         assert Boom.n >= 2 and eng4.calls, "thread died on RuntimeError"
         ok, why = src4.health()
         assert ok, why
+
+        # two Windows hosts: with host= the source stays on its host even when the other host's run is newer
+        clock[0] += 120 * NS
+        t5 = clock[0] - 30 * NS
+        lk.push([{"stream": lab("live-5", "kproc"), "values": [[str(t5), "mine"]]},
+                 {"stream": dict(lab("live-6", "kproc"), host="ws-etw-1"), "values": [[str(t5 + NS), "other"]]}])
+        eng5 = Rec()
+        src5 = LokiSource(eng5, fake.url, now_ns=lambda: clock[0], log=lambda *_: None, host="ws-etw")
+        assert src5.step() == 1 and eng5.calls[-1]["session"] == "live-5" and src5.host == "ws-etw"
+        assert eng5.calls[-1]["batches"][0]["lines"] == ["mine"]
     finally:
         fake.close()
     print("[SELFTEST OK] once-only delivery, synthetic offsets, overlap catches late lines, idle clock, new run, "

@@ -1,5 +1,5 @@
 ---
-# Read-only verification that every collector tool is installed on ws-etw (incl. DVWA).
+# Read-only verification that every collector tool is installed on the Windows VMs (incl. DVWA where it is enabled).
 # Safe + idempotent (no changes): run on demand, NOT part of site.yml.
 #   ansible-playbook -i inventory.local.ini verify-windows.yml -e vulnlab_enabled=true
 # Each assert names the tool and the role that installs it, so a failure points straight at the fix.
@@ -83,7 +83,7 @@
 
     # ---------- win_vulnlab / DVWA (only when enabled) ----------
     - name: DVWA checks (win_vulnlab)
-      when: vulnlab_enabled | bool
+      when: vulnlab_enabled | bool and (vulnlab_host | default(true) | bool)
       block:
         - name: Apache + MariaDB services running
           ansible.windows.win_service_info:
@@ -123,4 +123,4 @@
 
     - name: Verification summary
       ansible.builtin.debug:
-        msg: "ALL TOOLS VERIFIED on {{ inventory_hostname }} (DVWA checked = {{ vulnlab_enabled | bool }})"
+        msg: "ALL TOOLS VERIFIED on {{ inventory_hostname }} (DVWA checked = {{ vulnlab_enabled | bool and (vulnlab_host | default(true) | bool) }})"

@@ -17,7 +17,7 @@ output "gateway" {
 }
 
 output "suggested_static_ip" {
-  description = "Static IP to set in Windows (.10 like ws-etw in the Vagrant lab)."
+  description = "Static IP to set in Windows on ws-etw-0."
   value       = "${cidrhost(local.subnet_cidr, 10)}/${split("/", local.subnet_cidr)[1]}"
 }
 
@@ -25,9 +25,9 @@ output "trainer_ip" {
   value = local.trainer_ip
 }
 
-output "ubuntu_etw_ip" {
-  description = "Static IP cloud-init gives ubuntu-etw."
-  value       = "${local.ubuntu_etw_ip}/${split("/", local.subnet_cidr)[1]}"
+output "suggested_static_ip_ws_etw_1" {
+  description = "Static IP to set by hand in Windows on ws-etw-1."
+  value       = "${local.windows_1_ip}/${split("/", local.subnet_cidr)[1]}"
 }
 
 output "vpn_ip" {

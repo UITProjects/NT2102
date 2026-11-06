@@ -1,5 +1,5 @@
 ---
-# WinRM connection for the Windows group. Credentials come from the encrypted vault.yml
+# WinRM connection for the Windows group. win_user/win_password come from the inventory (proxmox.ini) or, on cloud, the vault
 # (win_user / win_password), which you fill with the RDP = WinRM account.
 ansible_connection: winrm
 ansible_port: 5985
