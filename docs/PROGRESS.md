@@ -3,6 +3,14 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## 2026-11-06 exp08 live alert count, first 24 h (verified in `history.jsonl`)
+
+11-05 16:00Z to 11-06 15:55Z: 288 distinct windows, 279 fully scored, **7 alerts**. 4 are attack windows from 3 live runs
+(17:10 sg 70.17; 00:45 19.24; 00:50 37.62; 15:35 54.42). **3 are false alarms**, all LLM `false_positive`: 22:25 (21.20, lone
+powershell loading runtime DLLs), 15:00 (10.82) and 15:50 (46.97), the last two during Ansible/git/choco work on the VM.
+So "benign windows green" below holds around each attack run, not for every window. Label source: operator knowledge of run
+times + LLM verdicts, not ground truth. History rows repeat across session restarts, so dedupe by `start_utc` before counting.
+
 ## 2026-11-06 branch `attack-t1070-and-llm-leak-fix`: LLM-leak fix + T1070 phase (VERIFIED on VMs; awaiting merge)
 
 Two changes on this branch, deployed to the VMs from the feature branch and verified live before the
