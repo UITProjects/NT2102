@@ -20,7 +20,8 @@ their limits: `LABELING.md`.
 
 ```
 scenarios/rce-killchain.ps1   the ONE attack: runs on the target (RCE child); scan + REAL tool
-                              download+exec + MySQL enumeration + C2 beacon + persistence; custom + labels
+                              download+exec + MySQL enumeration + C2 beacon + persistence + T1070
+                              anti-forensics (clear event logs, delete tools); custom + labels
 tools/launch_exploit.py       Kali side: serves the stage (lib, chain, real tool binaries, /beacon) + fires
                               the DVWA command-injection exploit
 lib/attack-lib.ps1            Initialize-AttackLab, Write-AttackLabel, Invoke-LabeledStep/Atomic

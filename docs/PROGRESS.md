@@ -3,6 +3,36 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## 2026-11-06 branch `attack-t1070-and-llm-leak-fix`: LLM-leak fix + T1070 phase (VERIFIED on VMs; awaiting merge)
+
+Two changes on this branch, deployed to the VMs from the feature branch and verified live before the
+merge to `main`. **Deploy done** (trainer `831895f` + ocr-live restarted, both collectors + Kali pack
+updated, verify-windows.yml pass, terraform plan clean, selftest 18/18). **Verified:**
+- Leak fix (offline re-judge of the 11-06T00:14Z session, exp08): the `c:\lab-labels\*` node is dropped
+  from the kept subgraph AND the LLM document; the main attack window flips LLM `uncertain`(0.4)→`attack`
+  (0.94); the beacon-tail window stays `uncertain` on its own thin evidence (beacon + mysql), which the
+  detector reds regardless (LLM is an overlay, D9). alg1 re-judge path also patched (`831895f`).
+- Live attack + T1070 (window `20261106T153500Z`, exp08): **RED, sg 54.42, Moderate, 1 kept subgraph,
+  LLM `attack` 0.9**; benign windows green. Kept subgraph = C2 `10.21.4.30:8080`, `mysql.exe` dump,
+  executed tools (PsExec/PSEXESVC, rclone, nmap, ncat). T1070 ran to completion (T1070.001 + T1070.004
+  logged last); `wevtutil.exe` captured but **in-distribution** (not flagged) → not in the subgraph, does
+  not lift the alert (per-node feature limit, D5/D8). See DEVIATIONS D6.
+
+Two changes on this branch:
+- **LLM-leak fix** (`b53c41e`, `src/pipeline/lab_filters.py`): drops our own `c:\lab-labels\attack-labels.jsonl`
+  FILE node (keeping the attacker's writing process) from the training build **and live scoring**, before
+  Alg. 1 + the LLM doc. Fixes the 2026-11-05 C2 case where the detector alerted RED but the LLM read
+  "attack-labels" as a harness and returned `uncertain` (D9). Post-conversion ⇒ converter sha still
+  `cbbf6dc`, **exp08 not invalidated, no retrain**.
+- **T1070 anti-forensics phase** added to `scenarios/rce-killchain.ps1` after persistence: T1070.001 clear
+  Windows event logs (`wevtutil.exe` → new unseen process + `.evtx` FILE nodes) and T1070.004 delete the
+  downloaded ingress tools. Safe for collection (etwcollect reads live ETW, not `.evtx`).
+
+Deploy/verify sequence: push the branch → `ubuntu.yml --tags project` + `windows.yml` + `kali.yml` with
+`-e repo_branch=attack-t1070-and-llm-leak-fix` → `verify-windows.yml` → offline `rejudge.sh` of a 11-05 C2
+session (expect LLM `uncertain`→`attack`, node gone) + a live attack run (expect RED + `attack` + the
+`wevtutil.exe` node). Then open a PR to `main` for the user to merge; re-point the VMs at `main` after.
+
 ## 2026-11-06 second Windows VM: live and pushing to Loki (verified)
 
 `ubuntu-etw` is replaced by `ws-etw-1` (VM 2107, 10.21.3.11, manual install, collector only, no DVWA) and `ws-etw` is

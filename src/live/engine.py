@@ -48,6 +48,7 @@ SRC = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(SRC, "pipeline"))
 import alg1  # noqa: E402
 import alg2  # noqa: E402
+import lab_filters  # noqa: E402  (post-conversion lab-labels node drop; outside the converter hash, D9)
 import score_window as sw  # noqa: E402
 sys.path.insert(0, HERE)
 from history import HistoryStore, _f, display_attrs, make_detail, write_json_atomic  # noqa: E402,F401
@@ -366,6 +367,13 @@ class Engine:
             edges = edges[keep].reset_index(drop=True)
             used = set(edges["source-id"]) | set(edges["destination-id"])
             attrs = {n: a for n, a in attrs.items() if n in used}
+        # [OURS] drop our own lab-labels ground-truth file node (c:\lab-labels\*) from scoring + the LLM doc.
+        # Unlike the watchdog, this removes the FILE node + its edges only, NOT the writing process (the
+        # attacker's RCE powershell), so the readable "attack-labels" string cannot fool the LLM overlay. D9.
+        la = lab_filters.lab_artifact_node_ids(attrs)
+        if la:
+            edges = edges[~(edges["source-id"].isin(la) | edges["destination-id"].isin(la))].reset_index(drop=True)
+            attrs = {n: a for n, a in attrs.items() if n not in la}
         nodes, feats, info = sw.score_edges(edges, self.run, self.scaler)
         # a broken model flags everything; cap the anomalous set so Alg. 1 and the UI stay usable
         cand = nodes

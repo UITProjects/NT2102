@@ -19,9 +19,14 @@ foreach ($n in @("PsExec64","PsExec","PSEXESVC","rclone","nmap","ncat")) {
 sc.exe delete PSEXESVC | Out-Null      # PsExec usually self-removes this; delete it if it was left behind
 
 # Ingress-transfer artefacts (T1105): the legacy marker + the tools dir (downloaded exes + pulled.bin).
-# (The MySQL phase is read-only, so there is nothing to undo in the DB.)
+# The T1070.004 anti-forensics phase may already have deleted these during the attack; -ErrorAction
+# SilentlyContinue keeps this idempotent either way. (The MySQL phase is read-only: nothing to undo.)
 Remove-Item $toolPath -Force -ErrorAction SilentlyContinue
 Remove-Item $toolsDir -Recurse -Force -ErrorAction SilentlyContinue
+
+# T1070.001 cleared the Security/System/Application event logs during the attack. Cleared logs are NOT
+# restorable here (by design); restore the VM snapshot for a truly clean state. Collection is unaffected
+# (etwcollect reads live ETW sessions, not the .evtx event logs).
 
 # Kill any shell still running under the exploited service (httpd.exe -> cmd.exe -> powershell), best
 # effort. Match on the cmd.exe injected by DVWA (parent httpd.exe) and the powershell it spawned, so we

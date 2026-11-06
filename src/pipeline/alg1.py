@@ -308,6 +308,15 @@ def judge_window(wdir: str, score_range: dict, a) -> dict | None:
     edges = tgm.normalise_edges(pd.read_csv(os.path.join(wdir, "edges.csv"),
                                             dtype={"source-id": str, "destination-id": str}))
     attrs = dict(zip(nodes["node_uuid"], nodes["attr"].fillna(""))) if "attr" in nodes else {}
+    # [OURS] drop our own lab-labels ground-truth FILE node (c:\lab-labels\*) so a re-judge of a saved
+    # session matches live scoring (engine._score drops it before Alg. 1 too). Keeps the writing process
+    # (the attacker's RCE powershell); the node is lab plumbing that must not reach the LLM document. D9.
+    import lab_filters
+    la = lab_filters.lab_artifact_node_ids(attrs)
+    if la:
+        nodes = nodes[~nodes["node_uuid"].isin(la)].reset_index(drop=True)
+        edges = edges[~(edges["source-id"].isin(la) | edges["destination-id"].isin(la))].reset_index(drop=True)
+        attrs = {n: v for n, v in attrs.items() if n not in la}
     sgs, st = construct(nodes, edges, attrs, score_range, a.n_seed, a.min_nodes, a.max_edges,
                         a.sg_min_level, a.sg_min_score, a.sg_moderate_from)
     json.dump({"window": os.path.basename(wdir), "stats": st, "subgraphs": sgs},

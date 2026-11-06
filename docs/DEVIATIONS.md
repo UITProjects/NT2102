@@ -82,10 +82,21 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   Kali attacker VM (`tools/launch_exploit.py`): Kali exploits DVWA via its documented OS-command-injection
   page (T1190/T1059.001), then the RCE shell runs Discovery (T1033/T1082/T1057/T1016) → loud network scan
   (T1046) → ingress transfer + tool execution (T1105/T1569.002) → read-only MySQL enumeration/dump
-  (T1552/T1213) → C2 beacon (T1071) → persistence (T1053.005). The external origin means the attack subtree
-  is rooted at the vuln service (`httpd.exe → cmd.exe → powershell → …`), which is itself the anomalous
-  signal; indicators are the tool image names, the downloaded files, the `UpdaterSync` task, and
-  `<attacker>:8080`. DVWA's command-injection page (`/vulnerabilities/exec/`, security=low) is a real,
+  (T1552/T1213) → C2 beacon (T1071) → persistence (T1053.005) → defense evasion / anti-forensics (T1070.001
+  clear the Security/System/Application event logs via `wevtutil.exe`, T1070.004 delete the downloaded
+  ingress tools). The external origin means the attack subtree is rooted at the vuln service
+  (`httpd.exe → cmd.exe → powershell → …`), which is itself the anomalous signal; indicators are the tool
+  image names, the downloaded files, the `UpdaterSync` task, `wevtutil.exe` + the `.evtx` logs it clears,
+  and `<attacker>:8080`. Clearing the event logs is observable but does **not** disturb collection
+  (`etwcollect` reads live ETW real-time sessions, not the `.evtx` event logs). **Observed on the
+  2026-11-06 live run** (window `20261106T153500Z`, exp08, paper-faithful SG-Det Moderate=10): the window
+  alerted **RED** (sg 54.42, Moderate, 1 kept subgraph) with LLM triage **`attack` 0.9**; the kept
+  subgraph held the real C2 (`10.21.4.30:8080`), the `mysql.exe` dump, and the executed tools
+  (PsExec/PSEXESVC, rclone, nmap, ncat). The T1070 phase ran to completion (T1070.001 + T1070.004 logged
+  last) and its `wevtutil.exe` process + file nodes were captured, but they scored **in-distribution**
+  (flagged=False) and did not enter the kept subgraph — a lone short-lived process is not anomalous by its
+  own per-node behaviour counts (the anomaly is its parentage, unencoded; D5/D8). So T1070 adds observable
+  telemetry without lifting the alert, which rests on the tool/C2/DB nodes. DVWA's command-injection page (`/vulnerabilities/exec/`, security=low) is a real,
   documented and intentional OS-command sink, so the exploited RCE is faithful. (Earlier: 10 Atomic/custom
   scenarios run on the VM.)
 - [OURS] attack realism, to raise the signal **honestly** (not by detector tuning): the chain is
@@ -322,9 +333,15 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   `c:\lab-labels\attack-labels.jsonl` (our self-labelling ground-truth file, D6) and inferred *"lab-like
   path … may be a test harness … rather than real adversary activity."* The anomaly detector is unaffected
   (SG-Det keys on path/`ip:port` **hashes** + features, never the readable string, so the alert stands);
-  only the Alg. 2 overlay, which reads human-readable docs, is fooled, and only by a lab-only file. Fix:
-  extend `etw2nodlink.is_own_tooling_path` to also drop `c:\lab-labels\*` from live scoring + the LLM doc,
-  as for the `start-live.ps1` watchdog. See `docs/notes/attack-defense-evasion-next.md`.
+  only the Alg. 2 overlay, which reads human-readable docs, is fooled, and only by a lab-only file.
+  **Fixed (2026-11-06):** a dedicated `etw2nodlink.is_lab_artifact_path` (matches `c:\lab-labels\*`) +
+  `lab_artifact_node_ids` / `drop_lab_artifact_nodes` drop the ground-truth FILE node + its incident edges
+  from both the training build (`build_experiment.py`) and live scoring (`engine._score`), so it never
+  reaches Alg. 1 or the serialized LLM document. This is **not** reused from the watchdog filter
+  (`is_own_tooling_path`): that drops the *process* that touched the file, which here is the attacker's RCE
+  powershell — so lab-labels is a FILE-node drop that keeps the writing process. No-op on idle baselines
+  (the file exists only during an attack). Covered by the `etw2nodlink --selftest` lab-labels case. See
+  `docs/notes/attack-defense-evasion-next.md`.
 
 ## D10. Own Python ETW collector (`src/etw-python`, `etwcollect`) instead of SilkETW + Alloy
 - What: [PAPER] the paper consumes existing audit datasets and names no collector. Until 2026-10-26 we used
