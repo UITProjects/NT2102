@@ -358,6 +358,14 @@ class Engine:
     def _score(self, sid, wid, w_rows, attrs):
         t0 = time.time()
         edges = pd.DataFrame(w_rows, columns=EDGE_HEADER)
+        # [OURS] drop our own live-capture watchdog (start-live.ps1 / etwlab tooling) before scoring, the same
+        # filter the training build runs (build_experiment -> etw2nodlink.filter_own_tooling_csv). D8.
+        wp = self.conv.own_tooling_pids(edges.itertuples(index=False, name=None), attrs)
+        if wp:
+            keep = ~(edges["source-id"].isin(wp) | edges["destination-id"].isin(wp))
+            edges = edges[keep].reset_index(drop=True)
+            used = set(edges["source-id"]) | set(edges["destination-id"])
+            attrs = {n: a for n, a in attrs.items() if n in used}
         nodes, feats, info = sw.score_edges(edges, self.run, self.scaler)
         # a broken model flags everything; cap the anomalous set so Alg. 1 and the UI stay usable
         cand = nodes

@@ -3,6 +3,50 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## 2026-11-05 live attack run (exp07): RED but FALSE POSITIVE, attack missed — root-caused + exp08 retrain (IN PROGRESS)
+
+A live DVWA→RCE run (session `live-20261105T120407Z`, exp07) delivered cleanly and was fully captured, but
+both attack windows (15:15, 15:20) went RED **for the wrong reason**: the kept subgraph was benign (TiWorker
+servicing at 15:15; our own `start-live.ps1` powershell watchdog at 15:20), LLM `false_positive` 0.95/0.72,
+while the attack's own nodes scored in-distribution (rclone −1.40, PsExec −1.46, C2 socket −1.50, scan −1.56;
+all flagged=False). Not a reproduction of the 00:50Z success.
+
+**Root cause (verified against the 00:50Z success, same exp07/τ):** (1) `sg_score = Σ prob over flagged
+nodes` (`alg1.py:170`) ⇒ score ∝ flagged-node **count**, so big benign clusters outrank the attack — in
+`history.jsonl` every alerting window is an LLM-confirmed FP except the one 18-node 00:50 success. (2) The
+attack rests on one NET node (C2 socket) whose 3-hop RGCN embedding flipped +1.165 (flagged) → −1.50
+(in-distribution) with near-identical own features, because no feature encodes peer-IP novelty. Full write-up
+`docs/notes/subgraph-score-fragility.md`, DEVIATIONS D8/D5.
+
+**Changes (branch `fix/sg-det-fragility-exp08`):** (a) watchdog excluded in the converter
+(`etw2nodlink.own_tooling_pids` / `filter_own_tooling_csv`, from `build_experiment` + `engine._score`;
+validated on the real 15:20 window — drops the p2944 watchdog + 265 edges, keeps the attack PowerShell);
+(b) **exp08** on a 3-day idle baseline (`range-3d-20261105`, 11-02 15:38Z → 11-05 15:50Z, attacks/RDP/canaries
+excluded via `exclusions/proxmox-20261105.json`) with the RGCN stepped **3→2 layers** (`--layers 2`; 1 layer
+`exp09` only if 2 helps but not enough).
+
+**Result (2026-11-06, exp08 PROMOTED + live on the trainer): the retrain detects the attack exp07 missed,
+and removes the watchdog FP.** Build: `range-3d-20261105` (11-02 17:10Z → 11-05 15:49Z, 2118 windows, 2.59 M
+edges, check ok); watchdog filter dropped 252,427 edges / 907 process instances from the baseline. Gate PASS
+(seed 360, `--layers 2`): best_ep 99 all types, τ file −0.070 / net −0.132 / process −0.163, val_fpr 0,
+emb_std 0.093 / 0.098 / 0.117, converter_check match. **Offline re-score of the 2026-11-05 15:xx attack
+windows (deterministic):** the attack nodes flip from in-distribution (exp07) to **flagged** under exp08 —
+C2 socket `10.21.4.30:8080` −1.50→**+1.20**, scan `:22` −1.56→**+0.66**, `rclone.exe` −1.40→**+1.71**,
+`PsExec64.exe` −1.46→**−0.12 (flagged)** — and the 15:15 kept subgraph flips from benign Windows-servicing
+packages (exp07) to **powershell + rclone + mysql (the attack + DVWA DB)**; at 15:20 flagged dropped 38→23
+(watchdog gone). Live idle windows under exp08 stay **green** (16:15–17:00Z all 0.00). Caveat: all three
+changes (3-day baseline, watchdog filter, 2-layer) were made at once (user: one combined model), so the
+single cause of the flip is not isolated; the durable detection fix is still a peer-novelty NET feature (D8).
+**Fresh live DVWA→RCE run confirmed end to end (2026-11-06 17:10Z window):** RED, max_sg **70.17** Moderate,
+alert=True, 89 flagged (47 process / 36 file / 6 net), **LLM `attack` 0.85** with tactics Execution/Discovery/
+C2/Lateral/Exfiltration (TA0002/07/11/08/10); surrounding idle windows green. So on exp08 the live attack is
+detected (not the exp07 coincidental-red FP). See `docs/notes/subgraph-score-fragility.md`.
+
+**Deploy note:** exp08 is promoted via the trainer's local pointer (`current.local.json`) and the three
+changed pipeline files (`etw2nodlink.py`, `build_experiment.py`, `engine.py`) were copied to the trainer
+checkout directly (not via Ansible) — branch `fix/sg-det-fragility-exp08`, not yet committed/pushed. To make
+it durable: commit the branch, push, and deploy with `ubuntu.yml --tags project` so the checkout + sha match.
+
 ## exp07: retrained on ~41 h of idle (2026-11-04, PROMOTED + live on the Proxmox trainer)
 
 exp06 raised 16 windows ≥ 10 in 431 (all 11 LLM-judged = false_positive). Cause: its 3 h baseline misses jobs on daily
