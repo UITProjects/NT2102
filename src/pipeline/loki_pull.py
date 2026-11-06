@@ -60,16 +60,16 @@ def sha256_file(path):
 
 
 # --------------------------------------------------------------------------- discovery
-def discover(lk, lookback_ns, split=None, now_ns=None, job="silketw"):
+def discover(lk, lookback_ns, split=None, now_ns=None, job="silketw", host=None):
     """-> runs newest first: [{run, split, host, first_ns, last_ns, counts{provider: n}}].
     Built from label values + query_range (see Loki.label_values for why not /series)."""
     now_ns = now_ns or time.time_ns()
     start = now_ns - lookback_ns
     out = []
-    pairs = [(sp, run) for sp in ([split] if split else lk.label_values("split", start, now_ns, query=selector(job=job)))
-             for run in lk.label_values("run", start, now_ns, query=selector(job=job, split=sp))]
+    pairs = [(sp, run) for sp in ([split] if split else lk.label_values("split", start, now_ns, query=selector(job=job, host=host)))
+             for run in lk.label_values("run", start, now_ns, query=selector(job=job, host=host, split=sp))]
     for sp, run in pairs:                         # (split, run): the same run name may exist in both splits
-        sel = selector(job=job, split=sp, run=run)
+        sel = selector(job=job, host=host, split=sp, run=run)
         f = lk.query_range(sel, start, now_ns + 1, limit=1, direction="forward")
         if not f:
             continue
@@ -86,7 +86,7 @@ def describe(r, tz):
     loc = f"{iso(a, tz)[:16]} -> {iso(b, tz)[11:16]} {iso(a, tz)[-5:]}"
     mins = (b - a) / NS / 60
     counts = " ".join(f"{p} {n:,}" for p, n in sorted(r["counts"].items()))
-    return f"{r['run']:<26} {r['split']:<5} {loc}  ({mins:.0f} min, UTC {iso(a)[11:16]})  {counts}"
+    return f"{r['run']:<26} {r['split']:<5} {r['host']:<10} {loc}  ({mins:.0f} min, UTC {iso(a)[11:16]})  {counts}"
 
 
 # --------------------------------------------------------------------------- selection
@@ -155,19 +155,28 @@ def pick_flags(a, runs):
 
 # --------------------------------------------------------------------------- pull
 def pull(lk, sel, out_dir, page=5000, log=print, job="silketw"):
-    """Write the selection into out_dir (must not exist). -> pull record (also saved as pull.json)."""
+    """Write the selection into out_dir (must not exist). -> pull record (also saved as pull.json).
+
+    sel["host"] limits the pull to one Loki host label. Without it, a pull that meets a second host stops: build
+    would pool both hosts' events into one graph per window, which is not what a single-host window looks like
+    (for both hosts use `lab pull --host A --host B`, which builds each host on its own and merges the windows)."""
     tmp = out_dir + ".partial"
     shutil.rmtree(tmp, ignore_errors=True)
     os.makedirs(tmp)
+    host = sel.get("host")
     if sel["mode"] == "run":
-        queries = [selector(job=job, split=sel["split"], run=sel["run"])]
+        queries = [selector(job=job, host=host, split=sel["split"], run=sel["run"])]
     else:
-        queries = [selector(job=job, split=sel["split"], provider=p) for p in sel["providers"]]
-    handles, counts, dups = {}, {}, {}
+        queries = [selector(job=job, host=host, split=sel["split"], provider=p) for p in sel["providers"]]
+    handles, counts, dups, hosts = {}, {}, {}, set()
     try:
         for q in queries:
             n, last_ts, at_ts = 0, None, set()
             for ts, lab, line in lk.query_all(q, sel["start_ns"], sel["end_ns"], page=page):
+                hosts.add(lab["host"])
+                if len(hosts) > 1:
+                    raise SystemExit(f"[loki_pull] this selection holds several hosts {sorted(hosts)}: pick one with "
+                                     "--host, or use `lab pull --host A --host B` to train on both")
                 key = (lab["split"], lab["run"], lab["provider"])
                 # exact (ts, stream, line) repeats = the same event shipped twice (the shipper lost its positions, a
                 # re-push): drop and count them. Entries arrive in ts order, so only the current ts is kept.
@@ -187,6 +196,9 @@ def pull(lk, sel, out_dir, page=5000, log=print, job="silketw"):
                 n += 1
                 if n % 50000 == 0:
                     log(f"[loki_pull] {q}: {n:,} lines ...")
+    except SystemExit:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
     finally:
         for fh in handles.values():
             fh.close()
@@ -202,7 +214,7 @@ def pull(lk, sel, out_dir, page=5000, log=print, job="silketw"):
         runs = sorted({k[:2] for k in counts})
         look0 = sel["start_ns"] - 7 * 86400 * NS
         for sp, run in runs:
-            rows = lk.query_range(selector(job="etw-meta", run=run), look0, sel["end_ns"] + 86400 * NS,
+            rows = lk.query_range(selector(job="etw-meta", host=host, run=run), look0, sel["end_ns"] + 86400 * NS,
                                   limit=1, direction="backward")
             path = os.path.join(tmp, "raw", sp, run, "dosmap.meta")
             if rows:
@@ -220,7 +232,7 @@ def pull(lk, sel, out_dir, page=5000, log=print, job="silketw"):
         for sp, run in runs:
             if not run.startswith("x-"):              # only 07's train runs carry a workload ledger
                 continue
-            rows = list(lk.query_all(selector(job="workload-ledger", exp=run[2:]), look0,
+            rows = list(lk.query_all(selector(job="workload-ledger", host=host, exp=run[2:]), look0,
                                      sel["end_ns"] + 86400 * NS, page=page))
             if rows:
                 os.makedirs(os.path.join(tmp, "labels"), exist_ok=True)
@@ -311,9 +323,25 @@ def selftest():
             assert [(s["provider"], s["lines"]) for s in rec2["streams"]] == [("kproc", 3)], rec2["streams"]
             assert pick_flags(argparse.Namespace(run="live-1", latest=False, split=None, since=None, start=None,
                                                  end=None, provider=None, lookback="1d"), runs)["split"] == "test"
+            # a second host in the same range: no --host refuses (no silent mix), --host pulls only that host
+            other = dict(lab("train", "x-other", "kproc"), host="ws-etw-1")
+            lk.push([{"stream": other, "values": [[str(t0 + 3 * NS), '{"other":1}']]}])
+            a3 = argparse.Namespace(run=None, latest=False, split="train", since=None, provider=["kproc"],
+                                    start=str(t0), end=str(t0 + 10 * NS), lookback="1d")
+            try:
+                pull(lk, pick_flags(a3, runs), os.path.join(d, "e3"), log=lambda *_: None)
+                raise AssertionError("a range with two hosts and no --host must be refused")
+            except SystemExit as e:
+                assert "--host" in str(e) and not os.path.exists(os.path.join(d, "e3.partial")), e
+            sel3 = dict(pick_flags(a3, runs), host="ws-etw-1")
+            rec3 = pull(lk, sel3, os.path.join(d, "e3"), log=lambda *_: None)
+            assert [(s["run"], s["lines"]) for s in rec3["streams"]] == [("x-other", 1)], rec3["streams"]
+            assert rec3["selection"]["host"] == "ws-etw-1"
+            assert [r["run"] for r in discover(lk, 86400 * NS, now_ns=now, host="ws-etw-1")] == ["x-other"]
     finally:
         fake.close()
-    print("[SELFTEST OK] discovery + counts, --latest, custom range, byte-exact files, dos map, ledger, pull.json")
+    print("[SELFTEST OK] discovery + counts, --latest, custom range, byte-exact files, dos map, ledger, pull.json, "
+          "--host filter, two hosts without --host refused")
 
 
 # --------------------------------------------------------------------------- main
@@ -329,6 +357,7 @@ def main(argv=None):
     g.add_argument("--end", help="custom range end (default now)")
     g.add_argument("--since", help="custom range = [now - SINCE, now), e.g. 2h")
     ap.add_argument("--split", choices=["train", "test"], help="filter runs / the custom range")
+    ap.add_argument("--host", help="only this Loki host label, e.g. ws-etw-0 (needed when a range holds several hosts)")
     ap.add_argument("--provider", nargs="+", choices=["kproc", "kfile", "knet"], help="custom range only")
     ap.add_argument("--out-root", default=DEFAULT_OUT)
     ap.add_argument("--id", help="experiment folder name (default: run name, or range-<UTC start>)")
@@ -347,7 +376,7 @@ def main(argv=None):
         lk.ready()
     except OSError as e:
         sys.exit(f"[loki_pull] Loki not reachable at {a.loki} ({e}); set --loki or LOKI_URL")
-    runs = discover(lk, parse_time("now") - parse_time(a.lookback), split=None)
+    runs = discover(lk, parse_time("now") - parse_time(a.lookback), split=None, host=a.host)
     if a.list:
         for r in runs:
             print(describe(r, tz))
@@ -362,6 +391,7 @@ def main(argv=None):
         if sel is None:
             print("[loki_pull] cancelled")
             return 1
+    sel["host"] = a.host
     if time.time_ns() - sel["end_ns"] < 180 * NS and sel["mode"] == "run":
         print("[loki_pull] WARNING: the run ended < 3 min ago; the VM may still be shipping its last lines")
     exp_id = a.id or default_id(sel)

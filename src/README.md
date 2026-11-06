@@ -3,7 +3,7 @@
 Everything for the NT2102 demo ("Phát hiện bất thường trên endpoint device log"): detect a demo attack
 (e.g. CVE exploit → RCE → ATT&CK techniques) live on a Windows host, using OCR-APT's core method.
 
-- **Windows Server lab VM** (`ws-etw`): records kernel activity with ETW using our own collector `etw-python/`
+- **Windows Server lab VMs** (`ws-etw-0`, `ws-etw-1`): records kernel activity with ETW using our own collector `etw-python/`
   (`etwcollect`), which also pushes it to Loki. SilkETW + Grafana Alloy did this until 2026-10-26 (DEVIATIONS D10).
 - **Ubuntu trainer** (`ubuntu-trainer`): Loki + Grafana, then logs → graph → behaviour features → one-class
   GNN per node type (OCRGCN).

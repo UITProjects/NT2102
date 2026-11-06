@@ -25,6 +25,11 @@ Typical session on the trainer:
   lab status
   lab loop                            pick the capture with the arrow keys, name the model
   lab promote <model> && sudo systemctl restart ocr-live
+
+Several Windows VMs push to the same Loki, told apart by the `host` label. --host picks what to train on:
+  lab loop --since 3h --split test --host ws-etw-0 --model m1                     one VM
+  lab loop --since 3h --split test --host ws-etw-0 --host ws-etw-1 --model m2     both VMs
+Both VMs: each host is pulled and built on its own, then merge_experiments() pools the finished windows.
 """
 from __future__ import annotations
 
@@ -33,10 +38,12 @@ import csv
 import glob
 import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -180,6 +187,8 @@ def loki_pull_args(a):
         v = getattr(a, flag, None)
         if v:
             out += ["--" + flag, v]
+    if len(a.host or []) == 1:
+        out += ["--host", a.host[0]]
     if a.yes:
         out.append("--yes")
     return out
@@ -195,6 +204,114 @@ def pull(loki_args, out_root=None):
     if not after:
         sys.exit("[lab] the pull produced no experiment folder")
     return max(after, key=os.path.getmtime)
+
+
+def merge_experiments(exps, hosts, exp_id):
+    """Pool per-host experiments into one <EXPS>/<exp_id>/ that lab train reads like any other.
+
+    Why not one build over both hosts: etwwindow cuts by time and FILE/NET node IDs hash the path / ip:port, so two
+    hosts in one build would become one graph per window. Here each window stays one host's graph, as live windows are.
+
+    Windows are renumbered in (start_ms, host) order. The trainer holds out the LAST window IDs for validation
+    (train_gnn_models.py), so this puts every host in validation; train() scales --purge-windows to match."""
+    sys.path.insert(0, PIPE)
+    recs = [json.load(open(os.path.join(e, "experiment.json"), encoding="utf-8-sig")) for e in exps]
+    for key in ("split", "graph", "windowing"):
+        if any(r.get(key) != recs[0].get(key) for r in recs):
+            sys.exit(f"[lab] cannot merge: experiments differ on {key}: {[r.get(key) for r in recs]}")
+    if len({r.get("tools", {}).get("converter") for r in recs}) != 1:
+        sys.exit("[lab] cannot merge: experiments were built with different converters")
+    split, graph = recs[0]["split"], recs[0].get("graph", GRAPH)
+
+    rows, seg_base, types = [], 0, []
+    for host, exp in zip(hosts, exps):
+        with open(os.path.join(exp, "windows.csv"), newline="", encoding="utf-8") as fh:
+            r = csv.DictReader(fh)
+            types += [c for c in r.fieldnames if c not in types]
+            got = list(r)
+        rows += [dict(w, _host=host, segment=int(w["segment"]) + seg_base) for w in got]
+        seg_base += 1 + max(int(w["segment"]) for w in got)
+    rows.sort(key=lambda w: (int(w["start_ms"]), w["_host"]))
+    width = max(4, len(str(len(rows) - 1)))                     # same width everywhere: the trainer sorts IDs as text
+    new_id = {(w["_host"], w["window"]): f"w{i:0{width}d}" for i, w in enumerate(rows)}
+
+    out = os.path.join(EXPS, exp_id)
+    tmp = out + ".partial"
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp)
+
+    def relabel(host, node_id):                                 # "w0007_f123" -> this window's merged ID
+        old, rest = node_id.split("_", 1)
+        return new_id[(host, old)] + "_" + rest
+
+    for kind, cols in (("edges", (0, 2)), ("node_attrs", (0,))):
+        name = f"{graph}_{split}_{kind}.csv"
+        with open(os.path.join(tmp, name), "w", newline="", encoding="utf-8") as dst:
+            w = csv.writer(dst)
+            for i, (host, exp) in enumerate(zip(hosts, exps)):
+                with open(os.path.join(exp, name), newline="", encoding="utf-8") as src:
+                    r = csv.reader(src)
+                    head = next(r)
+                    if i == 0:
+                        w.writerow(head)
+                    for row in r:
+                        for c in cols:
+                            row[c] = relabel(host, row[c])
+                        w.writerow(row)
+    with open(os.path.join(tmp, "windows.csv"), "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=types + ["host"], restval=0, extrasaction="ignore")
+        w.writeheader()
+        for row in rows:
+            w.writerow(dict(row, window=new_id[(row["_host"], row["window"])], host=row["_host"]))
+
+    rec = {"id": exp_id, "graph": graph, "split": split, "event_source": recs[0].get("event_source"), "source": "merged",
+           "hosts": list(hosts), "merged_from": {h: os.path.basename(os.path.normpath(e)) for h, e in zip(hosts, exps)},
+           "label_source": recs[0].get("label_source"), "dos_map": {h: r.get("dos_map") for h, r in zip(hosts, recs)},
+           "windowing": recs[0]["windowing"], "tools": recs[0].get("tools", {}),
+           "own_tooling_filter": {h: r.get("own_tooling_filter") for h, r in zip(hosts, recs)},
+           "pull": {"range_utc": (recs[0].get("pull") or {}).get("range_utc")},
+           "results": {"windows": len(rows), "edges_out": sum(r.get("results", {}).get("edges_out") or 0 for r in recs),
+                       "contract_ok": all(r.get("results", {}).get("contract_ok") for r in recs)},
+           "postprocessed_utc": datetime.now(timezone.utc).isoformat()}
+    with open(os.path.join(tmp, "experiment.json"), "w", encoding="utf-8") as fh:
+        json.dump(rec, fh, indent=1)
+    os.replace(tmp, out)
+    print(f"[lab] merged {len(rows)} windows from {', '.join(hosts)} -> {rel(out)}")
+    return out
+
+
+def pull_hosts(a):
+    """lab's --host: none or one = a normal pull; several = pull + build each host, then merge the windows."""
+    hosts = a.host or []
+    if len(hosts) < 2:
+        return pull(loki_pull_args(a))
+    if len(set(hosts)) != len(hosts):
+        sys.exit(f"[lab] --host repeated: {hosts}")
+    if not (a.since or a.start) or a.capture or a.latest:
+        sys.exit("[lab] several --host values need a time range (--since or --start): a capture belongs to one host")
+    sys.path.insert(0, PIPE)
+    from lokiclient import parse_time
+    now = time.time_ns()                                        # one clock: every host gets the identical range
+    start, end = parse_time(a.since or a.start, now), parse_time(a.end or "now", now)
+    base = "range-" + datetime.fromtimestamp(start / NS, tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    common = ["--start", str(start), "--end", str(end), "--yes"]
+    for flag in ("split", "lookback", "loki"):
+        if getattr(a, flag, None):
+            common += ["--" + flag, getattr(a, flag)]
+    exps = [pull([*common, "--host", h, "--id", f"{base}-{h}"]) for h in hosts]
+    return merge_experiments(exps, hosts, f"{base}-{len(hosts)}hosts")
+
+
+def purge_args(rec, extra):
+    """--purge-windows for a merged experiment, unless --trainer-args sets it.
+
+    A window overlaps ceil(window/stride) - 1 predecessors of its own host (5 min / 2 min -> 2). Merged IDs interleave
+    the hosts, so those same predecessors sit up to n_hosts times further back: 2 hosts -> 4."""
+    hosts = rec.get("hosts") or []
+    if len(hosts) < 2 or "--purge-windows" in extra:
+        return []
+    w = rec["windowing"]
+    return ["--purge-windows", str((math.ceil(w["window_min"] / w["stride_min"]) - 1) * len(hosts))]
 
 
 def load_ranges(paths):
@@ -270,7 +387,7 @@ def train(experiment, model=None, seeds=3, epochs=None, extra=(), benign_split="
     feats = os.path.join(run_dir, "features")
     ranges = load_ranges(exclude)                               # before makedirs: a bad file leaves no folder behind
     train_edges = os.path.join(run_dir, "train_edges.csv") if ranges else edges
-    trainer = ["--runs", str(seeds), *(["--epochs", str(epochs)] if epochs else []), *extra]
+    trainer = ["--runs", str(seeds), *(["--epochs", str(epochs)] if epochs else []), *extra, *purge_args(rec, extra)]
     cmds = [[os.path.join(PIPE, "encode_to_features.py"), "--edges", train_edges, "--out-dir", feats],
             [os.path.join(PIPE, "train_gnn_models.py"), "--edges", train_edges,
              "--features", os.path.join(feats, "features_model.csv"),
@@ -296,7 +413,7 @@ def train(experiment, model=None, seeds=3, epochs=None, extra=(), benign_split="
     dirty = subprocess.run(["git", "status", "--porcelain", "--", "src/pipeline"], cwd=REPO,
                            capture_output=True, text=True).stdout.strip()
     lineage = {"model": os.path.basename(run_dir), "experiment": os.path.basename(os.path.normpath(exp)),
-               "experiment_source": rec.get("source"), "benign_split": benign_split,
+               "experiment_source": rec.get("source"), "hosts": rec.get("hosts"), "benign_split": benign_split,
                "label_source": label_source(rec, benign_split, excluded), "excluded": excluded,
                "seeds": seeds, "epochs": epochs,
                "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -478,6 +595,34 @@ def selftest():
             lin = json.load(open(os.path.join(rd3, "lineage.json")))
             assert lin["excluded"]["windows_dropped"] == len(gone) and "minus" in lin["label_source"], lin
             assert os.path.exists(os.path.join(rd3, "ex.json"))
+            # two hosts: one identical range, built apart, windows merged and interleaved, purge scaled
+            for h, run_ in (("ws-etw-0", "live-20261017T040000Z"), ("ws-etw-1", "live-20261017T040001Z")):
+                push_run(Loki(fake.url), cap, "train", run_, host=h, log=lambda *_: None)
+            two = argparse.Namespace(host=["ws-etw-0", "ws-etw-1"], since="3h", start=None, end=None, capture=None,
+                                     latest=False, split="train", lookback=None, loki=fake.url, yes=True)
+            try:                                                # no --host on a mixed range: refused, never pooled
+                pull(["--loki", fake.url, "--since", "3h", "--split", "train", "--id", "mix", "--yes"])
+                raise AssertionError("a range with several hosts and no --host must be refused")
+            except SystemExit:
+                pass
+            mexp = pull_hosts(two)
+            one = next(e for e in glob.glob(os.path.join(EXPS, "range-*-ws-etw-0")))
+            with open(os.path.join(one, "windows.csv"), newline="") as fh:
+                n1 = len(list(csv.DictReader(fh)))
+            with open(os.path.join(mexp, "windows.csv"), newline="") as fh:
+                mw = list(csv.DictReader(fh))
+            assert len(mw) == 2 * n1 and [w["window"] for w in mw] == [f"w{i:04d}" for i in range(len(mw))], len(mw)
+            assert [int(w["start_ms"]) for w in mw] == sorted(int(w["start_ms"]) for w in mw)
+            assert {w["host"] for w in mw[-2:]} == {"ws-etw-0", "ws-etw-1"}, mw[-2:]      # validation sees both hosts
+            assert len({(w["host"], w["segment"]) for w in mw}) == len({w["segment"] for w in mw})
+            with open(edges_file(mexp), newline="") as fh:
+                ids = {row["source-id"].split("_", 1)[0] for row in csv.DictReader(fh)}
+            assert ids <= {w["window"] for w in mw} and len(ids) > n1, (len(ids), n1)
+            mrec = json.load(open(os.path.join(mexp, "experiment.json")))
+            assert mrec["hosts"] == two.host and purge_args(mrec, []) == ["--purge-windows", "4"], mrec["hosts"]
+            assert purge_args(mrec, ["--purge-windows", "0"]) == [] and purge_args({}, []) == []
+            rd4 = train(mexp, "t4", seeds=1, epochs=3)
+            assert json.load(open(os.path.join(rd4, "lineage.json")))["hosts"] == two.host
             # compare: same windows only, red counted per label
             cols = ["window", "start_ms", "end_ms", "start_utc", "status", "edges", "max_sg_score", "alert"]
             for name, rows_ in (("a", [(0, "scored", "20.0", True), (1, "scored", "0.0", False), (2, "scored", "50.0", True)]),
@@ -498,7 +643,8 @@ def selftest():
         fake.close()
         EXPS, RUNS, POINTER, LOCAL = saved
     print("[SELFTEST OK] Loki -> pull + build -> features + train into one run folder -> promote -> current;"
-          " test-split idle range needs --benign-split test; exclusions drop whole windows; compare counts red per label")
+          " test-split idle range needs --benign-split test; exclusions drop whole windows; "
+          "--host refuses a mixed range, two hosts build apart and merge interleaved; compare counts red per label")
     return 0
 
 
@@ -588,6 +734,9 @@ def _capture_options(p):
     g.add_argument("--end", metavar="TIME", help="time range end (default: now)")
     g.add_argument("--split", choices=["train", "test"],
                    help="train = 07 training captures, test = start-live demo captures")
+    g.add_argument("--host", action="append", metavar="NAME",
+                   help="Loki host label, e.g. ws-etw-0. Once = that VM only. Repeat = train on all of them (needs "
+                        "--since or --start). Required when a range holds several hosts")
     g.add_argument("--lookback", metavar="AGE", help="how far back to look for captures (default 7d)")
     g.add_argument("--loki", metavar="URL", help="Loki address (default: $LOKI_URL, else http://127.0.0.1:3100)")
     g.add_argument("--yes", action="store_true", help="no questions: needs a capture choice and (for loop) --model")
@@ -676,7 +825,7 @@ def main(argv=None):
         if a.list:
             return run([os.path.join(PIPE, "loki_pull.py"), "--list",
                         *(["--lookback", a.lookback] if a.lookback else []), *(["--loki", a.loki] if a.loki else [])])
-        pull(loki_pull_args(a))
+        pull_hosts(a)
         return 0
     if a.cmd in ("loop", "train"):
         import shlex
@@ -688,7 +837,7 @@ def main(argv=None):
             ap.error("loop --yes needs --model NAME (no question is asked)")
         if a.yes and not (a.capture or a.latest or a.since or a.start):
             ap.error("loop --yes needs a capture choice: --capture, --latest, --since or --start")
-        exp = pull(loki_pull_args(a))
+        exp = pull_hosts(a)
         model = a.model or (ask_model_name(exp) if sys.stdin.isatty() else None)
         if not model:
             return 1

@@ -129,7 +129,7 @@ and compare `windows.csv` / `llm_verdicts.csv` of `replay-live-<UTC>` with the l
   is behind, so a 1-h backlog arrives in slices instead of one multi-GB read (UI: "catching up").
 - The UI tab re-syncs by itself after the server restarts or the session changes (no reload needed).
 - `OOMScoreAdjust=500`: under memory pressure the kernel kills `ocr-live` (it restarts) before Loki/Docker.
-- Still open: a ws-etw → Loki push stall longer than `--loki-idle-s` drops that backlog as late (PROGRESS).
+- Still open: a ws-etw-0 → Loki push stall longer than `--loki-idle-s` drops that backlog as late (PROGRESS).
 
 No VM? Feed Loki from a recording (on the trainer):
 ```
@@ -190,3 +190,19 @@ A red window is an observation, not a detection result, until the window has lab
   (`llm` = pending when written; final verdicts in `llm_verdicts.csv`).
 - `windows/<wid>/`: `edges.csv, node_attrs.csv, features_model.csv, scores.csv, subgraphs.json`, and
   `llm/` (`sg<id>_doc.txt` = exact LLM input, `triage.json`, `sg<id>_report.md`, `iocs.json`, `calls.jsonl`).
+
+## Several Windows hosts
+
+All Windows VMs push to one Loki, told apart by the `host` label. `live_server.py --loki-host ws-etw-0` follows and
+scores that host only (`live_loki_host` in the inventory); without the flag it follows the newest run of any host and
+flips between them.
+
+Training picks hosts with `--host`:
+
+```bash
+lab loop --since 3h --split test --host ws-etw-0 --model m1                     # one VM
+lab loop --since 3h --split test --host ws-etw-0 --host ws-etw-1 --model m2     # both VMs
+```
+
+With both, each host is pulled and built on its own, then `merge_experiments()` pools the finished windows. A range
+that holds several hosts and no `--host` is refused. Lines from before the rename are `--host ws-etw`. See DEVIATIONS D12.

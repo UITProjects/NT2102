@@ -370,6 +370,8 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   every kernel event (`EventsLost` is reported, not prevented).
 
 ## D11. Linux endpoint `ubuntu-etw`: auditd + own Python shipper (`src/audit-python`, `auditship`), raw logs only
+- RETIRED (user, 2026-11-06): the VM is replaced by a second Windows VM `ws-etw-1` (D12). The code stays in the repo
+  unused; the text below is the record of what it was.
 - What: [PAPER] the paper evaluates Linux hosts only through existing datasets (DARPA TC3 / OpTC
   provenance records); it runs no collector. [OURS] (user decision 2026-11-02) a second endpoint VM on the
   Proxmox lab, `ubuntu-etw` 10.21.3.11, records syscalls with **auditd** and ships every record unchanged to the
@@ -392,3 +394,17 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - Claims limited: **none of the detection results apply to Linux.** There is no auditd → NODLINK converter, no
   features and no model for these records; they are not scored. Coverage is limited to the rules above (exec,
   64-bit connects, writes under the watched dirs), not a full provenance graph.
+
+## D12. Two Windows hosts: per-host build, merged windows, one host scored live
+- What: [PAPER] one model is trained per dataset host. [OURS] (user, 2026-11-06) `ws-etw-0` and `ws-etw-1` push to one
+  Loki, and training takes one host or both (`lab --host`). Both hosts: each is pulled and built on its own, then
+  `merge_experiments()` (`src/lab/cli.py`) pools the finished windows, renumbered in (start, host) order. `lab train`
+  multiplies `--purge-windows` by the host count. `ocr-live` scores one host (`--loki-host ws-etw-0`).
+- Why: one build over both hosts would merge them into one graph per window (`etwwindow.py` cuts by time, FILE/NET IDs
+  hash path / ip:port), unlike live single-host windows. Merging after the build leaves the converter and windowing
+  untouched, so `converter_check` holds.
+- Expected impact: a both-host model learns one baseline for two machines. `ws-etw-1` has no XAMPP/MariaDB, so the
+  baseline is wider, which [INFERENCE] may lower sensitivity on `ws-etw-0`. Exclusion ranges are by time, so they
+  drop both hosts' windows in that range.
+- Claims limited: not validated. A both-host model must be re-checked on the attack before promotion. `ws-etw-1` is
+  collected but not scored live, so no detection claim applies to it.

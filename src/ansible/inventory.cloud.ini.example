@@ -9,7 +9,7 @@
 # to the public internet. grafana_admin_password comes from the vault (-e @group_vars/vault.yml).
 
 [windows]
-ws-etw ansible_host=CHANGE_ME_WINDOWS_PUBLIC_IP private_ip=CHANGE_ME_WINDOWS_SUBNET_IP
+ws-etw-0 ansible_host=CHANGE_ME_WINDOWS_PUBLIC_IP private_ip=CHANGE_ME_WINDOWS_SUBNET_IP
 
 [ubuntu]
 # For a cloud Ubuntu use your own SSH key/user, e.g.:

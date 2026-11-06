@@ -3,6 +3,14 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## 2026-11-06 second Windows VM (config + code written; NOT applied or verified)
+
+`ubuntu-etw` is replaced by `ws-etw-1` (VM 2107, 10.21.3.11, manual install, collector only) and `ws-etw` is renamed
+`ws-etw-0`. `terraform plan`: 3 add, 1 change (`windows` name only, in place), 3 destroy (`ubuntu_etw` only). Added
+`ocr-live --loki-host`, `lab --host` (one host or both) and `merge_experiments()` (D12). Selftests pass, which proves
+"it runs" only. Pending, user: `apply`, install, Ansible, `start-live.ps1 -Rotate` on `ws-etw-0`, then check Loki and
+the live UI. No both-host model is trained yet; exp08 stays current for `ws-etw-0`.
+
 ## 2026-11-05 live attack run (exp07): RED but FALSE POSITIVE, attack missed — root-caused + exp08 retrain (IN PROGRESS)
 
 A live DVWA→RCE run (session `live-20261105T120407Z`, exp07) delivered cleanly and was fully captured, but

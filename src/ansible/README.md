@@ -5,7 +5,8 @@ subnet):
 
 | host (group) | address | role |
 |---|---|---|
-| `ws-etw` (`windows`) | 10.21.3.10 | ETW collector **`etwcollect`** (`src/etw-python`, SYSTEM task `etwlab-collector`; it also pushes to Loki), DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
+| `ws-etw-0` (`windows`) | 10.21.3.10 | ETW collector **`etwcollect`** (`src/etw-python`, SYSTEM task `etwlab-collector`; it also pushes to Loki), DVWA vulnlab (optional, `-e vulnlab_enabled=true`). No training. |
+| `ws-etw-1` (`windows`) | 10.21.3.11 | Same collector, pushes to the same Loki. No DVWA. |
 | `ubuntu-trainer` (`ubuntu`) | 10.21.3.20 | **Loki + Grafana** (Docker, host network), repo + `uv sync`, training, `live_server.py` (systemd `ocr-live`, follows Loki). |
 
 > The lab also has a **Kali attacker VM**: `kali` 10.21.4.30 on its own subnet 10.21.4.0/24 (group
@@ -71,7 +72,7 @@ sum by (provider) (count_over_time({job="silketw", run="live-20261017T040000Z"}[
 |---|---|
 | it runs (static) | `--syntax-check` passes for every playbook; 15/15 `./selftest.sh` steps pass (incl. `etwcollect selftest`) |
 | Ubuntu side | provisioned on the local `ubuntu-trainer`; a second run reports no changes except the `ocr-live` start (see `repo_branch` below). Verified with the recorded capture `20261009T145632Z` fed through `loki_push.py`: (1) pulled lines = original files (count + sha256 of sorted lines, all 3 providers); (2) `build_experiment.py` edges, node attributes and windows identical to the VM-built ones, line for line; (3) live via `--loki-url`: `compare_replay.py` ALL MATCH, 8/8 windows |
-| Windows side | verified on `ws-etw` (2026-10-26): `windows.yml` 2nd run `changed=0`, `verify-windows.yml` passes, `etwcollect selftest --live` passes, 32-min live run lossless into Loki (counts = file lines) with kfile lag within ±4 s and 0 lost events (PROGRESS) |
+| Windows side | verified on `ws-etw-0` (2026-10-26): `windows.yml` 2nd run `changed=0`, `verify-windows.yml` passes, `etwcollect selftest --live` passes, 32-min live run lossless into Loki (counts = file lines) with kfile lag within ±4 s and 0 lost events (PROGRESS) |
 | model | being rebuilt from scratch from Loki-pulled data. `exp01` (Win10 data, older converter) shows `converter_check: MISMATCH`, which is expected |
 
 ## Addresses are inventory-driven (cloud-ready)
@@ -108,12 +109,12 @@ ansible-vault encrypt group_vars/vault.yml                # vault.yml is gitigno
 
 ### Proxmox lab (`proxmox.ini`)
 
-The VMs from `infrastructure/` (Terraform): `ws-etw` 10.21.3.10, `ubuntu-trainer` 10.21.3.20, reached over a
-routed path to 10.21.3.0/24. Credentials come from the vault, like cloud: `win_user: Administrator`, the
-Windows password, and `grafana_admin_password` in `group_vars/vault.yml`. The trainer uses the cloud-init user
+The VMs from `infrastructure/` (Terraform): `ws-etw-0` 10.21.3.10, `ubuntu-trainer` 10.21.3.20, reached over a
+routed path to 10.21.3.0/24. The lab logins are hardcoded in `proxmox.ini` on purpose (user, 2026-11-06): the VMs are
+only reachable over the VPN, so no vault is used here. The trainer uses the cloud-init user
 `it2102` and the `it2102-vms` key.
 
-A fresh `ws-etw` puts its NIC on the Public profile, where the WinRM firewall rule only accepts the local
+A fresh `ws-etw-0` puts its NIC on the Public profile, where the WinRM firewall rule only accepts the local
 subnet, so a routed workstation times out on 5985. Once, in RDP as Administrator (PowerShell):
 
 ```powershell
@@ -121,23 +122,27 @@ Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private   #
 Enable-PSRemoting -Force                                                       # WinRM listener + firewall rule
 ```
 
-Check with `nc -zv -w3 10.21.3.10 5985`, then run with `-i proxmox.ini -e @group_vars/vault.yml --ask-vault-pass`
+Check with `nc -zv -w3 10.21.3.10 5985`, then run with `-i proxmox.ini`
 (Ubuntu first; add `-e vulnlab_enabled=true` for DVWA).
 
-The Linux endpoint `ubuntu-etw` 10.21.3.11 (group `target`) ships auditd records to the same Loki with
-`auditship` (`src/audit-python`, DEVIATIONS D11). No vault is needed. The trainer must list it in Loki's ufw
-rule first:
+The second Windows VM `ws-etw-1` 10.21.3.11 is collector only (`vulnlab_host=false`, so DVWA stays off even with
+`-e vulnlab_enabled=true`). Install it by hand (`infrastructure/README.md`) with the **same Administrator password**
+as `ws-etw-0` (one `win_password` for the group), do the one-time steps above and the Tamper Protection step below, then:
 
 ```bash
-ansible-playbook -i proxmox.ini ubuntu.yml --tags loki      # ufw: Loki :3100 from ws-etw + ubuntu-etw
-ansible-playbook -i proxmox.ini target.yml                  # auditd + rules, auditship (rsync of src/audit-python
-                                                            # + src/etw-python from this machine), systemd unit
+ansible-playbook -i proxmox.ini ubuntu.yml                  # ufw: Loki :3100 from both VMs; ocr-live --loki-host
+ansible-playbook -i proxmox.ini windows.yml -e vulnlab_enabled=true
 ```
 
-Check on `ubuntu-etw`: `sudo auditctl -l` (the `never ... uid=<auditship>` rules come first),
-`sudo /opt/auditship/audit-python/.venv/bin/auditship status` (`backlog_bytes` ≈ 0, `last_error` null). In Grafana:
-`{job="auditd", host="ubuntu-etw"} | key="exec"`. `type` and `key` are structured metadata: filter them after the
-`{...}` selector, not inside it.
+`ocr-live` needs a checkout that knows `--loki-host`: merge first, or add `-e repo_branch=<branch>`. After a rename
+of a Windows host, run `C:\scripts\start-live.ps1 -Rotate` on it: a running capture keeps its old `host` label until
+a new run reads `etwlab.json`. Check in Grafana: `{job="silketw", host="ws-etw-1"}` shows kproc, kfile and knet.
+
+`ocr-live` scores only `live_loki_host` (`ws-etw-0`). Train on one or both VMs with `lab --host` (`src/live/README.md`).
+Lines from before the rename stay labelled `host="ws-etw"`.
+
+The Linux endpoint is retired (DEVIATIONS D11): `target.yml`, the `linux_*` roles and `src/audit-python` stay in the
+repo unused; an inventory `[target]` group brings them back.
 
 The Kali attacker `kali` 10.21.4.30 (group `attacker`, on its **own** subnet 10.21.4.0/24, `infrastructure/`
 VM 2106) is Ansible-managed on Proxmox. It uses **username/password** — Kali's public default `kali` /
@@ -149,14 +154,14 @@ The `kali_attack` role copies `src/atomic-attack-pack` to `/opt/attack-pack` and
 sudo apt install sshpass                                          # once, on the workstation
 ansible-playbook -i proxmox.ini kali.yml
 # first boot of a fresh kali is manual (IP + ssh): infrastructure/README.md "kali".
-# live attack, once ocr-live runs a Proxmox model (DVWA on ws-etw; the launcher auto-detects 10.21.4.30):
+# live attack, once ocr-live runs a Proxmox model (DVWA on ws-etw-0; the launcher auto-detects 10.21.4.30):
 #   ssh kali@10.21.4.30
 #   python3 -I /opt/attack-pack/tools/launch_exploit.py --target http://10.21.3.10:3000
 ```
 
 ### Tamper Protection (Windows, manual, once)
 
-Defender **Tamper Protection** cannot be toggled remotely. Before the first run, RDP into `ws-etw` and
+Defender **Tamper Protection** cannot be toggled remotely. Before the first run, RDP into `ws-etw-0` and
 turn it OFF: *Windows Security → Virus & threat protection → Manage settings → Tamper Protection = Off*.
 The `win_base` role can then disable real-time monitoring; if Tamper Protection is still on, it warns and
 continues.
@@ -168,7 +173,7 @@ continues.
 ansible -i proxmox.ini ubuntu -m ping
 ansible -i proxmox.ini windows -m ansible.windows.win_ping  # use win_ping on Windows, NOT ping
 ansible-playbook -i proxmox.ini ubuntu.yml                                    # Loki + Grafana + repo + ocr-live
-ansible-playbook -i proxmox.ini windows.yml -e @group_vars/vault.yml --ask-vault-pass -e vulnlab_enabled=true
+ansible-playbook -i proxmox.ini windows.yml -e vulnlab_enabled=true
                                               # etwcollect (uv) + start-live.ps1 + DVWA vulnlab
 
 # any other cloud (the vault supplies the Windows + Grafana creds):
@@ -197,7 +202,7 @@ after a `src/etw-python` change (a re-clone/fast-forward on every run; the venv 
 ## Rebuild training data (from scratch, through Loki)
 
 ```powershell
-# on ws-etw, elevated PowerShell in the RDP desktop session (not WinRM):
+# on ws-etw-0, elevated PowerShell in the RDP desktop session (not WinRM):
 # benign = IDLE pulled from Loki (no capture script): keep the desktop idle so the always-on live capture
 # ships idle background activity, then on the trainer pull a clean idle range and train:
 #   lab pull --start 2026-10-31T12:45:00Z --end 2026-10-31T13:02:00Z --split test --yes
@@ -230,7 +235,7 @@ trainer) → `encode_to_features.py` → `train_gnn_models.py`, all into one run
 - Ansible copies the same file to the VM, and `.gitattributes` pins it to LF.
 - Edit the converter **before** a training capture, never after. After an edit, build again.
 
-## Demo (on `ws-etw`, elevated PowerShell in the RDP desktop session)
+## Demo (on `ws-etw-0`, elevated PowerShell in the RDP desktop session)
 
 ```powershell
 C:\scripts\start-live.ps1 -Rotate                      # optional: fresh live run = a clean session for the demo
@@ -266,12 +271,12 @@ windows stay green; the teammate's attack turns its window red.
    seconds, `ETW lost: events 0`, `Loki: ... backlog` near 0. `etwcollect selftest --live` (elevated) passes.
 2. After `etwctl start -Split test`, the run folder has `dosmap.meta`: one JSON line such as
    `{"\\device\\harddiskvolume4":"c:"}`.
-3. Grafana Explore `{job="silketw", host="ws-etw"}` shows lines labelled with `split`, `run` and `provider`,
+3. Grafana Explore `{job="silketw", host="ws-etw-0"}` shows lines labelled with `split`, `run` and `provider`,
    and the line details show `event`, `pid` and `process`.
 4. The Loki time of a line equals its `TimeStamp` (etwcollect writes UTC, `+00:00`; SilkETW wrote `+07:00`).
 5. `07` → `loki_pull.py --run x-<UTC> --yes --build` on the trainer. Its `SimulatedW10_train_edges.csv`
    should equal the VM's own `07` result, compared as multisets (sorted lines).
-6. The `etwlab-live` task (or `start-live.ps1 -Rotate`) + `06`: the live UI shows `session live-<UTC> (loki, ws-etw)` and windows close.
+6. The `etwlab-live` task (or `start-live.ps1 -Rotate`) + `06`: the live UI shows `session live-<UTC> (loki, ws-etw-0)` and windows close.
    `converter_check: match` appears once `experiment.json` comes from a capture built with this converter.
 7. DVWA's login page answers on `http://<windows>:3000/login.php` (Apache + MariaDB services up).
 
@@ -292,8 +297,8 @@ roles/
   ubuntu_project  git clone + uv sync + ocr-live systemd unit (--loki-url + live_llm_args) + session cleanup cron
   kali_attack     (Proxmox, kali.yml) copy src/atomic-attack-pack -> /opt/attack-pack + launcher selftest
 ```
-(Not shown: `linux_auditd`/`linux_auditship` run by `target.yml`; `kali_attack` by `kali.yml` — both
-run on their own, not via `site.yml`.)
+(Not shown: `linux_auditd`/`linux_auditship` run by `target.yml`, unused while no `[target]` host exists;
+`kali_attack` by `kali.yml`. Both run on their own, not via `site.yml`.)
 
 The converter and windowing tool (`win_collector`) are deployed from `src/pipeline/`, the same files
 `build_experiment.py` runs on the trainer. See the converter hash rule above.

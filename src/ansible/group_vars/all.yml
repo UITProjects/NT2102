@@ -89,6 +89,8 @@ repo_dest: "/home/{{ ansible_user }}/NT2102"
 # the `llm` uv group. Deliberately NOT defined in this file: group_vars/all.yml outranks the inventory's
 # [ubuntu:vars], so a default here would silently override inventory.local.ini. Uses say `| default('')`.
 # The API key is NEVER set here: save it once on the trainer (alg2.py --ping prompts, src/live/README.md §5).
+# live_loki_host: the Windows host ocr-live follows (--loki-host); unset = newest run of any host. Same rule, set in
+# the inventory's [ubuntu:vars], not here.
 # live_sg_moderate_from: SG-Det cut-off for ocr-live (Moderate from this subgraph score). Same rule, not defined
 # here; the unit template defaults it to 10 = [PAPER] §7.2.1 (user, 2026-11-03); 30 = the old [OURS] live scale.
 # Live sessions keep their window results (windows/, windows.csv, sessions/history.jsonl) forever: that is the

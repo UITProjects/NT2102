@@ -5,7 +5,7 @@ Creates on one Proxmox node:
 - SDN Simple zone `nt2102` → VNet **`it2102`** → subnet `10.21.3.0/24` (gateway `10.21.3.1` on the node,
   SNAT for internet).
 - The Windows Server 2022 ISO, downloaded by PVE from `iso_url`.
-- One VM (`ws-etw` by default): q35, UEFI (OVMF, Secure Boot keys), TPM 2.0, SATA disk, e1000e NIC on
+- One VM (`ws-etw-0` by default): q35, UEFI (OVMF, Secure Boot keys), TPM 2.0, SATA disk, e1000e NIC on
   `it2102`, booting the ISO. **Install Windows by hand from the console.**
 
 Provider: `bpg/proxmox` pinned to `0.119.0`. SDN and ISO use the current `proxmox_sdn_*` /
@@ -78,18 +78,17 @@ Drops appear in the Proxmox UI under VM 2102 → Firewall → Log.
 
 Ubuntu 24.04 cloud image (pinned `noble/20261017`), 4 cores, 6 GB RAM, 200 GB disk (Loki keeps 72 h at
 ~2 GB/h), static `10.21.3.20/24` via cloud-init, user `it2102` with the `it2102-vms` key. It gets the same
-`it2102:` firewall rules as ws-etw (`local.it2102_rules`): no LAN, no node, inbound only from the lab subnet.
+`it2102:` firewall rules as ws-etw-0 (`local.it2102_rules`): no LAN, no node, inbound only from the lab subnet.
 
 ## Reaching the lab from the workstation (routed path)
 
 The workstation reaches `10.21.3.0/24` **directly**: the home router routes the subnet to `pve-master`, which
 is the it2102 gateway (`10.21.3.1`). The VM firewall only drops traffic the VMs *start* toward the LAN; your
 inbound SSH passes, and its replies pass through connection tracking. Verified 2026-11-02 (`ssh` to
-`ubuntu-etw` with no jump):
+a lab VM with no jump):
 
 ```bash
 ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.20   # ubuntu-trainer
-ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.11   # ubuntu-etw
 ```
 
 The first connection asks to trust the host key (cloud-init generates a new one on every rebuild; after a
@@ -103,26 +102,22 @@ Fallback when the route is missing (e.g. away from home): jump through the node,
 ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa -J root@<pve-master-LAN-IP> it2102@10.21.3.20
 ```
 
-## ubuntu-etw (VM 2104)
+## ws-etw-1 (VM 2107)
 
-Ubuntu 24.04 endpoint, the Linux counterpart of ws-etw. Built **the same way as the trainer**: the same
-cloud image (`proxmox_download_file.ubuntu_image`, downloaded once and shared), and cloud-init sets the
-static `10.21.3.11/24`, gateway `10.21.3.1`, DNS and user `it2102` with the `it2102-vms` key. No manual
-install: SSH works about 1–2 minutes after `apply`. 2 cores, 4 GB RAM, 40 GB disk. Same `it2102:` firewall
-rules as the other VMs.
+Second Windows Server 2022 VM, built like `ws-etw-0`: same shared ISO, q35, UEFI, TPM 2.0, SATA disk, e1000e NIC,
+4 cores, 8 GB RAM, 256 GB disk, same `it2102:` firewall rules. It takes over 10.21.3.11 from the removed
+`ubuntu-etw`. The VM ID is 2107, not 2104, because Terraform does not order a destroy and a create of two different
+addresses.
 
-```bash
-ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.11   # direct, routed path (above)
-```
+Manual steps after `apply` (noVNC console):
 
-Check inside: `curl -sI https://1.1.1.1` answers (internet), `curl -m3 http://192.168.1.1` times out (LAN blocked).
-
-The name mirrors ws-etw, but ETW is a Windows-only kernel API: this VM runs no collector yet. A Linux endpoint
-would need auditd or eBPF plus its own converter and model.
+1. Install Windows and set the same Administrator password as `ws-etw-0` (`win_password` in `src/ansible/proxmox.ini` covers both).
+2. Set a static IP: `10.21.3.11/24`, gateway `10.21.3.1`, DNS `1.1.1.1`.
+3. Do the WinRM bootstrap and Tamper Protection steps in `src/ansible/README.md`, then run Ansible.
 
 ## nt2102-vpn (VM 2105)
 
-Ubuntu 24.04 VM for an OpenVPN server. It is built the same way as ubuntu-etw: shared cloud image, and
+Ubuntu 24.04 VM for an OpenVPN server. It is built the same way as the trainer: shared cloud image, and
 cloud-init sets the static `10.21.3.50/24`, gateway `10.21.3.1` and user `it2102` with the `it2102-vms` key.
 It has 2 cores, 1 GB RAM and a 10 GB disk.
 
@@ -147,7 +142,7 @@ OpenVPN must listen on TCP (`proto tcp-server`), not the default UDP.
 
 Kali attacker on its **own** SDN VNet `it2102k` → subnet `10.21.4.0/24` (gateway `10.21.4.1`, SNAT),
 separate from the lab subnet `10.21.3.0/24`. 2 cores, 4 GB RAM, 40 GB disk. Built from the **installer
-ISO** (there is no Kali cloud image for this path), so — like `ws-etw` — it is installed by hand and has
+ISO** (there is no Kali cloud image for this path), so — like `ws-etw-0` — it is installed by hand and has
 **no cloud-init**: Terraform builds only the hardware. A dedicated `proxmox_sdn_applier.kali` applies the
 new VNet to the node on `apply` (the main applier does not re-run for a newly added VNet).
 
@@ -181,18 +176,18 @@ ansible-playbook -i proxmox.ini kali.yml
 
 Kali gets the shared `it2102:` rules (`local.it2102_rules`): no home LAN, no node, inbound only from the
 lab + Kali subnets. To let the attack cross between `10.21.4.0/24` and `10.21.3.0/24`, a rule was added to
-`it2102_rules` for **all** VMs: `IN ACCEPT ← 10.21.4.0/24`. So `ws-etw` accepts Kali's DVWA exploit, and
-Kali accepts the `ws-etw → Kali` stage callback (covered by the existing `IN ACCEPT ← 10.21.3.0/24`).
-pve-master routes between the two VNet gateways and does not masquerade inter-subnet traffic, so `ws-etw`
+`it2102_rules` for **all** VMs: `IN ACCEPT ← 10.21.4.0/24`. So `ws-etw-0` accepts Kali's DVWA exploit, and
+Kali accepts the `ws-etw-0 → Kali` stage callback (covered by the existing `IN ACCEPT ← 10.21.3.0/24`).
+pve-master routes between the two VNet gateways and does not masquerade inter-subnet traffic, so `ws-etw-0`
 sees Kali's real `10.21.4.30` source. (Note: this README describes the effective input default as DROP
 while `firewall_options` sets `input_policy = ACCEPT` — a doc/code mismatch; the explicit accept rule makes
 the path work under either.)
 
 ## Cloud image vs ISO install
 
-The two Ubuntu VMs use a cloud image; ws-etw uses an installer ISO (there's no Windows Server eval cloud image).
+The Ubuntu VMs use a cloud image; the Windows VMs use an installer ISO (there's no Windows Server eval cloud image).
 
-| | Cloud image + cloud-init (`ubuntu-trainer`, `ubuntu-etw`) | Installer ISO + manual install (`ws-etw`) |
+| | Cloud image + cloud-init (`ubuntu-trainer`, `nt2102-vpn`) | Installer ISO + manual install (`ws-etw-0`, `ws-etw-1`) |
 |---|---|---|
 | What Proxmox downloads | A finished disk (`.img`, ~600 MB), imported as the VM disk (`import_from`) | An installer (`.iso`, ~5 GB) attached as a CD-ROM |
 | Who sets IP, user, SSH key | Terraform, via the `initialization` block → cloud-init on first boot | You, in the installer / Windows settings |

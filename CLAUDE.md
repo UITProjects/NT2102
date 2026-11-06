@@ -150,6 +150,9 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   SG-Det stays paper-faithful). Caveats: thin 5-min idle model (Moderate, not Significant); PsExec ran but scored below τ
   (rclone + scan/C2/DB carried it). See PROGRESS, `docs/notes/real-tool-download-exec.md`, DEVIATIONS D6/D8.
 - Work happens on the Proxmox VMs, controlled over Ansible/SSH.
+- Decided (user, 2026-11-06): `ubuntu-etw` is replaced by a second Windows VM `ws-etw-1` (10.21.3.11, collector only) and
+  `ws-etw` is renamed `ws-etw-0`. Training takes one host or both (`lab --host`, D12); `ocr-live` scores `ws-etw-0` only.
+  Older text and data below say `ws-etw`; Loki lines from before the rename keep that label.
 - Decided (user, 2026-11-03): SG-Det uses the **paper's level scale** (Moderate from 10, [PAPER] §7.2.1; the
   [OURS] 30 is retired, D8), and `ocr-live` keeps a **persistent, range-queryable window history** on disk
   (`src/live/history.py`, `sessions/history.jsonl`, `/api/history`, UI History panel; only raw copies are pruned).
@@ -185,18 +188,18 @@ history of earlier progress) and, if relevant, this section.
   the trainer with the training converter code, scaler and relation list; the live clock is event time
   (newest event − lateness), with a host-clock fallback when idle (DEVIATIONS D8). The HTTP shipper
   (`etwship.py`) remains for replay only.
-- Collection lab: four VMs on the home Proxmox hypervisor (`infrastructure/` Terraform builds them,
-  `src/ansible/` provisions them, cloud-portable via inventory): Windows Server 2022 `ws-etw` (own Python
-  ETW collector `etwcollect` on Kernel-Process, Kernel-File, Kernel-Network, pushing to Loki, + the DVWA
+- Collection lab: VMs on the home Proxmox hypervisor (`infrastructure/` Terraform builds them,
+  `src/ansible/` provisions them, cloud-portable via inventory): Windows Server 2022 `ws-etw-0` and `ws-etw-1` (own Python
+  ETW collector `etwcollect` on Kernel-Process, Kernel-File, Kernel-Network, pushing to Loki, + on `ws-etw-0` only the DVWA
   vulnlab on XAMPP, no training; user, 2026-10-26: replaces SilkETW/SilkService v0.8, whose per-event file
   writes feed back into Kernel-File and which has no exclude filter), Ubuntu `ubuntu-trainer` (Loki +
   Grafana, training, live server), Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, on
   its own SDN VNet `it2102k` 10.21.4.0/24; Ansible-managed, `kali.yml` → role `kali_attack` copies
-  `src/atomic-attack-pack` to `/opt/attack-pack`), and Linux endpoint `ubuntu-etw` (auditd, not scored,
-  D11). `ws-etw`/`ubuntu-trainer`/`ubuntu-etw` sit on VNet `it2102` 10.21.3.0/24. Terraform rules: the user
+  `src/atomic-attack-pack` to `/opt/attack-pack`). `ws-etw-0`/`ws-etw-1`/`ubuntu-trainer` sit on VNet `it2102`
+  10.21.3.0/24. The Linux endpoint `ubuntu-etw` is retired (D11). Terraform rules: the user
   runs `apply`/`destroy`, Claude only writes config and runs `plan`;
   values are hardcoded in `main.tf` locals and only credentials are variables (`TF_VAR_*`); `terraform.tfstate`
-  is committed (public repo, no secrets). Windows WinRM creds come from the gitignored `group_vars/vault.yml`.
+  is committed (public repo, no secrets). Windows WinRM creds are hardcoded in `proxmox.ini` by choice (user, 2026-11-06: VPN-gated lab); `vault.yml` was deleted, only `vault.yml.example` remains for cloud.
 - Target schema (NODLINK W10, as the repo expects): 3 node types `PROCESS`, `FILE`, `NET`
   (repo `database_config.py`), 6 edge types (Write, Read, Send, Recv, Start, Load), epoch-millisecond
   timestamps.
@@ -232,12 +235,12 @@ history of earlier progress) and, if relevant, this section.
   `etwwindow.py` / `src/live/etwship.py`; the collector source is a git clone of this repo; it also
   removes the old SilkETW/SilkService and Grafana Alloy),
   `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture),
-  `win_vulnlab` (XAMPP + DVWA). Linux endpoint `ubuntu-etw` (group `target`, `target.yml`): `linux_auditd` (auditd rules,
+  `win_vulnlab` (XAMPP + DVWA). Retired Linux endpoint, unused while no host is in group `target` (`target.yml`): `linux_auditd` (auditd rules,
   shipper uid excluded) + `linux_auditship` (`src/audit-python` rsynced from the control node, systemd `auditship`
   → Loki `job="auditd"`; raw logs only, D11). (The `win_benign` role and `src/scripts/` capture scripts were removed
   2026-10-31: benign = idle pulled from Loki.)
-- Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw VM from the Server 2022
-  eval ISO with manual install, ubuntu-trainer, ubuntu-etw and nt2102-vpn from a cloud image + cloud-init, per-VM
+- Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw-0 and ws-etw-1 from the Server 2022
+  eval ISO with manual install, ubuntu-trainer and nt2102-vpn from a cloud image + cloud-init, per-VM
   firewall rules prefixed `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`; `proxmox-firewall.yml`
   adds the pve-master DNAT (TCP 2102 → nt2102-vpn:1194).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`

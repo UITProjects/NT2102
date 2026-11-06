@@ -2,7 +2,7 @@
 # Where the attack pack lands on Kali (owned by the login user so the launcher runs without sudo).
 attack_pack_dir: /opt/attack-pack
 
-# --- Real Windows tool binaries served at the T1105 stage and EXECUTED on the target (ws-etw) ----------
+# --- Real Windows tool binaries served at the T1105 stage and EXECUTED on the target (ws-etw-0) ----------
 # These are downloaded onto Kali at provision time (Kali has NAT/internet) into win_tools_dir, served by
 # tools/launch_exploit.py, and run by scenarios/rce-killchain.ps1. They are benign, signed utilities
 # (Sysinternals PsExec, rclone); the detector signal comes from EXECUTING them (new unseen process/socket
