@@ -1,0 +1,177 @@
+{
+ "model": "exp08",
+ "experiment": "range-3d-20261105",
+ "experiment_source": "loki",
+ "benign_split": "test",
+ "label_source": "benign by operator assertion: idle Loki range 2026-11-02 17:10:00+0000 - 2026-11-05 15:50:00+0000 (split test) minus 245 of 2118 windows listed in `excluded`",
+ "excluded": {
+  "windows_total": 2118,
+  "windows_dropped": 245,
+  "windows_kept": 1873,
+  "edges_kept": 1339859,
+  "edges_dropped": 1245314,
+  "ranges": [
+   {
+    "start_ms": 1793633400000,
+    "end_ms": 1793643000000,
+    "reason": "RDP sessions, VM work and the DVWA->RCE attack (17:3x): human and attack activity are not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793664300000,
+    "end_ms": 1793665500000,
+    "reason": "RDP session over the team VPN: human activity is not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793763300000,
+    "end_ms": 1793769600000,
+    "reason": "RDP session over the team VPN (cmd, nslookup, ping): human activity is not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793661180000,
+    "end_ms": 1793661360000,
+    "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793683080000,
+    "end_ms": 1793683260000,
+    "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793704980000,
+    "end_ms": 1793705160000,
+    "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793726880000,
+    "end_ms": 1793727060000,
+    "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793748780000,
+    "end_ms": 1793748960000,
+    "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793770680000,
+    "end_ms": 1793770860000,
+    "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793792580000,
+    "end_ms": 1793792760000,
+    "reason": "etwctl rotation canary (session live-20261104T114407Z): cmd /c whoami, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793802900000,
+    "end_ms": 1793808000000,
+    "reason": "Kali (10.21.4.30) attack/test activity + whoami on 11-04 afternoon: not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793814480000,
+    "end_ms": 1793814660000,
+    "reason": "etwctl rotation canary (session live-20261104T174907Z): cmd /c whoami, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793831100000,
+    "end_ms": 1793831520000,
+    "reason": "RDP session + Ansible (rdpclip, mstsc, wsmprovhost, nslookup, whoami): human activity, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793836380000,
+    "end_ms": 1793836560000,
+    "reason": "etwctl rotation canary (session live-20261104T235407Z): cmd /c whoami, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793839200000,
+    "end_ms": 1793842500000,
+    "reason": "the 00:50 DVWA->RCE attack (Kali 10.21.4.30) + the 01:18-01:30 RDP session: not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793854920000,
+    "end_ms": 1793855160000,
+    "reason": "whoami cluster ~05:03 (rotation/scheduled canary): attack-shaped tree, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793858280000,
+    "end_ms": 1793858460000,
+    "reason": "etwctl rotation canary (session live-20261105T055907Z): cmd /c whoami, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793876400000,
+    "end_ms": 1793876760000,
+    "reason": "brief RDP session (mstsc 11:02): human activity, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793880180000,
+    "end_ms": 1793880420000,
+    "reason": "etwctl rotation canary (session live-20261105T120407Z): cmd /c whoami, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793890920000,
+    "end_ms": 1793891160000,
+    "reason": "whoami cluster ~15:03 (rotation/scheduled canary): attack-shaped tree, not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   },
+   {
+    "start_ms": 1793891520000,
+    "end_ms": 1793892240000,
+    "reason": "today's DVWA->RCE attack (Kali 10.21.4.30), spans the 15:15 + 15:20 windows: not idle",
+    "label": null,
+    "file": "proxmox-20261105.json"
+   }
+  ]
+ },
+ "seeds": 1,
+ "epochs": null,
+ "created_utc": "2026-11-05T17:06:15.161421+00:00",
+ "git_commit": "2fd8b51",
+ "pipeline_uncommitted_changes": true,
+ "converter_sha256": "cbbf6dcfa6581d6e4fd34d81408292b9cb1b9fc4efa6bfedcf14d1798766f35d",
+ "tools": {
+  "encode_to_features.py": "7d07efb74f3361a3a212cca1cae652e2b73f786a9bba43fecd6cd23180455e36",
+  "train_gnn_models.py": "ec91cb89ca50d8fe3ccc36819ead1c9f929b0c5d474e23a2abcf35e9de45226c"
+ },
+ "commands": [
+  "src/pipeline/encode_to_features.py --edges src/artifacts/runs/exp08/train_edges.csv --out-dir src/artifacts/runs/exp08/features",
+  "src/pipeline/train_gnn_models.py --edges src/artifacts/runs/exp08/train_edges.csv --features src/artifacts/runs/exp08/features/features_model.csv --scaler src/artifacts/runs/exp08/features/feature_scaler.json --out-dir src/artifacts/runs/exp08 --runs 1 --layers 2 --val-windows 60 --tnr-tolerance 0.01"
+ ]
+}

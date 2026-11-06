@@ -25,6 +25,85 @@ DIRECTION = {"Load": "fwd", "Read": "fwd", "Write": "fwd", "Send": "fwd", "Recv"
 # names stay for old captures and replays. Raw lines stay complete; only edges are dropped.
 EXCLUDE_IMAGES = {"silkservice", "alloy"}
 
+# [OURS] Our own always-on live-capture watchdog (start-live.ps1) and the etwlab tooling run as PowerShell,
+# indistinguishable from any other powershell.exe by image name, and kernel ETW carries no command line
+# (DEVIATIONS D8). The watchdog is the one process that touches our OWN tooling files, so we identify it by
+# that: any process with an edge to a \start-live.ps1 file, or to anything under c:\programdata\etwlab\, is
+# our watchdog, and all of its nodes + edges are dropped from BOTH training data (build_experiment, before
+# windowing) and live scoring (engine._score). The attack's RCE PowerShell never reads these paths, so it is
+# unaffected. Root cause / rationale: docs/notes/subgraph-score-fragility.md.
+def is_own_tooling_path(attr):
+    s = str(attr or "").lower().replace("/", "\\")
+    return s.endswith("\\start-live.ps1") or "\\programdata\\etwlab\\" in s
+
+
+def own_tooling_pids(edge_rows, attrs):
+    """edge_rows: iterable of sequences [src, src_type, dst, dst_type, ...]; attrs: {node_id: attr}.
+    Returns the set of PROCESS node ids that touched one of our own-tooling files (the watchdog)."""
+    own = {nid for nid, a in attrs.items() if is_own_tooling_path(a)}
+    if not own:
+        return set()
+    wp = set()
+    for r in edge_rows:
+        src, stype, dst, dtype = r[0], r[1], r[2], r[3]
+        if src in own or dst in own:
+            if stype == "PROCESS":
+                wp.add(src)
+            if dtype == "PROCESS":
+                wp.add(dst)
+    return wp
+
+
+def filter_own_tooling_csv(edges_csv, node_attrs_csv):
+    """In-place drop of watchdog (own-tooling) process nodes + their edges from a converted
+    <graph>_<split>_edges.csv / _node_attrs.csv pair (build path, before windowing). Returns stats."""
+    attrs = {}
+    with open(node_attrs_csv, newline="", encoding="utf-8") as fh:
+        rr = csv.reader(fh)
+        next(rr, None)
+        for row in rr:
+            if len(row) >= 3:
+                attrs[row[0]] = row[2]
+
+    def edge_rows():
+        with open(edges_csv, newline="", encoding="utf-8") as fh:
+            rr = csv.reader(fh)
+            next(rr, None)
+            for row in rr:
+                yield row
+
+    wp = own_tooling_pids(edge_rows(), attrs)
+    stats = {"watchdog_pids": len(wp), "edges_dropped": 0, "nodes_dropped": 0}
+    if not wp:
+        return stats
+    used = set()
+    etmp = edges_csv + ".tmp"
+    with open(edges_csv, newline="", encoding="utf-8") as fin, \
+            open(etmp, "w", newline="", encoding="utf-8") as fout:
+        rr, ww = csv.reader(fin), csv.writer(fout)
+        ww.writerow(next(rr, None))
+        for row in rr:
+            if row[0] in wp or row[2] in wp:
+                stats["edges_dropped"] += 1
+                continue
+            used.add(row[0])
+            used.add(row[2])
+            ww.writerow(row)
+    os.replace(etmp, edges_csv)
+    ntmp = node_attrs_csv + ".tmp"
+    with open(node_attrs_csv, newline="", encoding="utf-8") as fin, \
+            open(ntmp, "w", newline="", encoding="utf-8") as fout:
+        rr, ww = csv.reader(fin), csv.writer(fout)
+        ww.writerow(next(rr, None))
+        for row in rr:
+            if row and row[0] in used:
+                ww.writerow(row)
+            else:
+                stats["nodes_dropped"] += 1
+    os.replace(ntmp, node_attrs_csv)
+    return stats
+
+
 _FRAC = re.compile(r"(\.\d{6})\d+")
 
 
@@ -351,7 +430,20 @@ def selftest():
           and "c:\\windows\\system32\\ntdll.dll" in attrs
           and len(recv) == 1 and recv[0][0].startswith("p4321_")      # owner from _PID, not Idle's header PID
           and sum(s["unmapped_top"].values()) == 1 and rows[0] == EDGE_HEADER and len(rows) == 6)
-    print("selftest", "OK" if ok else "FAILED", json.dumps(s["edges"]))
+    # [OURS] watchdog (own-tooling) filter: a process reading our start-live.ps1 / etwlab file is the watchdog
+    # and is dropped; an unrelated powershell reading an ordinary file is kept.
+    wt_attrs = {"p1_a": "c:\\windows\\system32\\windowspowershell\\v1.0\\powershell.exe",     # watchdog
+                "p2_b": "c:\\windows\\system32\\windowspowershell\\v1.0\\powershell.exe",     # unrelated ps
+                "fX": "c:\\scripts\\start-live.ps1", "fY": "c:\\users\\pub\\doc.txt",
+                "fZ": "c:\\programdata\\etwlab\\state.json"}
+    wt_edges = [["p1_a", "PROCESS", "fX", "FILE", "Read", 1], ["p1_a", "PROCESS", "fZ", "FILE", "Read", 2],
+                ["p2_b", "PROCESS", "fY", "FILE", "Read", 3]]
+    ok_wt = (own_tooling_pids(wt_edges, wt_attrs) == {"p1_a"}
+             and is_own_tooling_path("C:\\Scripts\\start-live.ps1")
+             and is_own_tooling_path("c:\\programdata\\etwlab\\run.json")
+             and not is_own_tooling_path("c:\\users\\pub\\killchain.ps1"))
+    ok = ok and ok_wt
+    print("selftest", "OK" if ok else "FAILED", json.dumps(s["edges"]), "watchdog" if ok_wt else "watchdog-FAIL")
     return 0 if ok else 1
 
 

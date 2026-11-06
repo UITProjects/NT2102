@@ -33,6 +33,9 @@ CONVERTER = os.path.join(HERE, "etw2nodlink.py")            # Windows SilkETW ca
 WINDOWER = os.path.join(HERE, "etwwindow.py")
 CHECKER = os.path.join(HERE, "check_rdf_input.py")
 
+sys.path.insert(0, HERE)
+import etw2nodlink  # noqa: E402  (shared converter module: the own-tooling / watchdog filter)
+
 
 def sha(path):
     """sha256 of the raw file bytes (== Get-FileHash on the VM for the same bytes)."""
@@ -85,6 +88,14 @@ def build(exp, split="train", graph="SimulatedW10", window_min=5, stride_min=2, 
         run([converter, "--raw-root", os.path.join(exp, "raw"), "--split", split, "--graph", graph, "--out", conv,
              *(["--dos-map", dmap_path] if dmap_path else [])])
 
+        # [OURS] drop our own live-capture watchdog (start-live.ps1 / etwlab tooling) before windowing, so it
+        # never enters the training baseline; the same filter runs in the live engine (engine._score). D8.
+        tooling = etw2nodlink.filter_own_tooling_csv(
+            os.path.join(conv, "%s_%s_edges.csv" % (graph, split)),
+            os.path.join(conv, "%s_%s_node_attrs.csv" % (graph, split)))
+        print("[build] own-tooling (watchdog) filter: dropped %d edges, %d nodes from %d process(es)"
+              % (tooling["edges_dropped"], tooling["nodes_dropped"], tooling["watchdog_pids"]), flush=True)
+
         # etwwindow swaps its whole --out folder in atomically: give it a private folder, never <exp> itself
         stage = os.path.join(exp, "_windowing")
         rc = run([WINDOWER, "--indir", conv, "--graph", graph, "--split", split, "--window-min", str(window_min),
@@ -113,6 +124,7 @@ def build(exp, split="train", graph="SimulatedW10", window_min=5, stride_min=2, 
                                           "nodes_unique", "node_window_copies")} | {"contract_ok": rc == 0},
         "tools": {"converter": sha(converter), "etwwindow": sha(WINDOWER), "checker": sha(CHECKER),
                   "builder": sha(os.path.abspath(__file__))},
+        "own_tooling_filter": tooling,
         "pull": pull,
         "postprocessed_utc": datetime.now(timezone.utc).isoformat(),
     })

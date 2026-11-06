@@ -239,6 +239,26 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   (re-judge offline with `rejudge.sh` for that). Retention: only `<session>/raw/` is pruned (after
   `live_raw_keep_hours`, 12); window results are kept. Sessions written before the file existed are backfilled
   once from `windows.csv` + `llm_verdicts.csv` (no LLM report text for those). Impact on scoring: none.
+- **Subgraph score counts flagged nodes, not attack severity (2026-11-05, verified):** `alg1.py:170`
+  `sg_score = Σ prob over the subgraph's flagged nodes`, `prob = clamp((score − train_min)/(train_max −
+  train_min), 0, 1)` ([AUTHOR CODE]). Each flagged node adds up to 1.0, so the score tracks the **number** of
+  flagged nodes, not how anomalous the attack is. A large benign cluster (Windows servicing manifest reads;
+  our own watchdog's .NET/module startup reads) sums past Moderate and outranks the small attack cluster.
+  Measured: in `sessions/history.jsonl` every alerting window is an LLM-confirmed false positive **except**
+  the 2026-11-05 00:50Z attack, which had the fewest flagged nodes (18) but the right ones ([OURS]/[INFERENCE]
+  consequence). See `docs/notes/subgraph-score-fragility.md`.
+- **Attack detection rests on one context-sensitive NET node (2026-11-05, verified):** the attack reaches
+  Moderate only when the C2 beacon socket is flagged and seeds a subgraph pulling in the attack nodes. Same
+  exp07, same τ, the same socket (`10.21.4.30:8080`, near-identical own features) scored **+1.165 (flagged)**
+  at 00:50Z but **−1.50 (in-distribution)** at 15:20Z, because the per-node score is a 3-hop `RGCNConv`
+  embedding (D5) that rides the whole window's graph context, and no feature encodes peer-IP novelty. [OURS].
+- **[OURS] watchdog (own-tooling) exclusion (2026-11-05):** kernel ETW carries no command line, so our
+  always-on live-capture watchdog `powershell.exe` is indistinguishable from any other by image name. It is
+  the one process that reads our own `\start-live.ps1` / `c:\programdata\etwlab\*`, so
+  `etw2nodlink.own_tooling_pids` / `filter_own_tooling_csv` drop it (nodes + edges) from BOTH training
+  (`build_experiment.py`, before windowing) and live scoring (`engine._score`). The attack's RCE PowerShell
+  never reads those paths, so it is kept. Impact: removes the watchdog from the baseline and from live windows;
+  does not address non-watchdog FPs (e.g. TiWorker servicing — addressed by a longer baseline).
 
 ## D9. LLM step after SG-Det: triage + partial Alg. 2 (`src/pipeline/alg2.py`)
 - What: [PAPER] Alg. 2 (§6, App. B) turns every anomalous subgraph into an attack report. It never
@@ -296,6 +316,15 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   not fed back into training: log text (paths, process names) is attacker-controlled, so prompt injection
   is possible, and [PAPER] §3 assumes training logs free of attack traces. No claim about report quality
   vs the paper's Table 5.
+- **Lab-artifact leak into the LLM evidence (2026-11-06, observed live, [OURS]):** on the exp08 live run
+  the C2 window (00:50Z) alerted RED correctly (sg 37.62, the `10.21.4.30:8080` beacon flagged), but the
+  LLM returned `uncertain` (0.4) not `attack`. Its rationale read the literal filename
+  `c:\lab-labels\attack-labels.jsonl` (our self-labelling ground-truth file, D6) and inferred *"lab-like
+  path … may be a test harness … rather than real adversary activity."* The anomaly detector is unaffected
+  (SG-Det keys on path/`ip:port` **hashes** + features, never the readable string, so the alert stands);
+  only the Alg. 2 overlay, which reads human-readable docs, is fooled, and only by a lab-only file. Fix:
+  extend `etw2nodlink.is_own_tooling_path` to also drop `c:\lab-labels\*` from live scoring + the LLM doc,
+  as for the `start-live.ps1` watchdog. See `docs/notes/attack-defense-evasion-next.md`.
 
 ## D10. Own Python ETW collector (`src/etw-python`, `etwcollect`) instead of SilkETW + Alloy
 - What: [PAPER] the paper consumes existing audit datasets and names no collector. Until 2026-10-26 we used

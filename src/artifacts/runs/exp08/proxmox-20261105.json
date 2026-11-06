@@ -1,0 +1,27 @@
+{
+ "comment": "Windows left out of idle training for range-3d-20261105 (Proxmox ws-etw). UTC. Extends proxmox-20261104.json (11-02 -> 11-04 11:44) with the 11-04 11:44 -> 11-05 15:53 portion: two more DVWA->RCE attacks, Kali test activity, RDP/Ansible sessions, and etwctl rotation canaries (cmd /c whoami, one per ~6h session rotation). See docs/notes/subgraph-score-fragility.md and retrain-2day-fp-lesson.md.",
+ "ranges": [
+  {"start": "2026-11-02T15:30:00Z", "end": "2026-11-02T18:10:00Z", "reason": "RDP sessions, VM work and the DVWA->RCE attack (17:3x): human and attack activity are not idle"},
+  {"start": "2026-11-03T00:05:00Z", "end": "2026-11-03T00:25:00Z", "reason": "RDP session over the team VPN: human activity is not idle"},
+  {"start": "2026-11-04T03:35:00Z", "end": "2026-11-04T05:20:00Z", "reason": "RDP session over the team VPN (cmd, nslookup, ping): human activity is not idle"},
+  {"start": "2026-11-02T23:13:00Z", "end": "2026-11-02T23:16:00Z", "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle"},
+  {"start": "2026-11-03T05:18:00Z", "end": "2026-11-03T05:21:00Z", "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle"},
+  {"start": "2026-11-03T11:23:00Z", "end": "2026-11-03T11:26:00Z", "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle"},
+  {"start": "2026-11-03T17:28:00Z", "end": "2026-11-03T17:31:00Z", "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle"},
+  {"start": "2026-11-03T23:33:00Z", "end": "2026-11-03T23:36:00Z", "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle"},
+  {"start": "2026-11-04T05:38:00Z", "end": "2026-11-04T05:41:00Z", "reason": "etwctl.ps1 run rotation canary: cmd.exe /c whoami, an attack-shaped tree, not idle"},
+
+  {"start": "2026-11-04T11:43:00Z", "end": "2026-11-04T11:46:00Z", "reason": "etwctl rotation canary (session live-20261104T114407Z): cmd /c whoami, not idle"},
+  {"start": "2026-11-04T14:35:00Z", "end": "2026-11-04T16:00:00Z", "reason": "Kali (10.21.4.30) attack/test activity + whoami on 11-04 afternoon: not idle"},
+  {"start": "2026-11-04T17:48:00Z", "end": "2026-11-04T17:51:00Z", "reason": "etwctl rotation canary (session live-20261104T174907Z): cmd /c whoami, not idle"},
+  {"start": "2026-11-04T22:25:00Z", "end": "2026-11-04T22:32:00Z", "reason": "RDP session + Ansible (rdpclip, mstsc, wsmprovhost, nslookup, whoami): human activity, not idle"},
+  {"start": "2026-11-04T23:53:00Z", "end": "2026-11-04T23:56:00Z", "reason": "etwctl rotation canary (session live-20261104T235407Z): cmd /c whoami, not idle"},
+  {"start": "2026-11-05T00:40:00Z", "end": "2026-11-05T01:35:00Z", "reason": "the 00:50 DVWA->RCE attack (Kali 10.21.4.30) + the 01:18-01:30 RDP session: not idle"},
+  {"start": "2026-11-05T05:02:00Z", "end": "2026-11-05T05:06:00Z", "reason": "whoami cluster ~05:03 (rotation/scheduled canary): attack-shaped tree, not idle"},
+  {"start": "2026-11-05T05:58:00Z", "end": "2026-11-05T06:01:00Z", "reason": "etwctl rotation canary (session live-20261105T055907Z): cmd /c whoami, not idle"},
+  {"start": "2026-11-05T11:00:00Z", "end": "2026-11-05T11:06:00Z", "reason": "brief RDP session (mstsc 11:02): human activity, not idle"},
+  {"start": "2026-11-05T12:03:00Z", "end": "2026-11-05T12:07:00Z", "reason": "etwctl rotation canary (session live-20261105T120407Z): cmd /c whoami, not idle"},
+  {"start": "2026-11-05T15:02:00Z", "end": "2026-11-05T15:06:00Z", "reason": "whoami cluster ~15:03 (rotation/scheduled canary): attack-shaped tree, not idle"},
+  {"start": "2026-11-05T15:12:00Z", "end": "2026-11-05T15:24:00Z", "reason": "today's DVWA->RCE attack (Kali 10.21.4.30), spans the 15:15 + 15:20 windows: not idle"}
+ ]
+}
