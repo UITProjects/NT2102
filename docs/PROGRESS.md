@@ -44,8 +44,23 @@ detected (not the exp07 coincidental-red FP). See `docs/notes/subgraph-score-fra
 
 **Deploy note:** exp08 is promoted via the trainer's local pointer (`current.local.json`) and the three
 changed pipeline files (`etw2nodlink.py`, `build_experiment.py`, `engine.py`) were copied to the trainer
-checkout directly (not via Ansible) — branch `fix/sg-det-fragility-exp08`, not yet committed/pushed. To make
-it durable: commit the branch, push, and deploy with `ubuntu.yml --tags project` so the checkout + sha match.
+checkout directly (not via Ansible) — branch `fix/sg-det-fragility-exp08`, **committed `adb602e`
+(2026-11-06), not yet pushed**. To make it durable: push the branch and deploy with `ubuntu.yml --tags
+project` so the checkout + sha match. The exp08 run folder (`src/artifacts/runs/exp08/`) is on the trainer
+only; pull it down if it should be tracked like exp06/exp07.
+
+**2026-11-06 — second live run confirms exp08 + a new LLM finding + next action.** A fresh DVWA→RCE run
+(session `live-20261106T001407Z`, 00:48:41–00:52:16Z) went RED in both windows it straddled, idle green:
+00:45Z sg 19.24 Moderate (kept subgraph = the nmap `:22` subnet scan + `nmap/ncat/psexec64/rclone.exe`,
+LLM **attack 0.72**), 00:50Z sg 37.62 Moderate (kept subgraph = C2 socket `10.21.4.30:8080`). The kept
+subgraphs are the real attack nodes (not the exp07 benign-FP clusters), and the C2 socket is flagged again
+(exp07 missed it). **New finding:** the 00:50 LLM hedged to `uncertain` (0.4) because our self-labelling
+file `c:\lab-labels\attack-labels.jsonl` was in the subgraph and the LLM read "attack-labels" as a *lab test
+harness* — a lab-artifact leak into the LLM evidence, not a detector miss (SG-Det still alerted). DEVIATIONS
+D9. **Next action (planned):** add a Defense Evasion / Indicator-Removal phase (TA0005 / T1070 — delete
+dropped tools, clear event logs, remove the task) to the kill chain to test whether the alert survives
+cleanup and whether cleanup adds anomalous nodes; and drop `c:\lab-labels\*` from live scoring + the LLM doc
+alongside it. Full spec: `docs/notes/attack-defense-evasion-next.md`.
 
 ## exp07: retrained on ~41 h of idle (2026-11-04, PROMOTED + live on the Proxmox trainer)
 

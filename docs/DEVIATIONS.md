@@ -316,6 +316,15 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   not fed back into training: log text (paths, process names) is attacker-controlled, so prompt injection
   is possible, and [PAPER] §3 assumes training logs free of attack traces. No claim about report quality
   vs the paper's Table 5.
+- **Lab-artifact leak into the LLM evidence (2026-11-06, observed live, [OURS]):** on the exp08 live run
+  the C2 window (00:50Z) alerted RED correctly (sg 37.62, the `10.21.4.30:8080` beacon flagged), but the
+  LLM returned `uncertain` (0.4) not `attack`. Its rationale read the literal filename
+  `c:\lab-labels\attack-labels.jsonl` (our self-labelling ground-truth file, D6) and inferred *"lab-like
+  path … may be a test harness … rather than real adversary activity."* The anomaly detector is unaffected
+  (SG-Det keys on path/`ip:port` **hashes** + features, never the readable string, so the alert stands);
+  only the Alg. 2 overlay, which reads human-readable docs, is fooled, and only by a lab-only file. Fix:
+  extend `etw2nodlink.is_own_tooling_path` to also drop `c:\lab-labels\*` from live scoring + the LLM doc,
+  as for the `start-live.ps1` watchdog. See `docs/notes/attack-defense-evasion-next.md`.
 
 ## D10. Own Python ETW collector (`src/etw-python`, `etwcollect`) instead of SilkETW + Alloy
 - What: [PAPER] the paper consumes existing audit datasets and names no collector. Until 2026-10-26 we used
