@@ -32,7 +32,7 @@ endpoint; phases are separated by port (exploit → :3000, stage/download → :8
 | DB attack (read-only) | Credential access / Collection | T1552, T1213 | repeated `mysql.exe -uroot` (no password) → `127.0.0.1:3306`; dumps `dvwa.users` + `mysql.user` |
 | C2 beacon | Command & Control | T1071 | `powershell` `GET <kali>:8080/beacon` every ~15 s for the attack duration |
 | Persistence | Persistence | T1053.005 | `schtasks.exe` creates task `UpdaterSync` running the tool |
-| Defense evasion | Defense evasion | T1070.001, T1070.004 | `wevtutil.exe cl Security/System/Application` under the RCE shell (new unseen process + `.evtx` FILE nodes); `powershell` deletes `C:\Users\Public\tools\` + `downloaded_tool.bin` (anti-forensics). Clearing the event logs does **not** affect collection — `etwcollect` reads live ETW sessions, not `.evtx` |
+| Defense evasion | Defense evasion | T1070.001, T1070.004 | `wevtutil.exe cl Security/System/Application` under the RCE shell (process + `.evtx` FILE nodes); `powershell` deletes `C:\Users\Public\tools\` + `downloaded_tool.bin` (anti-forensics). Clearing the event logs does **not** affect collection — `etwcollect` reads live ETW sessions, not `.evtx`. **Observed (2026-11-06):** captured but scores **in-distribution** (not flagged), so it does not enter the kept subgraph or lift the alert — a lone short-lived process is not anomalous by its own per-node features (DEVIATIONS D5/D8); the window reds on the tool/C2/DB nodes |
 
 The chain is deliberately **high-volume** (user, 2026-11-04): the scan alone is ~360 connection attempts,
 and the beacon + DB bursts repeat for `--attack-seconds` (default 180 ≥ 3 min). That is the point — more

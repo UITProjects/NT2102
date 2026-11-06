@@ -244,10 +244,14 @@ Invoke-LabeledStep -Technique "T1053.005" -Tactic "persistence" `
     }
 
 # --- Defense evasion / anti-forensics (T1070): cover tracks at the very end of the chain -----------
-# T1070.001 Clear Windows event logs. wevtutil.exe run as a child of the RCE powershell is a distinctive
-# unseen PROCESS node (+ a Start edge from the anomalous shell) and touches the .evtx FILE nodes under
-# C:\Windows\System32\winevt\Logs. SAFE for our telemetry: etwcollect reads live ETW real-time sessions
-# (Kernel-Process/File/Network), NOT the .evtx event logs, so clearing them does not stop collection.
+# T1070.001 Clear Windows event logs. wevtutil.exe runs as a child of the RCE powershell and touches the
+# .evtx FILE nodes under C:\Windows\System32\winevt\Logs. SAFE for our telemetry: etwcollect reads live
+# ETW real-time sessions (Kernel-Process/File/Network), NOT the .evtx event logs, so clearing them does
+# not stop collection. OBSERVED (2026-11-06 live run): the wevtutil.exe process + file nodes are captured
+# but score IN-DISTRIBUTION (flagged=False) and do NOT enter the kept subgraph -- a lone short-lived
+# process is not anomalous by its own per-node behaviour counts; the anomaly is its parentage, which our
+# features do not encode (DEVIATIONS D5/D8). So this phase adds observable telemetry but does not lift the
+# alert; the window reds on the tool/C2/DB nodes.
 Invoke-LabeledStep -Technique "T1070.001" -Tactic "defense-evasion" `
     -ProcessIndicators @("wevtutil.exe") `
     -FileIndicators @("C:\Windows\System32\winevt\Logs\Security.evtx",
