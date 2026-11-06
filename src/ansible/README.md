@@ -111,7 +111,7 @@ ansible-vault encrypt group_vars/vault.yml                # vault.yml is gitigno
 
 The VMs from `infrastructure/` (Terraform): `ws-etw-0` 10.21.3.10, `ubuntu-trainer` 10.21.3.20, reached over a
 routed path to 10.21.3.0/24. The lab logins are hardcoded in `proxmox.ini` on purpose (user, 2026-11-06): the VMs are
-only reachable over the VPN, so no vault is used here. The trainer uses the cloud-init user
+reachable from the home LAN and over the VPN, not from the internet, so no vault is used here. The trainer uses the cloud-init user
 `it2102` and the `it2102-vms` key.
 
 A fresh `ws-etw-0` puts its NIC on the Public profile, where the WinRM firewall rule only accepts the local
@@ -205,7 +205,7 @@ after a `src/etw-python` change (a re-clone/fast-forward on every run; the venv 
 # on ws-etw-0, elevated PowerShell in the RDP desktop session (not WinRM):
 # benign = IDLE pulled from Loki (no capture script): keep the desktop idle so the always-on live capture
 # ships idle background activity, then on the trainer pull a clean idle range and train:
-#   lab pull --start 2026-10-31T12:45:00Z --end 2026-10-31T13:02:00Z --split test --yes
+#   lab pull --start 2026-10-31T12:45:00Z --end 2026-10-31T13:02:00Z --split test --host ws-etw-0 --yes
 #   # a Loki idle pull is --split test -> files are SimulatedW10_test_*; copy them to _train_ before training:
 #   cp <exp>/SimulatedW10_test_edges.csv <exp>/SimulatedW10_train_edges.csv   # and _node_attrs.csv
 #   lab train --experiment <id> --model exp0X && lab promote exp0X && sudo systemctl restart ocr-live

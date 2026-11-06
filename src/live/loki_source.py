@@ -75,6 +75,9 @@ class LokiSource:
             return None
         lab = rows[0][1]
         if lab["run"] != self.run:
+            if self.host and lab["host"] != self.host and not self.only_host:
+                self.log(f"[loki] WARNING: host changed {self.host} -> {lab['host']}: several hosts are pushing, "
+                         "set --loki-host or windows never complete")
             edge = self.lk.edge_ts(selector(job="silketw", host=self.only_host, split=self.split, run=lab["run"]),
                                    now - self.lookback_ns, now + self.grace_ns)
             self._reset(lab["run"], lab["host"], edge[0] if edge else now)

@@ -3,13 +3,17 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
-## 2026-11-06 second Windows VM (config + code written; NOT applied or verified)
+## 2026-11-06 second Windows VM: live and pushing to Loki (verified)
 
-`ubuntu-etw` is replaced by `ws-etw-1` (VM 2107, 10.21.3.11, manual install, collector only) and `ws-etw` is renamed
-`ws-etw-0`. `terraform plan`: 3 add, 1 change (`windows` name only, in place), 3 destroy (`ubuntu_etw` only). Added
-`ocr-live --loki-host`, `lab --host` (one host or both) and `merge_experiments()` (D12). Selftests pass, which proves
-"it runs" only. Pending, user: `apply`, install, Ansible, `start-live.ps1 -Rotate` on `ws-etw-0`, then check Loki and
-the live UI. No both-host model is trained yet; exp08 stays current for `ws-etw-0`.
+`ubuntu-etw` is replaced by `ws-etw-1` (VM 2107, 10.21.3.11, manual install, collector only, no DVWA) and `ws-etw` is
+renamed `ws-etw-0` in place. Verified 13:49Z: Loki carries kproc, kfile and knet from both hosts, `verify-windows.yml`
+passes on both (DVWA checked on `ws-etw-0`), `ocr-live` runs `--loki-host ws-etw-0` and stayed on that run with both
+hosts pushing, `lab pull --list` shows both. Added `lab --host` (one host or both) and `merge_experiments()` (D12):
+selftests only, not yet run on real two-host data. No both-host model exists; exp08 stays current for `ws-etw-0`.
+
+Open: the trainer checkout is on branch `provide-a-second-windows`, so after merging set it back to `main`, or pass
+`-e repo_branch=` on `ubuntu.yml`. Keep 13:33-13:47Z (11-06, provisioning) out of idle training pulls. Lines before
+13:34Z are labelled `host="ws-etw"`. The attack has not been re-run since `.11` became Windows.
 
 ## 2026-11-05 live attack run (exp07): RED but FALSE POSITIVE, attack missed — root-caused + exp08 retrain (IN PROGRESS)
 

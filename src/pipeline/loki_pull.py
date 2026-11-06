@@ -261,7 +261,8 @@ def pull(lk, sel, out_dir, page=5000, log=print, job="silketw"):
 def default_id(sel):
     if sel["mode"] == "run":
         return sel["run"]
-    return "range-" + datetime.fromtimestamp(sel["start_ns"] / NS, tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    rng = "range-" + datetime.fromtimestamp(sel["start_ns"] / NS, tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{rng}-{sel['host']}" if sel.get("host") else rng
 
 
 # --------------------------------------------------------------------------- selftest

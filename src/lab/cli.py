@@ -27,8 +27,8 @@ Typical session on the trainer:
   lab promote <model> && sudo systemctl restart ocr-live
 
 Several Windows VMs push to the same Loki, told apart by the `host` label. --host picks what to train on:
-  lab loop --since 3h --split test --host ws-etw-0 --model m1                     one VM
-  lab loop --since 3h --split test --host ws-etw-0 --host ws-etw-1 --model m2     both VMs
+  lab loop --since 3h --split test --benign-split test --host ws-etw-0 --model m1                 one VM
+  lab loop --since 3h --split test --benign-split test --host ws-etw-0 --host ws-etw-1 --model m2 both VMs
 Both VMs: each host is pulled and built on its own, then merge_experiments() pools the finished windows.
 """
 from __future__ import annotations
@@ -191,6 +191,8 @@ def loki_pull_args(a):
         out += ["--host", a.host[0]]
     if a.yes:
         out.append("--yes")
+    if a.force:
+        out.append("--force")
     return out
 
 
@@ -206,15 +208,15 @@ def pull(loki_args, out_root=None):
     return max(after, key=os.path.getmtime)
 
 
-def merge_experiments(exps, hosts, exp_id):
+def merge_experiments(exps, hosts, exp_id, force=False):
     """Pool per-host experiments into one <EXPS>/<exp_id>/ that lab train reads like any other.
 
     Why not one build over both hosts: etwwindow cuts by time and FILE/NET node IDs hash the path / ip:port, so two
     hosts in one build would become one graph per window. Here each window stays one host's graph, as live windows are.
 
     Windows are renumbered in (start_ms, host) order. The trainer holds out the LAST window IDs for validation
-    (train_gnn_models.py), so this puts every host in validation; train() scales --purge-windows to match."""
-    sys.path.insert(0, PIPE)
+    (train_gnn_models.py), so with split_args() holding out one window per host, validation normally covers each host
+    (not if one host's windows end earlier in the range)."""
     recs = [json.load(open(os.path.join(e, "experiment.json"), encoding="utf-8-sig")) for e in exps]
     for key in ("split", "graph", "windowing"):
         if any(r.get(key) != recs[0].get(key) for r in recs):
@@ -275,6 +277,8 @@ def merge_experiments(exps, hosts, exp_id):
            "postprocessed_utc": datetime.now(timezone.utc).isoformat()}
     with open(os.path.join(tmp, "experiment.json"), "w", encoding="utf-8") as fh:
         json.dump(rec, fh, indent=1)
+    if force:
+        shutil.rmtree(out, ignore_errors=True)
     os.replace(tmp, out)
     print(f"[lab] merged {len(rows)} windows from {', '.join(hosts)} -> {rel(out)}")
     return out
@@ -294,24 +298,27 @@ def pull_hosts(a):
     now = time.time_ns()                                        # one clock: every host gets the identical range
     start, end = parse_time(a.since or a.start, now), parse_time(a.end or "now", now)
     base = "range-" + datetime.fromtimestamp(start / NS, tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    common = ["--start", str(start), "--end", str(end), "--yes"]
+    common = ["--start", str(start), "--end", str(end), "--yes", *(["--force"] if a.force else [])]
     for flag in ("split", "lookback", "loki"):
         if getattr(a, flag, None):
             common += ["--" + flag, getattr(a, flag)]
     exps = [pull([*common, "--host", h, "--id", f"{base}-{h}"]) for h in hosts]
-    return merge_experiments(exps, hosts, f"{base}-{len(hosts)}hosts")
+    return merge_experiments(exps, hosts, f"{base}-{len(hosts)}hosts", a.force)
 
 
-def purge_args(rec, extra):
-    """--purge-windows for a merged experiment, unless --trainer-args sets it.
+def split_args(rec, extra):
+    """--val-windows and --purge-windows for a merged experiment, each unless --trainer-args sets it.
 
-    A window overlaps ceil(window/stride) - 1 predecessors of its own host (5 min / 2 min -> 2). Merged IDs interleave
-    the hosts, so those same predecessors sit up to n_hosts times further back: 2 hosts -> 4."""
+    Validation: one window per host instead of the trainer's single window, or early stopping would follow one host.
+    Purge: a window overlaps ceil(window/stride) - 1 predecessors of its own host (5 min / 2 min -> 2). Merged IDs
+    interleave the hosts, so those predecessors sit up to n_hosts times further back: 2 hosts -> 4."""
     hosts = rec.get("hosts") or []
-    if len(hosts) < 2 or "--purge-windows" in extra:
+    if len(hosts) < 2:
         return []
     w = rec["windowing"]
-    return ["--purge-windows", str((math.ceil(w["window_min"] / w["stride_min"]) - 1) * len(hosts))]
+    want = {"--val-windows": len(hosts),
+            "--purge-windows": (math.ceil(w["window_min"] / w["stride_min"]) - 1) * len(hosts)}
+    return [x for flag, n in want.items() if not any(e.split("=")[0] == flag for e in extra) for x in (flag, str(n))]
 
 
 def load_ranges(paths):
@@ -387,7 +394,7 @@ def train(experiment, model=None, seeds=3, epochs=None, extra=(), benign_split="
     feats = os.path.join(run_dir, "features")
     ranges = load_ranges(exclude)                               # before makedirs: a bad file leaves no folder behind
     train_edges = os.path.join(run_dir, "train_edges.csv") if ranges else edges
-    trainer = ["--runs", str(seeds), *(["--epochs", str(epochs)] if epochs else []), *extra, *purge_args(rec, extra)]
+    trainer = ["--runs", str(seeds), *(["--epochs", str(epochs)] if epochs else []), *extra, *split_args(rec, extra)]
     cmds = [[os.path.join(PIPE, "encode_to_features.py"), "--edges", train_edges, "--out-dir", feats],
             [os.path.join(PIPE, "train_gnn_models.py"), "--edges", train_edges,
              "--features", os.path.join(feats, "features_model.csv"),
@@ -599,7 +606,7 @@ def selftest():
             for h, run_ in (("ws-etw-0", "live-20261017T040000Z"), ("ws-etw-1", "live-20261017T040001Z")):
                 push_run(Loki(fake.url), cap, "train", run_, host=h, log=lambda *_: None)
             two = argparse.Namespace(host=["ws-etw-0", "ws-etw-1"], since="3h", start=None, end=None, capture=None,
-                                     latest=False, split="train", lookback=None, loki=fake.url, yes=True)
+                                     latest=False, split="train", lookback=None, loki=fake.url, yes=True, force=False)
             try:                                                # no --host on a mixed range: refused, never pooled
                 pull(["--loki", fake.url, "--since", "3h", "--split", "train", "--id", "mix", "--yes"])
                 raise AssertionError("a range with several hosts and no --host must be refused")
@@ -619,8 +626,10 @@ def selftest():
                 ids = {row["source-id"].split("_", 1)[0] for row in csv.DictReader(fh)}
             assert ids <= {w["window"] for w in mw} and len(ids) > n1, (len(ids), n1)
             mrec = json.load(open(os.path.join(mexp, "experiment.json")))
-            assert mrec["hosts"] == two.host and purge_args(mrec, []) == ["--purge-windows", "4"], mrec["hosts"]
-            assert purge_args(mrec, ["--purge-windows", "0"]) == [] and purge_args({}, []) == []
+            assert split_args(mrec, []) == ["--val-windows", "2", "--purge-windows", "4"], mrec["hosts"]
+            assert split_args(mrec, ["--purge-windows=0"]) == ["--val-windows", "2"] and split_args({}, []) == []
+            two.force = True                                    # a retry of the same range replaces the folders
+            assert pull_hosts(two) and len(glob.glob(os.path.join(EXPS, "range-*-2hosts"))) >= 1
             rd4 = train(mexp, "t4", seeds=1, epochs=3)
             assert json.load(open(os.path.join(rd4, "lineage.json")))["hosts"] == two.host
             # compare: same windows only, red counted per label
@@ -737,6 +746,7 @@ def _capture_options(p):
     g.add_argument("--host", action="append", metavar="NAME",
                    help="Loki host label, e.g. ws-etw-0. Once = that VM only. Repeat = train on all of them (needs "
                         "--since or --start). Required when a range holds several hosts")
+    g.add_argument("--force", action="store_true", help="replace experiment folders of the same name (retry a failed pull)")
     g.add_argument("--lookback", metavar="AGE", help="how far back to look for captures (default 7d)")
     g.add_argument("--loki", metavar="URL", help="Loki address (default: $LOKI_URL, else http://127.0.0.1:3100)")
     g.add_argument("--yes", action="store_true", help="no questions: needs a capture choice and (for loop) --model")
@@ -823,7 +833,9 @@ def main(argv=None):
         return cmd_status(a)
     if a.cmd == "pull":
         if a.list:
-            return run([os.path.join(PIPE, "loki_pull.py"), "--list",
+            if len(a.host or []) > 1:
+                ap.error("--list takes at most one --host")
+            return run([os.path.join(PIPE, "loki_pull.py"), "--list", *(["--host", a.host[0]] if a.host else []),
                         *(["--lookback", a.lookback] if a.lookback else []), *(["--loki", a.loki] if a.loki else [])])
         pull_hosts(a)
         return 0

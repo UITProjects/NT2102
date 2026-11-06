@@ -3,7 +3,7 @@
 - name: Configure the Windows collector VMs
   hosts: windows
   gather_facts: true
-  # Credentials: proxmox.ini carries win_user/win_password (lab-only, VPN-gated).
+  # Credentials: proxmox.ini carries win_user/win_password (lab-only, not reachable from the internet).
   # Cloud mode supplies them from the vault: add `-e @group_vars/vault.yml --ask-vault-pass`.
   # Each role carries a tag so a single stage can be run alone, e.g.
   #   ansible-playbook windows.yml --tags vulnlab -e vulnlab_enabled=true     # only DVWA

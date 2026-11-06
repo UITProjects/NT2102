@@ -200,9 +200,9 @@ flips between them.
 Training picks hosts with `--host`:
 
 ```bash
-lab loop --since 3h --split test --host ws-etw-0 --model m1                     # one VM
-lab loop --since 3h --split test --host ws-etw-0 --host ws-etw-1 --model m2     # both VMs
+lab loop --since 3h --split test --benign-split test --host ws-etw-0 --model m1                  # one VM
+lab loop --since 3h --split test --benign-split test --host ws-etw-0 --host ws-etw-1 --model m2  # both VMs
 ```
 
 With both, each host is pulled and built on its own, then `merge_experiments()` pools the finished windows. A range
-that holds several hosts and no `--host` is refused. Lines from before the rename are `--host ws-etw`. See DEVIATIONS D12.
+that holds several hosts and no `--host` is refused, and `--force` replaces the folders when retrying a failed pull. Lines from before the rename are `--host ws-etw`. See DEVIATIONS D12.

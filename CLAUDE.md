@@ -199,7 +199,7 @@ history of earlier progress) and, if relevant, this section.
   10.21.3.0/24. The Linux endpoint `ubuntu-etw` is retired (D11). Terraform rules: the user
   runs `apply`/`destroy`, Claude only writes config and runs `plan`;
   values are hardcoded in `main.tf` locals and only credentials are variables (`TF_VAR_*`); `terraform.tfstate`
-  is committed (public repo, no secrets). Windows WinRM creds are hardcoded in `proxmox.ini` by choice (user, 2026-11-06: VPN-gated lab); `vault.yml` was deleted, only `vault.yml.example` remains for cloud.
+  is committed (public repo, no secrets). Windows WinRM creds are hardcoded in `proxmox.ini` by choice (user, 2026-11-06: reachable from the home LAN and VPN, not the internet); `vault.yml` was deleted, only `vault.yml.example` remains for cloud.
 - Target schema (NODLINK W10, as the repo expects): 3 node types `PROCESS`, `FILE`, `NET`
   (repo `database_config.py`), 6 edge types (Write, Read, Send, Recv, Start, Load), epoch-millisecond
   timestamps.
@@ -208,7 +208,7 @@ history of earlier progress) and, if relevant, this section.
   Windowed outputs prefix every node ID with its window (`w0007_...`).
 - Benign set: **idle machine activity, pulled directly from Loki** — no capture script. The always-on live
   capture ships idle background activity to Loki; a clean idle time-range is pulled with
-  `lab pull --start <t> --end <t> --split test` and trained on. Both earlier scripts were removed 2026-10-31
+  `lab pull --start <t> --end <t> --split test --host <vm>` and trained on (`--host` is required once a range holds several hosts). Both earlier scripts were removed 2026-10-31
   (`06-benign-workload.ps1`, then `07-build-train-dataset.ps1`): the scripted workload's netcheck/download/cmd
   scenarios reused the attack's living-off-the-land binaries, making the DVWA→RCE chain in-distribution and
   undetectable (exp04 miss). With an idle baseline the attack separates cleanly; keep benign demo windows

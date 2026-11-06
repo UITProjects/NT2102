@@ -287,6 +287,13 @@ resource "proxmox_virtual_environment_vm" "windows_1" {
   tags        = ["nt2102", "windows"]
   machine     = "q35"
   bios        = "ovmf"
+
+  # Proxmox pins a Windows VM's machine version after first boot (pc-q35-11.0+pve2). Without this, every apply
+  # would try to set it back to q35 and reboot the VM.
+  lifecycle {
+    ignore_changes = [machine]
+  }
+
   efi_disk {
     datastore_id      = local.vm_datastore_id
     type              = "4m"

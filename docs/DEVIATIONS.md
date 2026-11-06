@@ -399,7 +399,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - What: [PAPER] one model is trained per dataset host. [OURS] (user, 2026-11-06) `ws-etw-0` and `ws-etw-1` push to one
   Loki, and training takes one host or both (`lab --host`). Both hosts: each is pulled and built on its own, then
   `merge_experiments()` (`src/lab/cli.py`) pools the finished windows, renumbered in (start, host) order. `lab train`
-  multiplies `--purge-windows` by the host count. `ocr-live` scores one host (`--loki-host ws-etw-0`).
+  holds out one validation window per host and multiplies `--purge-windows` by the host count. `ocr-live` scores one host (`--loki-host ws-etw-0`).
 - Why: one build over both hosts would merge them into one graph per window (`etwwindow.py` cuts by time, FILE/NET IDs
   hash path / ip:port), unlike live single-host windows. Merging after the build leaves the converter and windowing
   untouched, so `converter_check` holds.
