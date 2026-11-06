@@ -35,6 +35,7 @@ CHECKER = os.path.join(HERE, "check_rdf_input.py")
 
 sys.path.insert(0, HERE)
 import etw2nodlink  # noqa: E402  (shared converter module: the own-tooling / watchdog filter)
+import lab_filters  # noqa: E402  (post-conversion lab-labels node drop; outside the converter hash, D9)
 
 
 def sha(path):
@@ -95,6 +96,15 @@ def build(exp, split="train", graph="SimulatedW10", window_min=5, stride_min=2, 
             os.path.join(conv, "%s_%s_node_attrs.csv" % (graph, split)))
         print("[build] own-tooling (watchdog) filter: dropped %d edges, %d nodes from %d process(es)"
               % (tooling["edges_dropped"], tooling["nodes_dropped"], tooling["watchdog_pids"]), flush=True)
+
+        # [OURS] also drop our own lab-labels ground-truth file node (c:\lab-labels\*), keeping the writing
+        # process; the same filter runs live (engine._score). No-op on idle baselines (the file is attack-only).
+        # In lab_filters, not etw2nodlink, so the converter sha is unchanged (this is not event->edge conv). D9.
+        labels = lab_filters.drop_lab_artifact_nodes(
+            os.path.join(conv, "%s_%s_edges.csv" % (graph, split)),
+            os.path.join(conv, "%s_%s_node_attrs.csv" % (graph, split)))
+        print("[build] lab-labels filter: dropped %d edges, %d file node(s)"
+              % (labels["edges_dropped"], labels["nodes_dropped"]), flush=True)
 
         # etwwindow swaps its whole --out folder in atomically: give it a private folder, never <exp> itself
         stage = os.path.join(exp, "_windowing")
