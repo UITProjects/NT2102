@@ -45,9 +45,9 @@ detected (not the exp07 coincidental-red FP). See `docs/notes/subgraph-score-fra
 **Deploy note:** exp08 is promoted via the trainer's local pointer (`current.local.json`) and the three
 changed pipeline files (`etw2nodlink.py`, `build_experiment.py`, `engine.py`) were copied to the trainer
 checkout directly (not via Ansible) — branch `fix/sg-det-fragility-exp08`, **committed `adb602e`
-(2026-11-06), not yet pushed**. To make it durable: push the branch and deploy with `ubuntu.yml --tags
-project` so the checkout + sha match. The exp08 run folder (`src/artifacts/runs/exp08/`) is on the trainer
-only; pull it down if it should be tracked like exp06/exp07.
+(2026-11-06), pushed**. To make it durable: deploy with `ubuntu.yml --tags project` so the checkout + sha
+match. The exp08 run (`src/artifacts/runs/exp08/`: models, scaler, metadata, `train_scores.csv`) is tracked;
+its bulk training CSVs (`train_edges.csv`, `features/features_*.csv`) stay on the trainer.
 
 **2026-11-06 — second live run confirms exp08 + a new LLM finding + next action.** A fresh DVWA→RCE run
 (session `live-20261106T001407Z`, 00:48:41–00:52:16Z) went RED in both windows it straddled, idle green:
