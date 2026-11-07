@@ -112,7 +112,6 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   (`Invoke-ToolWithTimeout`) and skipped unless a real PE was delivered, so the chain never hangs. The
   detector stays **paper-faithful SG-Det** — an earlier `--sg-net-weight` NET ×2 lever was **rolled back**
   (2026-11-04); the Moderate=10 threshold is unchanged and the live result is reported as observed.
-  (Plan + rationale: `docs/notes/real-tool-download-exec.md`.)
 - Why: exact knowledge of what was run, no external ground truth available.
 - Impact: weak oracle; benign processes with the same image name inside an attack window can be
   over-labelled.
@@ -334,14 +333,13 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   path … may be a test harness … rather than real adversary activity."* The anomaly detector is unaffected
   (SG-Det keys on path/`ip:port` **hashes** + features, never the readable string, so the alert stands);
   only the Alg. 2 overlay, which reads human-readable docs, is fooled, and only by a lab-only file.
-  **Fixed (2026-11-06):** a dedicated `etw2nodlink.is_lab_artifact_path` (matches `c:\lab-labels\*`) +
+  **Fixed (2026-11-06):** `lab_filters.is_lab_artifact_path` (matches `c:\lab-labels\*`, kept outside the converter so its sha stays) +
   `lab_artifact_node_ids` / `drop_lab_artifact_nodes` drop the ground-truth FILE node + its incident edges
   from both the training build (`build_experiment.py`) and live scoring (`engine._score`), so it never
   reaches Alg. 1 or the serialized LLM document. This is **not** reused from the watchdog filter
   (`is_own_tooling_path`): that drops the *process* that touched the file, which here is the attacker's RCE
   powershell — so lab-labels is a FILE-node drop that keeps the writing process. No-op on idle baselines
-  (the file exists only during an attack). Covered by the `etw2nodlink --selftest` lab-labels case. See
-  `docs/notes/attack-defense-evasion-next.md`.
+  (the file exists only during an attack). Covered by `lab_filters.py --selftest`.
 
 ## D10. Own Python ETW collector (`src/etw-python`, `etwcollect`) instead of SilkETW + Alloy
 - What: [PAPER] the paper consumes existing audit datasets and names no collector. Until 2026-10-26 we used
@@ -371,7 +369,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
       restart; Loki per-provider counts = file line counts exactly (2,629,621 lines); the live engine got
       ~374k Read edges per 5-min window (SilkService runs: 0).
 - Why: SilkService's per-event writes feed back into Kernel-File faster than it can drain them, and it has
-  no exclude filter (keep-only, one value) and no batching (`docs/notes/silkservice-kfile-lag.md`); live
+  no exclude filter (keep-only, one value) and no batching; live
   windows had no file events (D8 correction). Own code is also fully explainable.
 - Impact: raw lines differ in formatting from earlier captures, and process names of short-lived
   processes are real instead of `N/A`, so earlier experiments (exp01–exp03) are not comparable; a new

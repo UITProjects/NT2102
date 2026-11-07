@@ -3,6 +3,11 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## Next action (user, 2026-11-07)
+
+**Verify the `ws-etw-1` model and the correlation layer:** `docs/notes/verify-two-host.md`. Retrain data must be pulled by about
+2026-11-09 16:00Z. Steps for training: `docs/notes/training-runbook.md`.
+
 ## 2026-11-07 one model per host + cross-host correlation: built, NOT deployed (selftests + UI check only)
 
 On branch `trainer-monitoring-guard`, not pushed, not on the trainer. Built: `lab promote --host`, `lab hosts`, `lab flows`, one
@@ -163,7 +168,7 @@ harness* — a lab-artifact leak into the LLM evidence, not a detector miss (SG-
 D9. **Next action (planned):** add a Defense Evasion / Indicator-Removal phase (TA0005 / T1070 — delete
 dropped tools, clear event logs, remove the task) to the kill chain to test whether the alert survives
 cleanup and whether cleanup adds anomalous nodes; and drop `c:\lab-labels\*` from live scoring + the LLM doc
-alongside it. Full spec: `docs/notes/attack-defense-evasion-next.md`.
+alongside it.
 
 ## exp07: retrained on ~41 h of idle (2026-11-04, PROMOTED + live on the Proxmox trainer)
 
@@ -309,8 +314,7 @@ staged (GPG cold, handed to user). See [[live-detector-benign-fp]], DEVIATIONS D
 result to date.** The T1105 phase now downloads AND executes real benign tools: Sysinternals **PsExec** + **rclone**
 (real PEs staged on Kali by `roles/kali_attack` into `tools/win/`, gitignored, 833 KB + 85 MB; nmap/ncat best-effort,
 OFF by default -> markers + the TcpClient sweep). Rationale: the graph uses no content feature, so real binaries add
-nothing over markers UNLESS executed; the signal is the tool's process + sockets (`docs/notes/real-tool-download-exec.md`,
-D6/D8). Live from the Proxmox Kali (`launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180`, launched at
+nothing over markers UNLESS executed; the signal is the tool's process + sockets (D6/D8). Live from the Proxmox Kali (`launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180`, launched at
 the 00:50:00Z boundary): exploit HTTP 200; ws-etw fetched PsExec64.exe + rclone.exe (real) + nmap/ncat markers + 8
 beacons. Result (session `live-20261104T235407Z`, moderate_from 10): windows 00:25–00:45Z green (00:45Z = 1 benign file
 flag, sg 0.0); attack **00:50Z = 18 flagged (11 file + 7 net) / 1 KEPT subgraph / max_sg 15.40 / Moderate / alert
@@ -595,7 +599,7 @@ Repo hygiene:
    ~17:04Z). Option: raise the etwcollect shipper rate (more than one 1 MiB batch per file per second) so kfile
    bursts stop being dropped as late live.
 
-1. **Train on Proxmox (exp06):** runbook `docs/notes/proxmox-idle-training.md` (2026-11-02). Idle range from
+1. **Train on Proxmox (exp06):** runbook `docs/notes/training-runbook.md`. Idle range from
    2026-11-02 11:45Z (11:05–11:40Z is a boot + fault-test burst, not idle) up to the trigger (user: ~2 days);
    no WinRM/RDP/Ansible on ws-etw until then. `lab pull --start … --end … --split test` → `lab train
    --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
@@ -603,8 +607,7 @@ Repo hygiene:
    run the DVWA→RCE chain live, expect red + an LLM verdict.
 3. **Real tool download + execution** in the T1105 phase (user, 2026-11-04; implement next session):
    download + RUN benign real tools (nmap `-sT` / ncat / PsExec; rclone optional) so tool processes +
-   sockets generate new flagged nodes — the signal is execution, not file content. Full plan:
-   `docs/notes/real-tool-download-exec.md`. Branch `provision-kali-ansible`.
+   sockets generate new flagged nodes — the signal is execution, not file content. Done: see D6. Branch `provision-kali-ansible`.
 
 Earlier backlog (2026-10-31, after the exp05 demo win):
 

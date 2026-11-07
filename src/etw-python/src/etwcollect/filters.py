@@ -1,7 +1,7 @@
 """filters.py - drop the collector's own I/O BEFORE it becomes a line (the fix for the SilkService loop).
 
 Why: every line we write is itself a Kernel-File Write; every read of our files (the shipper, formerly Alloy)
-is a Kernel-File Read. Written out, those become more lines -> more events (docs/notes/silkservice-kfile-lag.md).
+is a Kernel-File Read. Written out, those become more lines -> more events (DEVIATIONS D10).
 Three rules, each counted (Excluder.counts -> collector-status.json):
 
   (a) self_pid      the event's header PID is ours (or an --exclude-image process's).  kproc / kfile.

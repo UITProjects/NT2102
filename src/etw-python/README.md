@@ -3,7 +3,7 @@
 This replaces SilkETW/SilkService and Grafana Alloy on the Windows VM (DEVIATIONS D10). It records the same
 three kernel providers into the same files and pushes them to Loki with the same labels, so nothing on the
 trainer changes. It exists because SilkService wrote every event with its own open + write + close, and
-those writes fed back into Kernel-File faster than it could drain them (`docs/notes/silkservice-kfile-lag.md`).
+those writes fed back into Kernel-File faster than it could drain them (`docs/DEVIATIONS.md` D8, D10).
 
 ```
 ETW real-time session "etwlab-collector"   Kernel-Process 0x50 · Kernel-File 0x380 · Kernel-Network 0x30
