@@ -388,11 +388,11 @@ resource "proxmox_virtual_environment_vm" "trainer" {
     type = "l26"
   }
   cpu {
-    cores = 4
+    cores = 8
     type  = "host"
   }
   memory {
-    dedicated = 6144
+    dedicated = 12288
   }
 
   scsi_hardware = "virtio-scsi-single"
