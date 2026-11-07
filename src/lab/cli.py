@@ -16,6 +16,9 @@ Commands (`lab <command> -h` shows every option with examples):
   lab pull                            capture -> experiment only
   lab train  --experiment ID          experiment -> model only
   lab promote MODEL                   make MODEL the one the live server loads
+  lab promote MODEL --host VM         give one VM its own model (one model per host)
+  lab hosts [VM ...]                  show or set which VMs are scored live: one VM or both
+  lab flows --start T --end T         record the normal traffic between VMs (baseline for cross-host correlation)
   lab compare                         two models on the same replayed windows: red counts per label
   lab current                         print the current model's paths
   lab selftest                        prove the plumbing runs (fake Loki, tiny model)
@@ -27,9 +30,14 @@ Typical session on the trainer:
   lab promote <model> && sudo systemctl restart ocr-live
 
 Several Windows VMs push to the same Loki, told apart by the `host` label. --host picks what to train on:
-  lab loop --since 3h --split test --benign-split test --host ws-etw-0 --model m1                 one VM
-  lab loop --since 3h --split test --benign-split test --host ws-etw-0 --host ws-etw-1 --model m2 both VMs
-Both VMs: each host is pulled and built on its own, then merge_experiments() pools the finished windows.
+  lab loop --since 3h --split test --benign-split test --host ws-etw-1 --model m1                 one VM (the normal case)
+  lab loop --since 3h --split test --benign-split test --host ws-etw-0 --host ws-etw-1 --model m2 pooled (D12, not used live)
+
+One model per host, and switching between one-VM and two-VM scoring:
+  lab promote exp08 --host ws-etw-0
+  lab promote exp09-ws1 --host ws-etw-1
+  lab hosts ws-etw-0 ws-etw-1 && sudo systemctl restart ocr-live      two-VM mode
+  lab hosts ws-etw-0 && sudo systemctl restart ocr-live               one-VM mode (assignments are kept)
 """
 from __future__ import annotations
 
@@ -87,14 +95,23 @@ def run(args, ok=(0,)):
 
 
 # --------------------------------------------------------------------------- current model pointer
-def current():
-    """-> {"run", "run_dir", "scaler", "experiment", "pointer"} with absolute paths, or {} if no pointer."""
+def read_pointer():
+    """The pointer file as stored: {"run", "run_dir", "scaler", "experiment"} and, once `lab promote --host` has been used,
+    {"models": {host: model}, "active": [host, ...]}. The top-level fields always follow the first active host, so
+    serve.sh, rejudge.sh and `lab current` work unchanged. -> (dict, path); ({}, path) if there is no pointer."""
     path = LOCAL if os.path.exists(LOCAL) else POINTER
     if not os.path.exists(path):
-        return {}
+        return {}, path
     with open(path, encoding="utf-8") as fh:
-        c = json.load(fh)
-    out = {"run": c.get("run"), "pointer": path}
+        return json.load(fh), path
+
+
+def current():
+    """-> {"run", "run_dir", "scaler", "experiment", "pointer", "models", "active"} with absolute paths, or {} if no pointer."""
+    c, path = read_pointer()
+    if not c:
+        return {}
+    out = {"run": c.get("run"), "pointer": path, "models": c.get("models") or {}, "active": c.get("active") or []}
     for k in ("run_dir", "scaler", "experiment"):
         v = c.get(k)
         out[k] = os.path.normpath(os.path.join(REPO, v)) if v else v
@@ -106,6 +123,35 @@ def pointer_for(run_dir):
     return {"run": os.path.basename(run_dir), "run_dir": rel(run_dir),
             "scaler": rel(os.path.join(run_dir, "features", "feature_scaler.json")),
             "experiment": rel(os.path.join(run_dir, "experiment.json"))}
+
+
+def live_models():
+    """One record per active host, like current() but per host: [{"host", "run", "run_dir", "scaler", "experiment"}].
+    [] = this machine still uses the single top-level model."""
+    c, _ = read_pointer()
+    out = []
+    for host in c.get("active") or []:
+        rec = pointer_for(os.path.join(RUNS, c["models"][host]))
+        out.append({"host": host, "run": rec["run"],
+                    **{k: os.path.normpath(os.path.join(REPO, rec[k])) for k in ("run_dir", "scaler", "experiment")}})
+    return out
+
+
+def experiment_hosts(rec):
+    """The Loki hosts an experiment.json was built from; None when not recorded (pulled before --host existed)."""
+    host = ((rec.get("pull") or {}).get("selection") or {}).get("host")
+    return rec.get("hosts") or ([host] if host else None)
+
+
+def trained_hosts(run_dir):
+    """The VMs a model was trained on, from its own files; None when not recorded."""
+    try:
+        lin = json.load(open(os.path.join(run_dir, "lineage.json"), encoding="utf-8"))
+        if lin.get("hosts"):
+            return lin["hosts"]
+        return experiment_hosts(json.load(open(os.path.join(run_dir, "experiment.json"), encoding="utf-8-sig")))
+    except (OSError, ValueError):
+        return None
 
 
 def converter_check(experiment_json):
@@ -420,7 +466,7 @@ def train(experiment, model=None, seeds=3, epochs=None, extra=(), benign_split="
     dirty = subprocess.run(["git", "status", "--porcelain", "--", "src/pipeline"], cwd=REPO,
                            capture_output=True, text=True).stdout.strip()
     lineage = {"model": os.path.basename(run_dir), "experiment": os.path.basename(os.path.normpath(exp)),
-               "experiment_source": rec.get("source"), "hosts": rec.get("hosts"), "benign_split": benign_split,
+               "experiment_source": rec.get("source"), "hosts": experiment_hosts(rec), "benign_split": benign_split,
                "label_source": label_source(rec, benign_split, excluded), "excluded": excluded,
                "seeds": seeds, "epochs": epochs,
                "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -452,7 +498,18 @@ def ask_model_name(exp):
     return questionary.text("Name for the new model:", default="model-" + os.path.basename(exp)).ask()
 
 
-def promote(run, shared=False):
+def write_pointer(dest, c):
+    """Top-level fields follow the first active host; then the file is replaced in one step."""
+    if c.get("active"):
+        c = {**c, **pointer_for(os.path.join(RUNS, c["models"][c["active"][0]]))}
+    tmp = dest + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(c, fh, indent=1)
+    os.replace(tmp, dest)
+    return c
+
+
+def promote(run, shared=False, host=None):
     run_dir = run if os.path.isdir(run) else os.path.join(RUNS, run)
     rec = pointer_for(run_dir)
     for k in ("scaler", "experiment"):
@@ -461,13 +518,86 @@ def promote(run, shared=False):
     if not glob.glob(os.path.join(run_dir, "models", "*.pt")):
         sys.exit(f"[lab] no models in {rel(run_dir)}/models")
     dest = POINTER if shared else LOCAL
-    with open(dest, "w") as fh:
-        json.dump(rec, fh, indent=1)
-    print(f"[lab] current model = {rec['run']}  ({rel(dest)})")
+    old, _ = read_pointer()
+    if host:
+        known = trained_hosts(run_dir)
+        if known and host not in known:
+            sys.exit(f"[lab] {rec['run']} was trained on {', '.join(known)}, not {host}")
+        c = {**(old or rec), "models": {**(old.get("models") or {}), host: rec["run"]}, "active": old.get("active") or []}
+        c = write_pointer(dest, c)
+        print(f"[lab] {host} -> {rec['run']}  ({rel(dest)})")
+        if host not in c["active"]:
+            print(f"[lab] {host} is not scored live yet: lab hosts {' '.join([*c['active'], host])}")
+    else:
+        if old.get("models"):
+            sys.exit("[lab] this machine has one model per host: say which VM, lab promote "
+                     f"{rec['run']} --host <vm>  (now: {old['models']})")
+        with open(dest, "w") as fh:
+            json.dump(rec, fh, indent=1)
+        print(f"[lab] current model = {rec['run']}  ({rel(dest)})")
     print(f"[lab] converter_check: {converter_check(os.path.join(REPO, rec['experiment']))}")
     if shutil.which("systemctl") and os.path.exists("/etc/systemd/system/ocr-live.service"):
         print("[lab] restart the live server to load it:  sudo systemctl restart ocr-live")
     return rec
+
+
+def set_hosts(names):
+    """Which VMs the live server scores. Assignments stay, so one-VM and two-VM mode are one command apart."""
+    c, path = read_pointer()
+    models = c.get("models") or {}
+    if not names:
+        print("VM        model   scored live")
+        for h, m in sorted(models.items()):
+            print(f"{h:<9} {m:<7} {'yes' if h in (c.get('active') or []) else 'no'}")
+        if not models:
+            print(f"(no per-host models: every window uses {c.get('run')}; lab promote <model> --host <vm>)")
+        return c
+    missing = [h for h in names if h not in models]
+    if missing:
+        sys.exit(f"[lab] no model for {', '.join(missing)}: lab promote <model> --host {missing[0]}")
+    if len(set(names)) != len(names):
+        sys.exit(f"[lab] host repeated: {names}")
+    c = write_pointer(LOCAL, {**c, "active": list(names)})
+    print(f"[lab] scored live: {', '.join(f'{h} ({models[h]})' for h in names)}  ({rel(LOCAL)})")
+    if len(names) == 1:
+        print("[lab] one-VM mode: no cross-host correlation")
+    if shutil.which("systemctl") and os.path.exists("/etc/systemd/system/ocr-live.service"):
+        print("[lab] restart the live server to apply it:  sudo systemctl restart ocr-live")
+    return c
+
+
+# --------------------------------------------------------------------------- flows
+def flows(start, end, hosts_file=None, out=None, loki=None):
+    """Baseline for cross-host correlation (src/live/correlate.py, D13): every flow between monitored VMs in a range you
+    assert is clean. Pick a range without attacks: a flow recorded here is never reported as a link."""
+    sys.path[:0] = [PIPE, os.path.join(SRC, "live")]
+    import correlate
+    from lokiclient import Loki, parse_time, iso, selector
+    ips = correlate.load_hosts(hosts_file or correlate.HOSTS_FILE)
+    if len(ips) < 2:
+        sys.exit(f"[lab] need >= 2 hosts in {hosts_file or correlate.HOSTS_FILE} (Ansible writes it on the trainer)")
+    lk = Loki(loki or os.environ.get("LOKI_URL", "http://127.0.0.1:3100"))
+    now = time.time_ns()
+    a, b = parse_time(start, now), parse_time(end or "now", now)
+    seen, lines = {}, 0
+    for host in ips:
+        for _, _, line in lk.query_all(selector(job="silketw", host=host, provider="knet"), a, b):
+            lines += 1
+            try:
+                f = correlate.parse_flow(json.loads(line), host, ips)
+            except ValueError:
+                continue
+            if f:
+                seen[f["key"]] = seen.get(f["key"], 0) + 1
+    dest = out or correlate.BASELINE_FILE
+    with open(dest, "w") as fh:
+        json.dump({"created_utc": datetime.now(timezone.utc).isoformat(), "range_utc": [iso(a), iso(b)], "hosts": ips,
+                   "flows": sorted(seen), "events": seen}, fh, indent=1)
+    print(f"[lab] {lines:,} network lines -> {len(seen)} known flows -> {rel(dest)}")
+    for k, n in sorted(seen.items(), key=lambda x: -x[1]):
+        print(f"  {n:>8}  {k}")
+    print("[lab] restart the live server to load it:  sudo systemctl restart ocr-live")
+    return seen
 
 
 # --------------------------------------------------------------------------- compare
@@ -632,6 +762,51 @@ def selftest():
             assert pull_hosts(two) and len(glob.glob(os.path.join(EXPS, "range-*-2hosts"))) >= 1
             rd4 = train(mexp, "t4", seeds=1, epochs=3)
             assert json.load(open(os.path.join(rd4, "lineage.json")))["hosts"] == two.host
+            # one model per host: promote --host, the one-VM switch, and the refusals
+            assert trained_hosts(rd4) == two.host and trained_hosts(rd) is None
+            os.remove(LOCAL)
+            promote("t1", host="ws-etw-0")                      # t1: host not recorded, the operator says so
+            promote("t2", host="ws-etw-1")
+            assert live_models() == [] and current()["active"] == [], "promote must not change what is scored"
+            try:
+                set_hosts(["ws-etw-2"])
+                raise AssertionError("a host with no model must be refused")
+            except SystemExit as e:
+                assert "no model" in str(e), e
+            set_hosts(["ws-etw-0", "ws-etw-1"])
+            assert [(m["host"], m["run"]) for m in live_models()] == [("ws-etw-0", "t1"), ("ws-etw-1", "t2")], live_models()
+            assert current()["run"] == "t1", "top-level follows the first active host"
+            set_hosts(["ws-etw-1"])
+            assert [m["run"] for m in live_models()] == ["t2"] and current()["run"] == "t2"
+            assert current()["models"] == {"ws-etw-0": "t1", "ws-etw-1": "t2"}, "assignments stay across a switch"
+            try:
+                promote("t1")
+                raise AssertionError("a plain promote must not silently replace per-host models")
+            except SystemExit as e:
+                assert "--host" in str(e), e
+            try:
+                promote("t4", host="ws-etw-9")
+                raise AssertionError("a model trained on other hosts must be refused")
+            except SystemExit as e:
+                assert "trained on" in str(e), e
+            os.remove(LOCAL)
+            promote("t1")                                       # the old single-model pointer still works
+            assert live_models() == [] and current()["run"] == "t1"
+            # lab flows: only flows between monitored hosts, one key per direction of service
+            hf = os.path.join(d, "hosts.json")
+            with open(hf, "w") as fh:
+                json.dump({"ws-etw-0": "10.0.0.10", "ws-etw-1": "10.0.0.11"}, fh)
+            t = str(int(time.time() * 1e9) - 60 * NS)
+
+            def knet(sa, da, sp, dp):
+                return json.dumps({"EventName": "KERNEL_NETWORK_TASK_TCPIP/Datasent.", "XmlEventData":
+                                   {"PID": "1", "saddr": sa, "daddr": da, "sport": str(sp), "dport": str(dp)}})
+            Loki(fake.url).push([{"stream": {"job": "silketw", "host": "ws-etw-0", "split": "test", "run": "r", "provider": "knet"},
+                                  "values": [[t, knet("10.0.0.10", "10.0.0.11", 51000, 135)],
+                                             [str(int(t) + 1), knet("10.0.0.10", "8.8.8.8", 51000, 443)]]}])
+            bf = os.path.join(d, "baseline.json")
+            got = flows("now-5m", None, hf, bf, fake.url)
+            assert list(got) == ["ws-etw-0>ws-etw-1/tcp/135"] and json.load(open(bf))["flows"] == list(got), got
             # compare: same windows only, red counted per label
             cols = ["window", "start_ms", "end_ms", "start_utc", "status", "edges", "max_sg_score", "alert"]
             for name, rows_ in (("a", [(0, "scored", "20.0", True), (1, "scored", "0.0", False), (2, "scored", "50.0", True)]),
@@ -653,7 +828,8 @@ def selftest():
         EXPS, RUNS, POINTER, LOCAL = saved
     print("[SELFTEST OK] Loki -> pull + build -> features + train into one run folder -> promote -> current;"
           " test-split idle range needs --benign-split test; exclusions drop whole windows; "
-          "--host refuses a mixed range, two hosts build apart and merge interleaved; compare counts red per label")
+          "--host refuses a mixed range, two hosts build apart and merge interleaved; promote --host + lab hosts switch "
+          "one-VM / two-VM and refuse bad input; lab flows records known flows; compare counts red per label")
     return 0
 
 
@@ -726,7 +902,19 @@ Never compare a model on windows it trained on: fewer alerts there prove nothing
 EX_PROMOTE = """examples:
   lab promote exp02                 this machine only (writes src/artifacts/current.local.json, gitignored)
   lab promote exp02 --shared        for everyone (writes src/artifacts/current.json; commit it + the model)
+  lab promote exp09-ws1 --host ws-etw-1   one model per host: this VM uses this model (see: lab hosts)
 then restart the live server:  sudo systemctl restart ocr-live"""
+
+
+EX_HOSTS = """examples:
+  lab hosts                         what is assigned and what is scored
+  lab hosts ws-etw-0                one-VM mode
+  lab hosts ws-etw-0 ws-etw-1       two-VM mode
+then restart the live server:  sudo systemctl restart ocr-live"""
+
+EX_FLOWS = """examples:
+  lab flows --start 2026-11-06T17:00:00Z --end 2026-11-07T03:00:00Z
+pick a range with no attack in it: a flow recorded here is never reported"""
 
 
 def _parser(sub, name, summary, description, epilog=None):
@@ -802,6 +990,22 @@ def build_parser():
     pr.add_argument("model", metavar="MODEL", help="folder name under src/artifacts/runs/")
     pr.add_argument("--shared", action="store_true",
                     help="write the tracked src/artifacts/current.json instead of this machine's current.local.json")
+    pr.add_argument("--host", metavar="VM", help="give this VM its own model (one model per host); see: lab hosts")
+
+    ho = _parser(sub, "hosts", "show or set which VMs are scored live",
+                 "No argument: show each VM's model and whether it is scored. With VMs: score exactly those.\n"
+                 "One VM = one-VM mode, two = two-VM mode with cross-host correlation. Assignments are kept, so\n"
+                 "switching back needs no retraining.", EX_HOSTS)
+    ho.add_argument("hosts", nargs="*", metavar="VM")
+
+    fl = _parser(sub, "flows", "record the normal traffic between VMs",
+                 "Write src/artifacts/flow-baseline.json: every flow between monitored VMs in a time range you assert\n"
+                 "is clean. Cross-host correlation reports only flows that are NOT in it.", EX_FLOWS)
+    fl.add_argument("--start", required=True, metavar="TIME", help="ISO 8601 or now-2h")
+    fl.add_argument("--end", metavar="TIME", help="default: now")
+    fl.add_argument("--hosts-file", metavar="FILE", help="default: /etc/nt2102-hosts.json (written by Ansible)")
+    fl.add_argument("--out", metavar="FILE", help="default: src/artifacts/flow-baseline.json")
+    fl.add_argument("--loki", metavar="URL", help="Loki address (default: $LOKI_URL, else http://127.0.0.1:3100)")
 
     cp = _parser(sub, "compare", "two models on the same replayed windows",
                  "Join the windows.csv of replay output folders on window start, and count red windows per label\n"
@@ -856,7 +1060,13 @@ def main(argv=None):
         train(exp, model, a.seeds, a.epochs, extra, a.benign_split, a.exclude_file)
         return 0
     if a.cmd == "promote":
-        promote(a.model, a.shared)
+        promote(a.model, a.shared, a.host)
+        return 0
+    if a.cmd == "hosts":
+        set_hosts(a.hosts)
+        return 0
+    if a.cmd == "flows":
+        flows(a.start, a.end, a.hosts_file, a.out, a.loki)
         return 0
     if a.cmd == "compare":
         compare(a.baseline, a.candidate, a.label_file, a.out)

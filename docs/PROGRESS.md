@@ -3,6 +3,20 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## 2026-11-07 one model per host + cross-host correlation: built, NOT deployed (selftests + UI check only)
+
+On branch `trainer-monitoring-guard`, not pushed, not on the trainer. Built: `lab promote --host`, `lab hosts`, `lab flows`, one
+engine per VM, `src/live/correlate.py` (D13), multi-host LLM report, UI ("X is trained for Y" line, VM tabs, one timeline row per
+VM, Cross-host activity panel, History VM column). Checked: `./selftest.sh` 19/19; real `live_server.py` startup in one- and
+two-host mode; UI in Playwright on fake data (one-VM, two-VM, no baseline, host not recorded). A selftest confirms a VM's
+windows match a plain engine. Not yet: real two-VM run, trainer memory with two engines, a replay of a saved `ws-etw-0` session
+in both modes, `lab flows` on real data.
+
+To go live: push, `ansible-playbook -i proxmox.ini ubuntu.yml --tags project -e repo_branch=trainer-monitoring-guard`, then on the
+trainer `lab promote exp08 --host ws-etw-0`, `lab promote exp09-ws1 --host ws-etw-1`, `lab flows --start ... --end ...`,
+`lab hosts ws-etw-0 ws-etw-1`, `sudo systemctl restart ocr-live`, and watch memory in Grafana during catch-up. Until `lab hosts` is
+run, `ocr-live` stays on exp08 and `ws-etw-0`.
+
 ## 2026-11-07 exp09-ws1 trained for `ws-etw-1`: PROVISIONAL, not promoted (verified on the trainer)
 
 One model per host (user, 2026-11-07): `ws-etw-0` keeps exp08, `ws-etw-1` gets its own. Experiment
@@ -41,9 +55,6 @@ swap, Grafana and Prometheus answered in under 0.03 s, no missed scrape, 0 monit
 Not tested: the kill at the swap limit, RAM pressure across the whole VM (4.8 GB stayed available, so the reservation never
 had to act), a sustained load, and whether monitoring `swap.max` = 0 survives a reboot. Grafana first came up with `max` despite
 a correct Docker config (cause unknown; a recreate fixed it).
-
-Next (approved plan): one model per host (`ws-etw-0` keeps exp08, new model for `ws-etw-1`), a cross-host correlation
-stage, an LLM full-flow report, `lab hosts` to switch one-VM / two-VM, and the per-host "trained for" line in the UI.
 
 ## 2026-11-06 exp08 live alert count, first 24 h (verified in `history.jsonl`)
 
@@ -89,7 +100,7 @@ session (expect LLM `uncertain`→`attack`, node gone) + a live attack run (expe
 renamed `ws-etw-0` in place. Verified 13:49Z: Loki carries kproc, kfile and knet from both hosts, `verify-windows.yml`
 passes on both (DVWA checked on `ws-etw-0`), `ocr-live` runs `--loki-host ws-etw-0` and stayed on that run with both
 hosts pushing, `lab pull --list` shows both. Added `lab --host` (one host or both) and `merge_experiments()` (D12):
-selftests only, not yet run on real two-host data. No both-host model exists; exp08 stays current for `ws-etw-0`.
+selftests only, not yet run on real two-host data. Superseded 2026-11-07 by one model per host (D12).
 
 Open: the trainer checkout is on branch `provide-a-second-windows`, so after merging set it back to `main`, or pass
 `-e repo_branch=` on `ubuntu.yml`. Keep 13:33-13:47Z (11-06, provisioning) out of idle training pulls. Lines before

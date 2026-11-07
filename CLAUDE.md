@@ -151,7 +151,10 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   (rclone + scan/C2/DB carried it). See PROGRESS, `docs/notes/real-tool-download-exec.md`, DEVIATIONS D6/D8.
 - Work happens on the Proxmox VMs, controlled over Ansible/SSH.
 - Decided (user, 2026-11-06): `ubuntu-etw` is replaced by a second Windows VM `ws-etw-1` (10.21.3.11, collector only) and
-  `ws-etw` is renamed `ws-etw-0`. Training takes one host or both (`lab --host`, D12); `ocr-live` scores `ws-etw-0` only.
+  `ws-etw` is renamed `ws-etw-0`.
+- Decided (user, 2026-11-07): one model per host, not pooled (D12): `ws-etw-0` keeps exp08, `ws-etw-1` has `exp09-ws1` (provisional,
+  retrain on ~3 days). `lab hosts` switches one-VM / two-VM. A correlation stage links hosts by code and the LLM explains the
+  full flow (D13); built on a branch, not deployed yet, and shown on synthetic flows only. Until deployed, `ocr-live` scores `ws-etw-0` only.
   Older text and data below say `ws-etw`; Loki lines from before the rename keep that label.
 - Decided (user, 2026-11-03): SG-Det uses the **paper's level scale** (Moderate from 10, [PAPER] §7.2.1; the
   [OURS] 30 is retired, D8), and `ocr-live` keeps a **persistent, range-queryable window history** on disk
@@ -258,6 +261,8 @@ history of earlier progress) and, if relevant, this section.
   (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
 - Host side: `src/pipeline/encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
   `score_window.py` (score any edge CSV with the train scaler + relations).
+- Two VMs: one `engine.py` + `loki_source.py` per scored VM (`lab promote --host`, `lab hosts`), then `src/live/correlate.py` (flows
+  between VMs + red windows → link / suspected / confirmed; known traffic from `lab flows`, host IPs from `/etc/nt2102-hosts.json`).
 - Live (host): `src/live/loki_source.py` (follows Loki) → `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
   reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
   sessions) → `src/pipeline/alg2.py` (optional LLM thread: triage verdict + Alg. 2 l.3–15 report on red
@@ -302,6 +307,7 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
   no cross-window dedup. Alg. 1 runs in memory per window with the [AUTHOR CODE] subgraph score (Σ clamped
   min-max prob, not the paper text's "sum of scores"), [PAPER] §7.2.1 level scale (Moderate from 10; [AUTHOR CODE]
   > 10; the [OURS] 30 was retired 2026-11-03), no top-k fallback. Window history persisted to files (history.jsonl).
+- Two hosts: one model per host (D12); cross-host correlation is [OURS] (D13), the paper leaves lateral movement out of scope.
 - LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
   Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
 

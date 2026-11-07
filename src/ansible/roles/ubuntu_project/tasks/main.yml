@@ -26,6 +26,14 @@
 # current.local.json written by `lab promote` on this host). Each run folder carries its own
 # experiment.json, so nothing has to be copied from the control node.
 
+# Cross-host correlation (src/live/correlate.py) and `lab flows` read host -> IP from here, so no address lives in the code.
+- name: Monitored hosts for cross-host correlation
+  ansible.builtin.copy:
+    dest: /etc/nt2102-hosts.json
+    content: "{{ dict(groups['windows'] | zip(groups['windows'] | map('extract', hostvars, 'private_ip'))) | to_nice_json }}\n"
+    mode: "0644"
+  notify: restart ocr-live
+
 # The Windows capture is always on (win_shipper watchdog) and every live session keeps a raw copy of it
 # (~2 GB/h under load), so the raw copies are pruned hourly. Only <session>/raw/ goes, once NO file in it
 # changed for live_raw_keep_hours: the window results (windows/, windows.csv, sessions/history.jsonl) are the

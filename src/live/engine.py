@@ -56,6 +56,7 @@ from history import HistoryStore, _f, display_attrs, make_detail, write_json_ato
 EDGE_HEADER = ["source-id", "source-type", "destination-id", "destination-type", "edge-type", "timestamp"]
 DEFAULT_CONVERTER = os.path.join(SRC, "pipeline", "etw2nodlink.py")
 MAX_FLAGGED_FOR_SUBGRAPHS = 300   # a broken model flags everything; keep the UI usable
+BUDGET_LOCK = threading.Lock()    # one llm_budget.json, shared by every host's engine and the correlator
 
 
 # --------------------------------------------------------------------------- converter reuse
@@ -123,7 +124,11 @@ class Engine:
                  n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None,
                  sg_moderate_from=alg1.MODERATE_FROM, llm_provider=None, llm_model=None, llm_base_url=None,
                  llm_api_key=None, llm_client=None, llm_max_subgraphs=5, llm_reasoning_effort=None,
-                 llm_debug=False, llm_max_per_day=10, today=None):
+                 llm_debug=False, llm_max_per_day=10, today=None, host=None, history=None, flow_sink=None):
+        # two-host scoring (D12): one Engine per host. host names its session folders, history = the store they
+        # share, flow_sink(host, event, ts_ms) gets every raw knet line for the cross-host correlator (correlate.py).
+        # All three default off, and then nothing below behaves differently from one engine.
+        self.host, self.flow_sink = host, flow_sink
         self.conv, self.conv_sha = load_converter(converter_path)
         self.conv_check = "not checked (no --experiment)"
         if experiment_json:
@@ -164,7 +169,7 @@ class Engine:
         self.today = today or (lambda: datetime.now().astimezone().strftime("%Y-%m-%d"))
         self.budget_path = os.path.join(sessions_dir, "llm_budget.json")
         # persistent window history (history.py): loaded / backfilled from disk here, appended on every change
-        self.history = HistoryStore(sessions_dir)
+        self.history = history or HistoryStore(sessions_dir)
 
         self.lock = threading.RLock()
         self.listeners = []                       # callables(event_dict), called from any thread
@@ -178,7 +183,8 @@ class Engine:
 
     # ---------------------------------------------------------------- session
     def _new_session(self, sid, payload):
-        base = os.path.join(self.sessions_dir, re.sub(r"[^A-Za-z0-9._-]", "_", sid))
+        name = f"{sid}-{self.host}" if self.host else sid     # two hosts could start a run in the same second
+        base = os.path.join(self.sessions_dir, re.sub(r"[^A-Za-z0-9._-]", "_", name))
         # a restart mid-run re-reads the run from Loki: a fresh folder <sid>.r2, .r3, ... instead of appending a
         # second copy of the raw lines to the old one (that would corrupt replay / re-judge of the session)
         sdir, n = base, 1
@@ -274,6 +280,8 @@ class Engine:
         except (ValueError, TypeError, AttributeError):
             S["stats"]["bad_lines"][stream] += 1
             return
+        if self.flow_sink and stream == "knet":      # raw lines: the converter keeps no source address (D13)
+            self.flow_sink(self.host, ev, t)
         if S["released_wm"] is not None and t < S["released_wm"]:
             S["late_dropped"] += 1                     # its window may already be scored
             return
@@ -314,7 +322,7 @@ class Engine:
             lo, hi = bisect.bisect_left(ts, start), bisect.bisect_left(ts, end)
             w_rows = rows[lo:hi]
             wid = utc_id(start)
-            rec = {"window": wid, "start_ms": start, "end_ms": end, "start_utc": utc_iso(start),
+            rec = {"window": wid, "host": S["host"], "start_ms": start, "end_ms": end, "start_utc": utc_iso(start),
                    "edges": len(w_rows), "edges_by_type": dict(Counter(r[4] for r in w_rows)),
                    "status": "partial" if start < S["first_t"] else ("empty" if not w_rows else "scoring"),
                    "nodes": 0, "flagged": 0, "flagged_by_type": {}, "subgraphs": 0, "subgraphs_kept": 0,
@@ -434,15 +442,16 @@ class Engine:
 
     def _take_budget(self) -> bool:
         """Count one investigation against today's budget; False = budget spent (nothing counted)."""
-        b = self._budget()
-        if self.llm_max_per_day and b["used"] >= self.llm_max_per_day:
-            return False
-        b["used"] += 1
-        os.makedirs(self.sessions_dir, exist_ok=True)
-        tmp = self.budget_path + ".tmp"
-        json.dump(b, open(tmp, "w"))
-        os.replace(tmp, self.budget_path)     # atomic: a crash never leaves half a file
-        return True
+        with BUDGET_LOCK:
+            b = self._budget()
+            if self.llm_max_per_day and b["used"] >= self.llm_max_per_day:
+                return False
+            b["used"] += 1
+            os.makedirs(self.sessions_dir, exist_ok=True)
+            tmp = self.budget_path + ".tmp"
+            json.dump(b, open(tmp, "w"))
+            os.replace(tmp, self.budget_path)     # atomic: a crash never leaves half a file
+            return True
 
     def _queue_llm(self, S, rec, wdir, subgraphs, edges_norm):
         if not self._take_budget():
@@ -522,7 +531,8 @@ class Engine:
     # ---------------------------------------------------------------- read side
     def status(self) -> dict:
         with self.lock:
-            base = {"model": {"run_dir": self.run_dir, "tau": self.run.tau, "scaler": self.scaler_path,
+            base = {"host": self.host,
+                    "model": {"run_dir": self.run_dir, "tau": self.run.tau, "scaler": self.scaler_path,
                               "converter_sha256": self.conv_sha, "converter_check": self.conv_check},
                     "params": {"window_min": self.w_ms / 60000, "stride_min": self.s_ms / 60000,
                                "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms,

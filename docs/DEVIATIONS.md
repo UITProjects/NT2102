@@ -412,16 +412,35 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   features and no model for these records; they are not scored. Coverage is limited to the rules above (exec,
   64-bit connects, writes under the watched dirs), not a full provenance graph.
 
-## D12. Two Windows hosts: per-host build, merged windows, one host scored live
-- What: [PAPER] one model is trained per dataset host. [OURS] (user, 2026-11-06) `ws-etw-0` and `ws-etw-1` push to one
-  Loki, and training takes one host or both (`lab --host`). Both hosts: each is pulled and built on its own, then
-  `merge_experiments()` (`src/lab/cli.py`) pools the finished windows, renumbered in (start, host) order. `lab train`
-  holds out one validation window per host and multiplies `--purge-windows` by the host count. `ocr-live` scores one host (`--loki-host ws-etw-0`).
-- Why: one build over both hosts would merge them into one graph per window (`etwwindow.py` cuts by time, FILE/NET IDs
-  hash path / ip:port), unlike live single-host windows. Merging after the build leaves the converter and windowing
-  untouched, so `converter_check` holds.
-- Expected impact: a both-host model learns one baseline for two machines. `ws-etw-1` has no XAMPP/MariaDB, so the
-  baseline is wider, which [INFERENCE] may lower sensitivity on `ws-etw-0`. Exclusion ranges are by time, so they
-  drop both hosts' windows in that range.
-- Claims limited: not validated. A both-host model must be re-checked on the attack before promotion. `ws-etw-1` is
-  collected but not scored live, so no detection claim applies to it.
+## D12. Two Windows hosts: one model per host, each scored live
+- What: [PAPER] evaluates each host separately. [OURS] (user, 2026-11-07, replacing the pooled plan of 2026-11-06) `ws-etw-0` and
+  `ws-etw-1` push to one Loki and each has its own model: `lab promote <model> --host <vm>`, `lab hosts <vm> ...`. One
+  `Engine` + `LokiSource` runs per scored VM, with its own model, scaler and clock; history and LLM budget are shared.
+- Why: matches the paper, keeps `ws-etw-0` on exp08 with no retrain, and avoids one baseline for two different machines
+  (`ws-etw-1` has no XAMPP/MariaDB, so a pooled baseline would be wider and [INFERENCE] less sensitive on `ws-etw-0`).
+- Still in the code: `lab --host` twice builds a pooled experiment with `merge_experiments()`, each window one host's graph
+  (one build would merge both hosts' FILE/NET IDs into one graph). Not used live.
+- Expected impact: a VM's windows are unchanged by adding another (selftest: identical to a plain engine). Each VM needs its own
+  clean idle baseline. One-VM mode is `lab hosts ws-etw-0`: the same code with one engine and no correlation.
+- Claims limited: `exp09-ws1` is provisional (10 h baseline, PROGRESS). No attack has been run against `ws-etw-1`, so no detection
+  claim applies to it.
+
+## D13. Cross-host correlation (`src/live/correlate.py`)
+- What: [PAPER] §7: "Detecting lateral movement was beyond the scope of this work, as OCR-APT does not process network traffic
+  logs", left to future work. [OURS] (user, 2026-11-07) a stage after per-host SG-Det. Plain code reads raw knet lines, keeps
+  unicast flows between monitored hosts that are not in a known-traffic list (`lab flows`), and joins them with each host's
+  windows on the shared 5-min grid, lookback 3 windows: `link`, `suspected` (one end red at or before the flow), `confirmed`
+  (both ends red). On suspected and confirmed, the LLM gets both hosts' subgraphs and the link as one document: an [OURS]
+  multi-host triage prompt, then the paper's IOC and report prompts.
+- Why: each model only sees its own host's graph, so no model can treat a connection as two ends of one thing. The link is found
+  by code because the LLM runs only on red windows, within a budget, and log text is attacker-controlled (D9).
+- Details: raw lines, because the converter keeps only `daddr:dport`, so a receiving host's NET node is the peer's ephemeral
+  port. Reading them outside the converter keeps its sha256, so exp08 stays valid. Addresses are compared with the host's own IP:
+  verified in Loki, TCP has `saddr` = this host both ways, UDP receive has `daddr` = this host or broadcast. The lower port is
+  taken as the server [INFERENCE]; with both ports dynamic, direction is unknown and the key uses host order.
+- Impact: none on any window or alert: the result is an overlay. The host with no kept subgraph still gives its best subgraph to
+  the LLM document, since a short hop can stay under SG-Det's cut-off. Adds LLM calls to the same daily budget.
+- Limits: validated on synthetic flows only. No attack crossing hosts has been run, so **no claim that real cross-host movement
+  is detected**. Needs a clean baseline, or every flow is new. A `suspected` needs a red window, so a hop from a host that stayed
+  green is only a `link`. Only flows between monitored hosts are seen. Windows on different hosts join by clock: skew between
+  VMs was not measured.

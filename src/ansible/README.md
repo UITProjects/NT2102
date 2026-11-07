@@ -130,15 +130,16 @@ The second Windows VM `ws-etw-1` 10.21.3.11 is collector only (`vulnlab_host=fal
 as `ws-etw-0` (one `win_password` for the group), do the one-time steps above and the Tamper Protection step below, then:
 
 ```bash
-ansible-playbook -i proxmox.ini ubuntu.yml                  # ufw: Loki :3100 from both VMs; ocr-live --loki-host
+ansible-playbook -i proxmox.ini ubuntu.yml                  # ufw: Loki :3100 from both VMs; ocr-live; /etc/nt2102-hosts.json
 ansible-playbook -i proxmox.ini windows.yml -e vulnlab_enabled=true
 ```
 
-`ocr-live` needs a checkout that knows `--loki-host`: merge first, or add `-e repo_branch=<branch>`. After a rename
+`ocr-live` needs a checkout that knows `--loki-default-host`: merge first, or add `-e repo_branch=<branch>`. After a rename
 of a Windows host, run `C:\scripts\start-live.ps1 -Rotate` on it: a running capture keeps its old `host` label until
 a new run reads `etwlab.json`. Check in Grafana: `{job="silketw", host="ws-etw-1"}` shows kproc, kfile and knet.
 
-`ocr-live` scores only `live_loki_host` (`ws-etw-0`). Train on one or both VMs with `lab --host` (`src/live/README.md`).
+`ocr-live` scores the VMs set with `lab hosts`, each with its own model; until then only `live_loki_host` (`ws-etw-0`).
+See `src/live/README.md` "Several Windows hosts".
 Lines from before the rename stay labelled `host="ws-etw"`.
 
 The Linux endpoint is retired (DEVIATIONS D11): `target.yml`, the `linux_*` roles and `src/audit-python` stay in the

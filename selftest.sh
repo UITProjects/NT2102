@@ -23,6 +23,7 @@ steps=(
   "src/pipeline/build_experiment.py --selftest"
   "src/live/loki_push.py --selftest"
   "src/live/loki_source.py --selftest"
+  "src/live/correlate.py --selftest"
   "src/live/live_server.py --selftest"
   "-m lab selftest"
 )
