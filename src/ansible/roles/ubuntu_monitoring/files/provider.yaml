@@ -1,0 +1,9 @@
+# Grafana loads every dashboard JSON in this folder. Edits made in the UI are not saved: change the file in the repo.
+apiVersion: 1
+providers:
+  - name: lab
+    type: file
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /etc/grafana/provisioning/dashboards

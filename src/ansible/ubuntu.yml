@@ -10,4 +10,5 @@
   roles:
     - { role: ubuntu_base,    tags: [base] }      # apt deps, uv, firewall
     - { role: ubuntu_loki,    tags: [loki] }      # Loki + Grafana (Docker, host network): receives Alloy's push
+    - { role: ubuntu_monitoring, tags: [monitoring] } # Prometheus + node-exporter + cAdvisor -> Grafana "Trainer resources"
     - { role: ubuntu_project, tags: [project] }   # git clone, uv sync, live_server systemd unit

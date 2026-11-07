@@ -13,6 +13,11 @@ services:
 
   grafana:
     image: {{ grafana_image }}
+    mem_reservation: {{ monitoring_mem.grafana.reservation }}m
+    mem_limit: {{ monitoring_mem.grafana.limit }}m
+    memswap_limit: {{ monitoring_mem.grafana.limit }}m   # = mem_limit: no swap, graphs stay fast
+    cpu_shares: {{ monitoring_cpu_shares }}
+    oom_score_adj: {{ monitoring_oom_score_adj }}
     network_mode: host
     environment:
       GF_SERVER_HTTP_PORT: "{{ grafana_port }}"

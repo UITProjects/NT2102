@@ -1,7 +1,65 @@
-# PROGRESS (status as of 2026-11-04)
+# PROGRESS (status as of 2026-11-07)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
+
+## Next action (user, 2026-11-07)
+
+**Verify the `ws-etw-1` model and the correlation layer:** `docs/notes/verify-two-host.md`. Retrain data must be pulled by about
+2026-11-09 16:00Z. Steps for training: `docs/notes/training-runbook.md`.
+
+## 2026-11-07 one model per host + cross-host correlation: built, NOT deployed (selftests + UI check only)
+
+On branch `trainer-monitoring-guard`, not pushed, not on the trainer. Built: `lab promote --host`, `lab hosts`, `lab flows`, one
+engine per VM, `src/live/correlate.py` (D13), multi-host LLM report, UI ("X is trained for Y" line, VM tabs, one timeline row per
+VM, Cross-host activity panel, History VM column). Checked: `./selftest.sh` 19/19; real `live_server.py` startup in one- and
+two-host mode; UI in Playwright on fake data (one-VM, two-VM, no baseline, host not recorded). A selftest confirms a VM's
+windows match a plain engine. Not yet: real two-VM run, trainer memory with two engines, a replay of a saved `ws-etw-0` session
+in both modes, `lab flows` on real data.
+
+To go live: push, `ansible-playbook -i proxmox.ini ubuntu.yml --tags project -e repo_branch=trainer-monitoring-guard`, then on the
+trainer `lab promote exp08 --host ws-etw-0`, `lab promote exp09-ws1 --host ws-etw-1`, `lab flows --start ... --end ...`,
+`lab hosts ws-etw-0 ws-etw-1`, `sudo systemctl restart ocr-live`, and watch memory in Grafana during catch-up. Until `lab hosts` is
+run, `ocr-live` stays on exp08 and `ws-etw-0`.
+
+## 2026-11-07 exp09-ws1 trained for `ws-etw-1`: PROVISIONAL, not promoted (verified on the trainer)
+
+One model per host (user, 2026-11-07): `ws-etw-0` keeps exp08, `ws-etw-1` gets its own. Experiment
+`range-20261106T170000Z-ws-etw-1`, 11-06 17:00Z to 11-07 03:00Z, 298 windows, 20 excluded (the two 6-h rotation canaries:
+`src/artifacts/exclusions/ws-etw-1-20261107.json`). Label source: operator assertion, backed by a scan of all 495 process
+starts: no RDP, WinRM, installer or choco; the 19:05Z kfile burst is Defender (`MpCmdRun`), kept as normal OS work.
+Settings as exp08 (`--layers 2 --val-windows 60 --tnr-tolerance 0.01`), 3 seeds, converter match.
+
+| Type | n_train (exp08) | best_ep seed 360 / 361 / 362 | τ seed 360 / 361 / 362 | val_fpr seed 360 |
+|---|---|---|---|---|
+| file | 13,809 (147,021) | 99 / 99 / 99 | 0.008 / 0.196 / -0.001 | 0.0020 |
+| process | 1,692 (15,970) | 16 / 99 / 21 | 0.277 / -0.081 / -0.055 | 0.0089 |
+| net | 374 (5,107) | 13 / 4 / 3 | -0.036 / 1.196 / 2.187 | 0.0225 |
+
+FILE is fine. PROCESS and NET stop early and NET's τ is seed-dependent, so this does not meet exp08's standard (best_ep 99 on all
+types, val_fpr 0). `--patience 20` gave identical results, so it is not an early-stop setting. Cause: the 2 NET outliers
+(+3.47, +2.25; train max -0.00) are one benign job, `mousocoreworker.exe` -> `57.154.63.210:443` at 01:20Z, which appears only in
+the validation tail. 9 of 17 validation NET peers are absent from training. The baseline is too short; do not tune around it.
+
+Next: retrain on about 3 days. Loki keeps 72 h, so pull before the 11-06 17:00Z data expires: about 11-09 16:00Z, new
+exclusions for later rotations. Until then exp09-ws1 can stand in for building Part B; expect false alarms on `ws-etw-1`.
+`lineage.json` `hosts` is null for single-host builds: Part B's `lab promote --host` guard needs that recorded.
+
+## 2026-11-07 trainer resized, monitoring live and protected from training (verified on the trainer)
+
+Trainer resized by the user to 8 cores / 12 GB (`main.tf`, applied; the VM rebooted itself, about 09:42 +07) with 50 GiB of swap.
+Role `ubuntu_monitoring`: Prometheus, node-exporter and cAdvisor in their own compose project, plus the Grafana dashboard
+**Trainer resources**. Checked: 3 targets up, every panel query returned data, re-run `changed=0`, ports 9090/9100/8088
+closed from the workstation.
+
+Guard (`src/ansible/README.md`): SSH work capped in `user.slice` (50 % RAM, 40 GiB swap, 7 of 8 cores); monitoring has 864 MiB
+reserved, no swap, OOM priority -500. Training peak measured at 2,524 MiB (3-day range, 1 seed, 3 epochs).
+Stress test from an SSH session (9 GiB allocation + 8 CPU burners, about 48 s): `user.slice` held at 5.4 GB, 3.9 GB went to
+swap, Grafana and Prometheus answered in under 0.03 s, no missed scrape, 0 monitoring swap, 0 OOM kills, `ocr-live` 200.
+
+Not tested: the kill at the swap limit, RAM pressure across the whole VM (4.8 GB stayed available, so the reservation never
+had to act), a sustained load, and whether monitoring `swap.max` = 0 survives a reboot. Grafana first came up with `max` despite
+a correct Docker config (cause unknown; a recreate fixed it).
 
 ## 2026-11-06 exp08 live alert count, first 24 h (verified in `history.jsonl`)
 
@@ -47,7 +105,7 @@ session (expect LLM `uncertain`→`attack`, node gone) + a live attack run (expe
 renamed `ws-etw-0` in place. Verified 13:49Z: Loki carries kproc, kfile and knet from both hosts, `verify-windows.yml`
 passes on both (DVWA checked on `ws-etw-0`), `ocr-live` runs `--loki-host ws-etw-0` and stayed on that run with both
 hosts pushing, `lab pull --list` shows both. Added `lab --host` (one host or both) and `merge_experiments()` (D12):
-selftests only, not yet run on real two-host data. No both-host model exists; exp08 stays current for `ws-etw-0`.
+selftests only, not yet run on real two-host data. Superseded 2026-11-07 by one model per host (D12).
 
 Open: the trainer checkout is on branch `provide-a-second-windows`, so after merging set it back to `main`, or pass
 `-e repo_branch=` on `ubuntu.yml`. Keep 13:33-13:47Z (11-06, provisioning) out of idle training pulls. Lines before
@@ -110,7 +168,7 @@ harness* — a lab-artifact leak into the LLM evidence, not a detector miss (SG-
 D9. **Next action (planned):** add a Defense Evasion / Indicator-Removal phase (TA0005 / T1070 — delete
 dropped tools, clear event logs, remove the task) to the kill chain to test whether the alert survives
 cleanup and whether cleanup adds anomalous nodes; and drop `c:\lab-labels\*` from live scoring + the LLM doc
-alongside it. Full spec: `docs/notes/attack-defense-evasion-next.md`.
+alongside it.
 
 ## exp07: retrained on ~41 h of idle (2026-11-04, PROMOTED + live on the Proxmox trainer)
 
@@ -256,8 +314,7 @@ staged (GPG cold, handed to user). See [[live-detector-benign-fp]], DEVIATIONS D
 result to date.** The T1105 phase now downloads AND executes real benign tools: Sysinternals **PsExec** + **rclone**
 (real PEs staged on Kali by `roles/kali_attack` into `tools/win/`, gitignored, 833 KB + 85 MB; nmap/ncat best-effort,
 OFF by default -> markers + the TcpClient sweep). Rationale: the graph uses no content feature, so real binaries add
-nothing over markers UNLESS executed; the signal is the tool's process + sockets (`docs/notes/real-tool-download-exec.md`,
-D6/D8). Live from the Proxmox Kali (`launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180`, launched at
+nothing over markers UNLESS executed; the signal is the tool's process + sockets (D6/D8). Live from the Proxmox Kali (`launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180`, launched at
 the 00:50:00Z boundary): exploit HTTP 200; ws-etw fetched PsExec64.exe + rclone.exe (real) + nmap/ncat markers + 8
 beacons. Result (session `live-20261104T235407Z`, moderate_from 10): windows 00:25–00:45Z green (00:45Z = 1 benign file
 flag, sg 0.0); attack **00:50Z = 18 flagged (11 file + 7 net) / 1 KEPT subgraph / max_sg 15.40 / Moderate / alert
@@ -542,7 +599,7 @@ Repo hygiene:
    ~17:04Z). Option: raise the etwcollect shipper rate (more than one 1 MiB batch per file per second) so kfile
    bursts stop being dropped as late live.
 
-1. **Train on Proxmox (exp06):** runbook `docs/notes/proxmox-idle-training.md` (2026-11-02). Idle range from
+1. **Train on Proxmox (exp06):** runbook `docs/notes/training-runbook.md`. Idle range from
    2026-11-02 11:45Z (11:05–11:40Z is a boot + fault-test burst, not idle) up to the trigger (user: ~2 days);
    no WinRM/RDP/Ansible on ws-etw until then. `lab pull --start … --end … --split test` → `lab train
    --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
@@ -550,8 +607,7 @@ Repo hygiene:
    run the DVWA→RCE chain live, expect red + an LLM verdict.
 3. **Real tool download + execution** in the T1105 phase (user, 2026-11-04; implement next session):
    download + RUN benign real tools (nmap `-sT` / ncat / PsExec; rclone optional) so tool processes +
-   sockets generate new flagged nodes — the signal is execution, not file content. Full plan:
-   `docs/notes/real-tool-download-exec.md`. Branch `provision-kali-ansible`.
+   sockets generate new flagged nodes — the signal is execution, not file content. Done: see D6. Branch `provision-kali-ansible`.
 
 Earlier backlog (2026-10-31, after the exp05 demo win):
 

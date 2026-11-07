@@ -1,9 +1,7 @@
 # CLAUDE.md: OCR-APT course project (NT2102)
 
-Context snapshot as of 2026-10-11 (synced against the code on that date; originally migrated from a
-claude.ai Project). Implementation details are deliberately left out: read the code for those. Where
-this file and the code disagree about what the code does, the code wins; flag the mismatch and ask
-which one reflects the intent.
+Context snapshot as of 2026-11-07. Implementation details are deliberately left out: read the code for those. Where this file and the
+code disagree about what the code does, the code wins; flag the mismatch and ask which one reflects the intent.
 
 ## 1. Onboarding protocol (every session)
 
@@ -109,110 +107,58 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
 
 ## 8. Current direction (source of truth; change only when the user says so)
 
-- Scope: a proof of concept of the paper's core (no coverage percentage: user, 2026-10-18). Keeps OCR-APT's core idea
-  (per-node-type one-class RGCN on behavior features over a provenance graph) but is not an exact
-  reproduction.
-- Current focus: the live detection demo. A valid training run (`runs/exp01`) and the live path
-  (`src/live/`) exist, and Alg. 1 + the subgraph-score filter (SG-Det) decides the window alert. Immediate
-  step (user, 2026-10-25): verify the full detection flow with LLM support (DeepSeek, `--llm-provider
-  deepseek`) live: benign stays green, the DVWA→RCE attack goes red and gets an LLM attack verdict + report.
-  The first run (2026-10-25) is blocked by the collector: SilkService writes Kernel-File events minutes late
-  (its own per-event file writes feed back into Kernel-File), so live windows have no file events (DEVIATIONS
-  D8 correction, `docs/notes/silkservice-kfile-lag.md`). Fixed (user, 2026-10-26): our own Python ETW collector
-  `src/etw-python` (`etwcollect`, pushes to Loki itself) replaced SilkService AND Alloy, verified on `ws-etw` and
-  both removed (D10, PROGRESS). exp03 does not match the new data (other collector, fixed NET owners), so
-  live windows are red until a new model exists; that is not a detection result.
-- DONE (2026-10-31): the core concept demo works end to end. `exp04` (scripted workload) fixed benign but
-  MISSED the attack (LOLBin overlap); user switched to **benign = idle pulled from Loki**, removed both
-  capture scripts, and trained **exp05** on a 16-min idle Loki range. Result (session
-  `live-20261031T134030Z`): idle windows green (≤ Minor 8.0), DVWA→RCE attack **red** (subgraph 106.96,
-  Significant, alert True; flagged the Kali stage IP, `downloaded_tool.bin`, the RCE powershell), LLM triage
-  **`attack` 0.85** + report; offline re-judge reproduces it. See PROGRESS, D2, [[live-detector-benign-fp]].
-- DONE (2026-11-01): the lab also runs on the user's home **Proxmox** (`pve-master`). `infrastructure/`
-  (Terraform, bpg/proxmox) builds ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 (+ ubuntu-etw 10.21.3.11, Linux
-  endpoint, 2026-11-02) on the SDN VNet `it2102`
-  (10.21.3.0/24, LAN-isolated firewall), and `src/ansible/proxmox.ini` provisions them over a routed path.
-  ws-etw + trainer are fully provisioned and idempotent (ubuntu.yml + windows.yml with vulnlab, verify passes),
-  ubuntu-etw by target.yml, and etwcollect → Loki carries all 3 providers. nt2102-vpn 10.21.3.50 runs OpenVPN (team certs); external TCP 2102 → pve-master DNAT (`proxmox-firewall.yml`) → :1194. The LLM is on
-  there (DeepSeek, key saved on the trainer, inventory `live_llm_args`). `ocr-live` loaded **exp06** (trained
-  2026-11-03 on a 3 h Proxmox idle range) until exp07 replaced it on 2026-11-04. The live DVWA→RCE attack is detected at the node
-  level but does NOT raise an alert on exp06 (subgraph fragments, max 9.0 < Moderate 30) — the attack is partly
-  in-distribution with the 3 h idle baseline. See `docs/PROGRESS.md` top for the full result + open decision.
-- DONE (2026-11-04): **exp07** promoted: ~41 h idle, attack + RDP sessions + rotation canary excluded by window. Held-out
-  replay: idle reds 4 → 0 (3 seeds, 200 windows). Attack replay red on exp07 (35.3, 33.5) but seed-dependent (1 of 3) and one
-  recorded attack. Live soak pending. See `docs/notes/retrain-2day-fp-lesson.md`, PROGRESS, D2, D5.
-- DONE (2026-11-05): **the end-goal demo now works LIVE on Proxmox.** The Kali attacker (10.21.4.30, own subnet) runs the
-  DVWA→RCE kill chain whose T1105 phase downloads AND **executes real benign tools** (Sysinternals PsExec, rclone), staged on
-  Kali by the `kali_attack` role. Live run (00:50Z, exp07, paper-faithful SG-Det, Moderate=10): attack window **RED** (18
-  flagged, one kept subgraph, sg 15.40 Moderate, alert True; the subgraph holds the real `rclone.exe`, the C2, the scan's
-  open-SSH hits and the DB), **LLM triage `attack` 0.85**, benign windows green, red attack-specific. The real-tool *execution*
-  (process + socket nodes) is what lifts the score honestly — not detector tuning (the earlier NET ×2 weight was rolled back;
-  SG-Det stays paper-faithful). Caveats: thin 5-min idle model (Moderate, not Significant); PsExec ran but scored below τ
-  (rclone + scan/C2/DB carried it). See PROGRESS, `docs/notes/real-tool-download-exec.md`, DEVIATIONS D6/D8.
+- Scope: a proof of concept of the paper's core (no coverage percentage: user, 2026-10-18). Keeps OCR-APT's core idea (per-node-type
+  one-class RGCN on behavior features over a provenance graph) but is not an exact reproduction.
+- End goal (user, 2026-10-11): demonstrate the paper's core concept live: a real attack run during the demo raises a true alert while
+  benign windows stay green. The attack is general, not APT-specific (user, 2026-10-13): exploit of a lab service → RCE → ATT&CK techniques;
+  OCR-APT supplies the method. No publishing-style evaluation, metrics or NODLINK baseline are required; the section 6 metrics rules
+  apply only if numbers are ever reported.
+- Now live: `ocr-live` on `ubuntu-trainer` scores `ws-etw-0` with **exp08** (3-day idle baseline, 2 RGCN layers). The end-goal demo works: Kali's
+  DVWA→RCE chain goes red with an LLM `attack` verdict and idle stays green around each run. It is not airtight: benign false alarms
+  still happen and the alert can rest on a few nodes (PROGRESS, `docs/notes/subgraph-score-fragility.md`).
+- Two hosts (user, 2026-11-07): one model per host, not pooled (D12). `ws-etw-0` keeps exp08; `ws-etw-1` has `exp09-ws1`, **provisional** (10 h of
+  idle data). `lab hosts` switches one-VM / two-VM. A correlation stage links hosts by code and the LLM explains the full flow (D13).
+  Built on branch `trainer-monitoring-guard`, **not deployed**, shown on synthetic flows only. Until deployed, `ocr-live` scores `ws-etw-0`
+  only. Older data says `ws-etw`: Loki lines from before the rename keep that label.
+- **Next: verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). After that: concepts 2–4.
+- SG-Det uses the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1 (D8). `ocr-live` keeps a persistent, range-queryable
+  window history (`src/live/history.py`).
+- Attack target: DVWA on XAMPP on `ws-etw-0` (user, 2026-10-19), its OS-command-injection page (`/vulnerabilities/exec/`) as the RCE sink,
+  on :3000, login admin/password, security low.
 - Work happens on the Proxmox VMs, controlled over Ansible/SSH.
-- Decided (user, 2026-11-06): `ubuntu-etw` is replaced by a second Windows VM `ws-etw-1` (10.21.3.11, collector only) and
-  `ws-etw` is renamed `ws-etw-0`. Training takes one host or both (`lab --host`, D12); `ocr-live` scores `ws-etw-0` only.
-  Older text and data below say `ws-etw`; Loki lines from before the rename keep that label.
-- Decided (user, 2026-11-03): SG-Det uses the **paper's level scale** (Moderate from 10, [PAPER] §7.2.1; the
-  [OURS] 30 is retired, D8), and `ocr-live` keeps a **persistent, range-queryable window history** on disk
-  (`src/live/history.py`, `sessions/history.jsonl`, `/api/history`, UI History panel; only raw copies are pruned).
-  Measured before the switch: exp06 idle windows 6 red at 10 vs 1 at 30; the 2026-11-02 attack (9.0) stays green.
-- **Next:** render the LLM report as HTML in the live UI; a larger idle pull; concepts 2–4.
-- Data: the user's own Windows 10 audit data (ETW), shaped to match the NODLINK simulated Windows 10
-  (W10) host format the repo expects. The graph is named `SimulatedW10` because the repo asserts
-  host names.
-- End goal (user, 2026-10-11): demonstrate the paper's core concept live: a real attack run during the
-  demo raises a true alert while benign windows stay green. The attack is general, not APT-specific (user,
-  2026-10-13): target demo = exploit of a lab service (DVWA OS command injection) → RCE → ATT&CK
-  techniques; OCR-APT supplies the method. The repo is a live demo of the paper's core concept, not a 100% reproduction. No publishing-style evaluation, metrics
-  or NODLINK baseline are required; the section 6 metrics rules apply only if numbers are ever reported.
-- Attack target: DVWA on XAMPP (user, 2026-10-19), its OS-command-injection page
-  (`/vulnerabilities/exec/`) as the RCE sink, served on :3000. VERIFIED on `ws-etw`: the `win_vulnlab`
-  role (XAMPP Apache + PHP + MariaDB, DVWA cloned + `setup.php` schema build) provisions cleanly and
-  `verify-windows.yml -e vulnlab_enabled=true` passes (DVWA serving on :3000, login admin/password,
-  security low). Remaining is to run the kill chain against it live (PROGRESS).
+- Data: the user's own Windows audit data (ETW), shaped to match the NODLINK simulated Windows 10 (W10) host format the repo expects. The
+  graph is named `SimulatedW10` because the repo asserts host names.
 
 When direction or progress changes, update `docs/PROGRESS.md` (replace status lines in place; no
 history of earlier progress) and, if relevant, this section.
 
 ## 9. Decisions already made (with rationale)
 
-- Environment: Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers. Docker is
-  used only on the Ubuntu trainer for Loki + Grafana (installed by Ansible). No RDF / GraphDB (user,
-  2026-10-17): edges stay CSV and Alg. 1 runs in memory.
-- Log transport (user, 2026-10-26, superseding the 2026-10-17 Alloy decision): our collector
-  (`src/etw-python`, `etwcollect`) pushes its SilkETW-format JSON lines to Loki (Docker, host network) on
-  the Ubuntu trainer itself, from its own run files with saved offsets (Grafana Alloy removed 2026-10-26). Labels unchanged: job (`silketw`, it names the line format), host, split, run,
-  provider; event/pid/process as structured metadata. Training pulls from Loki by run or time range
-  (`loki_pull.py`); the live server follows Loki (`--loki-url`). All conversion, windowing and scoring run on
-  the trainer with the training converter code, scaler and relation list; the live clock is event time
-  (newest event − lateness), with a host-clock fallback when idle (DEVIATIONS D8). The HTTP shipper
-  (`etwship.py`) remains for replay only.
-- Collection lab: VMs on the home Proxmox hypervisor (`infrastructure/` Terraform builds them,
-  `src/ansible/` provisions them, cloud-portable via inventory): Windows Server 2022 `ws-etw-0` and `ws-etw-1` (own Python
-  ETW collector `etwcollect` on Kernel-Process, Kernel-File, Kernel-Network, pushing to Loki, + on `ws-etw-0` only the DVWA
-  vulnlab on XAMPP, no training; user, 2026-10-26: replaces SilkETW/SilkService v0.8, whose per-event file
-  writes feed back into Kernel-File and which has no exclude filter), Ubuntu `ubuntu-trainer` (Loki +
-  Grafana, training, live server), Kali `kali` (attacker: exploits DVWA + delivers the RCE kill chain, on
-  its own SDN VNet `it2102k` 10.21.4.0/24; Ansible-managed, `kali.yml` → role `kali_attack` copies
-  `src/atomic-attack-pack` to `/opt/attack-pack`). `ws-etw-0`/`ws-etw-1`/`ubuntu-trainer` sit on VNet `it2102`
-  10.21.3.0/24. The Linux endpoint `ubuntu-etw` is retired (D11). Terraform rules: the user
-  runs `apply`/`destroy`, Claude only writes config and runs `plan`;
-  values are hardcoded in `main.tf` locals and only credentials are variables (`TF_VAR_*`); `terraform.tfstate`
-  is committed (public repo, no secrets). Windows WinRM creds are hardcoded in `proxmox.ini` by choice (user, 2026-11-06: reachable from the home LAN and VPN, not the internet); `vault.yml` was deleted, only `vault.yml.example` remains for cloud.
+- Environment: Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers. Docker is used only on the Ubuntu trainer,
+  for Loki + Grafana and the Prometheus monitoring stack (installed by Ansible). No RDF / GraphDB (user, 2026-10-17): edges stay CSV and
+  Alg. 1 runs in memory.
+- Log transport: our collector (`src/etw-python`, `etwcollect`) pushes SilkETW-format JSON lines to Loki (Docker, host network) on the trainer,
+  from its own run files with saved offsets. Labels: job (`silketw`, it names the line format), host, split, run, provider; event/pid/process
+  as structured metadata. Training pulls from Loki by run or time range (`loki_pull.py`); the live server follows Loki (`--loki-url`). All
+  conversion, windowing and scoring run on the trainer with the training converter code, scaler and relation list; the live clock is event
+  time (newest event − lateness), with a host-clock fallback when idle (D8). The HTTP shipper (`etwship.py`) remains for replay only.
+- Collection lab: VMs on the home Proxmox hypervisor (`infrastructure/` Terraform builds them, `src/ansible/` provisions them, cloud-portable
+  via inventory). VNet `it2102` 10.21.3.0/24: Windows Server 2022 `ws-etw-0` (.10, DVWA) and `ws-etw-1` (.11, collector only), each running
+  `etwcollect` on Kernel-Process, Kernel-File, Kernel-Network; `ubuntu-trainer` (.20: 8 cores, 12 GB, 50 GiB swap; Loki, Grafana, Prometheus,
+  training, live server); `nt2102-vpn` (.50). VNet `it2102k` 10.21.4.0/24: Kali `kali` (.30, attacker; `kali.yml` → role `kali_attack`).
+  Terraform rules: the user runs `apply`/`destroy`, Claude only writes config and runs `plan`; values are hardcoded in `main.tf` locals and
+  only credentials are variables (`TF_VAR_*`); `terraform.tfstate` is committed (public repo, no secrets). A CPU or RAM change reboots the VM.
+  Windows WinRM creds are hardcoded in `proxmox.ini` by choice (user, 2026-11-06: reachable from the home LAN and VPN, not the internet).
 - Target schema (NODLINK W10, as the repo expects): 3 node types `PROCESS`, `FILE`, `NET`
   (repo `database_config.py`), 6 edge types (Write, Read, Send, Recv, Start, Load), epoch-millisecond
   timestamps.
 - Node identity: processes keyed by PID + start time (raw PIDs get reused and would corrupt idle-time
   features); FILE and NET nodes keyed by a hash of path / ip:port so IDs are stable across train and test.
   Windowed outputs prefix every node ID with its window (`w0007_...`).
-- Benign set: **idle machine activity, pulled directly from Loki** — no capture script. The always-on live
-  capture ships idle background activity to Loki; a clean idle time-range is pulled with
-  `lab pull --start <t> --end <t> --split test --host <vm>` and trained on (`--host` is required once a range holds several hosts). Both earlier scripts were removed 2026-10-31
-  (`06-benign-workload.ps1`, then `07-build-train-dataset.ps1`): the scripted workload's netcheck/download/cmd
-  scenarios reused the attack's living-off-the-land binaries, making the DVWA→RCE chain in-distribution and
-  undetectable (exp04 miss). With an idle baseline the attack separates cleanly; keep benign demo windows
-  idle (an idle model is thin, so real activity can false-positive). See `docs/DEVIATIONS.md` D2.
+- Benign set: **idle machine activity, pulled directly from Loki**, no capture script. A clean idle range is pulled with
+  `lab pull --start <t> --end <t> --split test --host <vm>` and trained on. Why idle: a scripted workload reuses the attack's living-off-the-land
+  binaries and makes the attack in-distribution. Keep benign demo windows idle: an idle model is thin, so real activity can false-positive
+  (D2). How to train: `docs/notes/training-runbook.md`.
 - Windowing: an idle benign time-range pulled from Loki, cut into 5-min sliding windows with a 2-min
   stride. Detection uses the same 5-min window length. For the small demo, tumbling windows
   (stride = window) are enough; sliding windows are the option for real attacks that cross window
@@ -221,40 +167,37 @@ history of earlier progress) and, if relevant, this section.
   §5.1.2) that needs no RDF/GraphDB/PyG, so features can be inspected by EDA. 15 features per node:
   12 L2-normalised out/in action counts + 3 min-max-scaled idle-time stats. The scaler is fit on
   train and reused for test/live windows.
-- Trainer: own minimal OCRGCN (PyG `RGCNConv` encoder + Deep-SVDD-style hypersphere loss) instead of
-  the authors' PyGOD fork, so every line is explainable. Paper hyperparameters (3 layers, 32-d,
-  lr 0.005, β 0.5); validation holds out whole windows and purges the overlapping ones to avoid leakage.
-- Ground truth for the test split: known-attack injection (Atomic Red Team + custom scenarios) that
-  self-logs a label JSONL, joined to nodes by indicator + time window. Attacks must run alongside the
-  benign workload.
+- Trainer: own minimal OCRGCN (PyG `RGCNConv` encoder + Deep-SVDD-style hypersphere loss) instead of the authors' PyGOD fork, so every line is
+  explainable. Paper hyperparameters (3 layers by default, 32-d, lr 0.005, β 0.5); exp08 and exp09-ws1 use `--layers 2`. Validation holds out
+  whole windows and purges the overlapping ones to avoid leakage.
+- Ground truth: the injected RCE kill chain self-logs a label JSONL, joined to nodes by indicator + time window (D6).
 
 ### Pipeline map (where each stage lives)
 
-- VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (uv + `src/etw-python`
-  collector as SYSTEM task `etwlab-collector`, `etwctl`, copies `src/pipeline/etw2nodlink.py` /
-  `etwwindow.py` / `src/live/etwship.py`; the collector source is a git clone of this repo; it also
-  removes the old SilkETW/SilkService and Grafana Alloy),
-  `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture),
-  `win_vulnlab` (XAMPP + DVWA). Retired Linux endpoint, unused while no host is in group `target` (`target.yml`): `linux_auditd` (auditd rules,
-  shipper uid excluded) + `linux_auditship` (`src/audit-python` rsynced from the control node, systemd `auditship`
-  → Loki `job="auditd"`; raw logs only, D11). (The `win_benign` role and `src/scripts/` capture scripts were removed
-  2026-10-31: benign = idle pulled from Loki.)
+- VM side (Ansible roles in `src/ansible/roles/`): `win_base`, `win_collector` (uv + `src/etw-python` collector as SYSTEM task
+  `etwlab-collector`, `etwctl`, copies `src/pipeline/etw2nodlink.py` / `etwwindow.py` / `src/live/etwship.py`; the collector source is a git clone of
+  this repo), `win_shipper` (`start-live.ps1` watchdog + SYSTEM task `etwlab-live`: always-on live capture), `win_vulnlab` (XAMPP + DVWA).
+  The Linux endpoint is retired (D11): `linux_auditd`, `linux_auditship`, `target.yml` and `src/audit-python` stay unused.
+- Trainer monitoring: role `ubuntu_monitoring` (tag `monitoring`): Prometheus + node-exporter + cAdvisor in `/opt/monitoring`,
+  127.0.0.1 only, Grafana dashboard "Trainer resources". The same role caps everything run over SSH, training included
+  (`user.slice`, 50 % RAM), and reserves resources for monitoring; 50 GiB swap in `ubuntu_base` (`src/ansible/README.md`).
 - Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw-0 and ws-etw-1 from the Server 2022
   eval ISO with manual install, ubuntu-trainer and nt2102-vpn from a cloud image + cloud-init, per-VM
   firewall rules prefixed `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`; `proxmox-firewall.yml`
   adds the pve-master DNAT (TCP 2102 → nt2102-vpn:1194).
-- Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop`
-  = pull + build → features → train into one run folder; `lab compare` (two models on the same replayed windows); `lab train --exclude-file` (leave windows out);
-  `lab promote <run>` sets the current-model
-  pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that
-  `live_server.py`, `serve.sh`, `rejudge.sh` and `ocr-live` read.
-- Attack side: `src/atomic-attack-pack/` — one RCE kill chain (`scenarios/rce-killchain.ps1`) delivered
-  from the Kali VM by `tools/launch_exploit.py` (pack deployed to `/opt/attack-pack` by Ansible's
-  `kali_attack` role); exploits DVWA (OS command injection) then runs Discovery→T1105→T1053.005. `LABELING.md`, `tools/build_node_labels.py`.
-- Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py`
-  (convert → window → check → `experiment.json`, host port of 07 steps 4–7); shared client `lokiclient.py`.
+- Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop` = pull + build → features → train into one
+  run folder; `lab train --exclude-file` (leave windows out); `lab compare` (two models on the same replayed windows); `lab promote <run> [--host <vm>]`
+  sets the pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that `live_server.py`, `serve.sh`, `rejudge.sh`
+  and `ocr-live` read; `lab hosts <vm> ...` picks the scored VMs; `lab flows` records known traffic between VMs.
+- Attack side: `src/atomic-attack-pack/`: one RCE kill chain (`scenarios/rce-killchain.ps1`) delivered from Kali by `tools/launch_exploit.py` (pack
+  at `/opt/attack-pack`, role `kali_attack`): DVWA exploit → Discovery → T1046 scan → T1105 real-tool download + run → DB dump → C2 beacon → T1053.005 →
+  T1070 cleanup. `LABELING.md`, `tools/build_node_labels.py`.
+- Collection via Loki (trainer): `src/pipeline/loki_pull.py` (Loki → `<exp>/raw/`) → `build_experiment.py` (convert → window → check →
+  `experiment.json`); shared client `lokiclient.py`.
 - Host side: `src/pipeline/encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
   `score_window.py` (score any edge CSV with the train scaler + relations).
+- Two VMs: one `engine.py` + `loki_source.py` per scored VM (`lab promote --host`, `lab hosts`), then `src/live/correlate.py` (flows
+  between VMs + red windows → link / suspected / confirmed; known traffic from `lab flows`, host IPs from `/etc/nt2102-hosts.json`).
 - Live (host): `src/live/loki_source.py` (follows Loki) → `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
   reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
   sessions) → `src/pipeline/alg2.py` (optional LLM thread: triage verdict + Alg. 2 l.3–15 report on red
@@ -285,8 +228,7 @@ history of earlier progress) and, if relevant, this section.
 Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`. Summary:
 
 - Windowed, near-live detection instead of the paper's offline whole-log prediction.
-- Own Windows ETW data instead of NODLINK/DARPA datasets; benign activity is natural desktop use (the
-  scripted workload was removed 2026-10-31, D2).
+- Own Windows ETW data instead of NODLINK/DARPA datasets; benign = idle machine activity (D2).
 - Own Python ETW collector (`src/etw-python`) instead of SilkETW: SilkETW-format lines with plain values,
   self/collector I/O excluded in the callback, pushes to Loki itself (D10).
 - Feature extraction: all 15 columns kept; idle scaler fit on train only; RDF skipped; per-window
@@ -299,6 +241,7 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
   no cross-window dedup. Alg. 1 runs in memory per window with the [AUTHOR CODE] subgraph score (Σ clamped
   min-max prob, not the paper text's "sum of scores"), [PAPER] §7.2.1 level scale (Moderate from 10; [AUTHOR CODE]
   > 10; the [OURS] 30 was retired 2026-11-03), no top-k fallback. Window history persisted to files (history.jsonl).
+- Two hosts: one model per host (D12); cross-host correlation is [OURS] (D13), the paper leaves lateral movement out of scope.
 - LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
   Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
 
@@ -314,7 +257,4 @@ learning (Deep SVDD/OCGNN hypersphere, β, contamination; vs sklearn OCSVM) → 
 (§5.1.2) → 6 per-node-type models → 7 anomalous subgraph construction (Alg. 1) → 8 LLM investigator
 (Alg. 2, App. B) → 9 evaluation (node-level P/R/F1, 2-hop vs strict metric, Table 6, class imbalance).
 
-Reproduction phases (Track B): 0 prerequisites → 1 paper deep-read → 2 environment (partly done) →
-3 detector on NODLINK W10 (features extracted, detector not run) → 4 subgraphs (check Table 4
-"Without SG-Det") → 5 LLM investigator (vs Table 5) → 6 DARPA TC3 / OpTC + ablations (only if compute
-allows) → 7 write-up + demo.
+Reproducing the paper's numbers (NODLINK, DARPA) is out of scope (section 8). NODLINK W10 features exist in `src/artifacts/features/paper/`.

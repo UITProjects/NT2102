@@ -193,16 +193,42 @@ A red window is an observation, not a detection result, until the window has lab
 
 ## Several Windows hosts
 
-All Windows VMs push to one Loki, told apart by the `host` label. `live_server.py --loki-host ws-etw-0` follows and
-scores that host only (`live_loki_host` in the inventory); without the flag it follows the newest run of any host and
-flips between them.
-
-Training picks hosts with `--host`:
+All Windows VMs push to one Loki, told apart by the `host` label. Each VM has its own model, and `lab hosts` picks which
+VMs are scored:
 
 ```bash
-lab loop --since 3h --split test --benign-split test --host ws-etw-0 --model m1                  # one VM
-lab loop --since 3h --split test --benign-split test --host ws-etw-0 --host ws-etw-1 --model m2  # both VMs
+lab loop --start <t> --end <t> --split test --benign-split test --host ws-etw-1 --model exp09-ws1   # train one VM
+lab promote exp08 --host ws-etw-0          # assign a model to a VM (changes nothing live yet)
+lab promote exp09-ws1 --host ws-etw-1
+lab hosts                                  # show assignments
+lab hosts ws-etw-0 ws-etw-1 && sudo systemctl restart ocr-live    # two-VM mode
+lab hosts ws-etw-0 && sudo systemctl restart ocr-live             # one-VM mode; assignments are kept
 ```
 
-With both, each host is pulled and built on its own, then `merge_experiments()` pools the finished windows. A range
-that holds several hosts and no `--host` is refused, and `--force` replaces the folders when retrying a failed pull. Lines from before the rename are `--host ws-etw`. See DEVIATIONS D12.
+One `Engine` + one `LokiSource` runs per scored VM, each with its own model, scaler, run rotation and clock. They share
+the history and the LLM budget. Session folders are `<run>-<host>`. Per-host scoring and SG-Det are the same code as with one
+VM: a selftest checks that a VM's windows are identical either way. Until `lab hosts` is used, `live_loki_host`
+(`--loki-default-host`) keeps the server on one VM with the single top-level model.
+
+`--host` twice still builds a pooled experiment (`merge_experiments()`, D12), but live scoring uses one model per host.
+A range that holds several hosts and no `--host` is refused. Lines from before the rename are `--host ws-etw`.
+
+### Cross-host correlation (`src/live/correlate.py`, DEVIATIONS D13)
+
+With two or more VMs scored and `/etc/nt2102-hosts.json` present (Ansible writes it from the inventory), plain code links
+the hosts; the LLM only explains the result. Each VM's model cannot do this, because it only sees that VM's graph.
+
+| Level | Meaning | Effect |
+|---|---|---|
+| `link` | unicast flow between monitored VMs, not in the known-traffic list | shown only, no LLM |
+| `suspected` | one end had a red window at or before the flow | LLM report of the full flow |
+| `confirmed` | the other end also had a red window in range | LLM report again |
+
+Nothing here changes a VM's own windows. Lookback is 3 windows. First record normal traffic, from a range with no attack:
+
+```bash
+lab flows --start 2026-11-06T17:00:00Z --end 2026-11-07T03:00:00Z && sudo systemctl restart ocr-live
+```
+
+Without that file every flow counts as new, and the UI says so. Results: `sessions/campaigns.jsonl`, LLM files in
+`sessions/campaigns/<id>/`, API `/api/campaigns`, UI panel **Cross-host activity**. Validated on synthetic flows only.

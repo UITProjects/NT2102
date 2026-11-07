@@ -1,0 +1,8 @@
+{
+ "ranges": [
+  {"start": "2026-11-06T20:20:00Z", "end": "2026-11-06T20:35:00Z",
+   "reason": "6-h run rotation on ws-etw-1: collector restart + the canary cmd /c whoami, which the attack also runs"},
+  {"start": "2026-11-07T02:25:00Z", "end": "2026-11-07T02:40:00Z",
+   "reason": "6-h run rotation on ws-etw-1: collector restart + the canary cmd /c whoami, which the attack also runs"}
+ ]
+}

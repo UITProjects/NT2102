@@ -1,0 +1,16 @@
+---
+- name: Reload slices
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart monitoring
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_stack_dir }}"
+    state: restarted
+
+# Only the grafana service: the lokistack-wide handler would restart Loki as well.
+- name: Restart grafana only
+  community.docker.docker_compose_v2:
+    project_src: "{{ loki_stack_dir }}"
+    services: [grafana]
+    state: restarted

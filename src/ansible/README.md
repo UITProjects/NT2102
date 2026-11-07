@@ -130,15 +130,16 @@ The second Windows VM `ws-etw-1` 10.21.3.11 is collector only (`vulnlab_host=fal
 as `ws-etw-0` (one `win_password` for the group), do the one-time steps above and the Tamper Protection step below, then:
 
 ```bash
-ansible-playbook -i proxmox.ini ubuntu.yml                  # ufw: Loki :3100 from both VMs; ocr-live --loki-host
+ansible-playbook -i proxmox.ini ubuntu.yml                  # ufw: Loki :3100 from both VMs; ocr-live; /etc/nt2102-hosts.json
 ansible-playbook -i proxmox.ini windows.yml -e vulnlab_enabled=true
 ```
 
-`ocr-live` needs a checkout that knows `--loki-host`: merge first, or add `-e repo_branch=<branch>`. After a rename
+`ocr-live` needs a checkout that knows `--loki-default-host`: merge first, or add `-e repo_branch=<branch>`. After a rename
 of a Windows host, run `C:\scripts\start-live.ps1 -Rotate` on it: a running capture keeps its old `host` label until
 a new run reads `etwlab.json`. Check in Grafana: `{job="silketw", host="ws-etw-1"}` shows kproc, kfile and knet.
 
-`ocr-live` scores only `live_loki_host` (`ws-etw-0`). Train on one or both VMs with `lab --host` (`src/live/README.md`).
+`ocr-live` scores the VMs set with `lab hosts`, each with its own model; until then only `live_loki_host` (`ws-etw-0`).
+See `src/live/README.md` "Several Windows hosts".
 Lines from before the rename stay labelled `host="ws-etw"`.
 
 The Linux endpoint is retired (DEVIATIONS D11): `target.yml`, the `linux_*` roles and `src/audit-python` stay in the
@@ -294,11 +295,50 @@ roles/
   win_vulnlab     XAMPP (Apache + PHP + MariaDB) + DVWA, served on vulnlab_port (opt-in: vulnlab_enabled)
   ubuntu_base     UTC+7 + timesyncd, apt deps + uv + ufw rule for the live server
   ubuntu_loki     Docker + Loki + Grafana (compose, host network) + ufw (Loki from Windows, Grafana from admin_cidr)
+  ubuntu_monitoring  Prometheus + node-exporter + cAdvisor (own compose project, 127.0.0.1 only) + Grafana dashboard
   ubuntu_project  git clone + uv sync + ocr-live systemd unit (--loki-url + live_llm_args) + session cleanup cron
   kali_attack     (Proxmox, kali.yml) copy src/atomic-attack-pack -> /opt/attack-pack + launcher selftest
 ```
 (Not shown: `linux_auditd`/`linux_auditship` run by `target.yml`, unused while no `[target]` host exists;
 `kali_attack` by `kali.yml`. Both run on their own, not via `site.yml`.)
+
+## Trainer monitoring (CPU, memory)
+
+Grafana `http://<trainer>:3000/`, dashboard **Trainer resources** (`admin_cidr` only, same login as for Loki).
+Deploy or update with `ansible-playbook -i proxmox.ini ubuntu.yml --tags monitoring`.
+
+```
+node-exporter :9100 (whole VM)  \
+                                 -> Prometheus :9090 (15 s scrape, 15 d or 2 GB) -> Grafana :3000
+cAdvisor      :8088 (per service) /
+```
+
+- `/opt/monitoring` is its own compose project and every service binds 127.0.0.1, so there is no ufw rule. A change
+  here restarts Grafana at most, never Loki (a Loki restart can cost live windows, D8).
+- The dashboard is the file `roles/ubuntu_monitoring/files/trainer-resources.json`. UI edits are not saved.
+- "Private memory" is cgroup v2 anonymous memory: what a service cannot give back. It reads lower than `ps` RSS, which
+  also counts file-backed library pages (`ocr-live`, 2026-11-07: 904 MiB private, 1,245 MiB `ps`). Use private memory
+  for capacity.
+
+### What keeps training from hurting monitoring
+
+Everything started over SSH (`lab`, raw pipeline scripts, `uv sync`, Ansible tasks) runs in `user.slice`; `ocr-live` and
+Docker run in `system.slice`. So the limits below hold however training is launched.
+
+| Protection | Setting | Where |
+|---|---|---|
+| Cap on SSH work | 45 % of RAM soft, 50 % hard, 40 GiB of swap, all cores but one, low CPU and I/O weight | `user.slice` drop-in, `training_*` vars |
+| Reserved for monitoring | 864 MiB (Prometheus 256, Grafana 512, cAdvisor 64, node-exporter 32) | `monitoring_mem`, plus `MemoryLow` on `system.slice` |
+| Monitoring cannot swap | `memswap_limit` = `mem_limit` | both compose files |
+| Killed last | `oom_score_adj` -500 (`ocr-live` is +500) | both compose files |
+| Monitoring cannot run away | hard memory limit per container | `monitoring_mem` |
+
+- `memory.low` needs every parent to have it too, so `MemoryLow` on `system.slice` must stay the sum of the reservations.
+- Check `memory.swap.max` = 0 in the containers after a deploy: Grafana once kept `max` despite a correct Docker config
+  (cause unknown; `docker compose up -d --force-recreate --no-deps grafana` fixed it).
+- The caps are a share of RAM: after resizing the VM, re-run `ubuntu.yml --tags monitoring`.
+- Swap: 50 GiB `/swapfile` (`swap_size_gib`, role `ubuntu_base`), `vm.swappiness` 10. Changing the size later needs the
+  old file removed by hand: the task only creates it.
 
 The converter and windowing tool (`win_collector`) are deployed from `src/pipeline/`, the same files
 `build_experiment.py` runs on the trainer. See the converter hash rule above.

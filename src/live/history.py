@@ -196,24 +196,26 @@ class HistoryStore:
             return dict(r) if r else None
 
     def query(self, from_ms: int, to_ms: int, alert_only: bool = False, include_replay: bool = False,
-              limit: int = 2000) -> dict:
+              limit: int = 2000, host: str | None = None) -> dict:
         """Live sessions (mode 'loki' from Loki, 'live' from the HTTP shipper) by default; replays re-use past
-        timestamps, so they are left out unless include_replay."""
+        timestamps, so they are left out unless include_replay. host = only that host's windows; rows written
+        before two-host scoring have no host and match no host filter."""
         with self.lock:
             cand = [r for r in self.rows.values()
                     if isinstance(r.get("start_ms"), int) and r["start_ms"] < to_ms and r.get("end_ms", 0) > from_ms
-                    and (include_replay or r.get("mode") != "replay")]
-        best: dict[int, dict] = {}
+                    and (include_replay or r.get("mode") != "replay")
+                    and (host is None or r.get("host") == host)]
+        best: dict[tuple, tuple] = {}
         dups = 0
         for r in cand:
-            k = r["start_ms"]
+            k = (r.get("host") or "", r["start_ms"])         # two hosts share the window grid
             rank = (STATUS_RANK.get(r.get("status"), 0), _restart_n(r["sdir"]), r["sdir"])
             if k in best:
                 dups += 1
                 if rank <= best[k][0]:
                     continue
             best[k] = (rank, r)
-        rows = [r for _, r in sorted(best.values(), key=lambda x: x[1]["start_ms"])]
+        rows = [r for _, r in sorted(best.values(), key=lambda x: (x[1]["start_ms"], x[1].get("host") or ""))]
         if alert_only:
             rows = [r for r in rows if r.get("alert")]
         return {"from_ms": from_ms, "to_ms": to_ms, "total": len(rows), "duplicates_hidden": dups,
@@ -348,11 +350,19 @@ def selftest():
             except ValueError:
                 pass
 
+        # --- two hosts on one window grid: both rows stay, and host= picks one
+        for hname, sd in (("ws-etw-0", "live-h-ws-etw-0"), ("ws-etw-1", "live-h-ws-etw-1")):
+            h2.append({"sdir": sd, **meta, "host": hname, **win(9, "scored", 1.0)})
+        q2 = h2.query(base + 9 * m5, base + 10 * m5)
+        assert [w["host"] for w in q2["windows"]] == ["ws-etw-0", "ws-etw-1"], q2
+        assert [w["sdir"] for w in h2.query(base + 9 * m5, base + 10 * m5, host="ws-etw-1")["windows"]] == ["live-h-ws-etw-1"]
+        assert h2.query(base, base + 4 * m5, host="ws-etw-1")["windows"] == [], "old rows have no host"
+
         assert parse_time_ms("2026-11-03T11:20:00Z") == base == parse_time_ms(str(base))
         assert parse_time_ms("2026-11-03T18:20:00+07:00") == base == parse_time_ms("2026-11-03T11:20:00")
     print("[SELFTEST OK] backfill from windows.csv + llm_verdicts.csv, append/reload, torn line skipped, last line "
           "wins, restart dedup (scored beats partial), range overlap, alerts-only, replays left out, limit, detail from "
-          "detail.json or rebuilt, path traversal refused, time parsing")
+          "detail.json or rebuilt, path traversal refused, time parsing, two hosts on one window grid")
 
 
 if __name__ == "__main__":

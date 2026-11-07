@@ -116,6 +116,24 @@ tr.flag td{color:var(--anom);font-weight:600}
 #hTable tr[data-s]:hover td{background:var(--win-soft)}
 #hTable tr.alert td{color:var(--anom);font-weight:600}
 #hTable tr.sel td{background:var(--win-soft)}
+/* which VM each model was trained for, and the VM tabs */
+.trained{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.trained span{border:1px solid var(--win);color:var(--win);background:var(--win-soft);border-radius:6px;padding:3px 10px;font-weight:600}
+.trained span.unknown{border-color:var(--warn);color:var(--warn);background:none}
+.hosttabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.hosttabs button{font:600 .85rem var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);
+  border-radius:6px;padding:5px 12px;cursor:pointer}
+.hosttabs button.on{border-color:var(--win);color:var(--win);background:var(--win-soft)}
+.hosttabs .red{color:var(--anom)}
+.hrow{margin-bottom:8px}
+.hrow .hlabel{font:600 .8rem var(--mono);color:var(--muted);margin-bottom:3px}
+/* cross-host links and campaigns */
+.lvl{display:inline-block;font:600 .72rem var(--sans);border-radius:4px;padding:0 6px;border:1px solid currentColor;color:var(--muted)}
+.lvl.suspected{color:var(--warn)} .lvl.confirmed{color:var(--anom)}
+#cTable tr[data-c]{cursor:pointer}
+#cTable tr[data-c]:hover td{background:var(--win-soft)}
+#cTable tr.sel td{background:var(--win-soft)}
+.cwarn{color:var(--warn);font-size:.8rem;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -126,16 +144,18 @@ tr.flag td{color:var(--anom);font-weight:600}
     <span class="mono muted" id="sessionTxt"></span>
     <span class="mono muted" id="modelTxt"></span>
   </header>
+  <div class="trained" id="trained"></div>
 
   <section class="panel">
-    <h2>Shipper and pipeline</h2>
+    <h2>Shipper and pipeline <span class="muted" id="tilesHost"></span></h2>
+    <div class="hosttabs" id="hostTabs" hidden></div>
     <div class="tiles" id="tiles"></div>
     <div class="note" id="tauTxt"></div>
   </section>
 
   <section class="panel">
     <h2>Windows <span class="muted" id="winParams"></span></h2>
-    <div class="timeline" id="timeline"></div>
+    <div id="timeline"></div>
     <div class="note legend">
       <span>green: scored, no subgraph kept by SG-Det</span><span style="color:var(--anom)">red: ≥ 1 subgraph at or above the cut-off (<span id="cutTxt">default Moderate, score ≥ 10</span>)</span>
       <span>badge on red windows = LLM verdict (<span style="color:var(--anom)">attack</span> /
@@ -145,18 +165,29 @@ tr.flag td{color:var(--anom);font-weight:600}
     </div>
   </section>
 
+  <section class="panel" id="cross" hidden>
+    <h2>Cross-host activity <span class="muted">(connections between the monitored VMs, found by code; the LLM only explains them)</span></h2>
+    <div class="cwarn" id="cWarn" hidden></div>
+    <div class="hwrap"><table id="cTable"></table></div>
+    <div id="cDetail"></div>
+    <div class="note"><span class="lvl">link</span> a new connection between two VMs, not in the known-traffic list; it turns nothing red ·
+      <span class="lvl suspected">suspected</span> one end had a red window at or before it ·
+      <span class="lvl confirmed">confirmed</span> both ends had red windows · a campaign never changes a VM's own windows</div>
+  </section>
+
   <section class="panel">
     <h2>History <span class="muted">(every window kept on disk, across restarts and sessions; lab time UTC+7)</span></h2>
     <div class="hctl">
       <label>from <input type="datetime-local" id="hFrom"></label>
       <label>to <input type="datetime-local" id="hTo"></label>
       <label><input type="checkbox" id="hAlert"> alerts only</label>
+      <label id="hHostL" hidden>VM <select id="hHost"></select></label>
       <button class="go" id="hGo">Query</button>
       <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24">24 h</button><button data-h="168">7 d</button>
       <span class="muted" id="hInfo"></span>
     </div>
     <div class="hwrap"><table id="hTable"></table></div>
-    <div class="note">one row per window start (a restart re-reads up to 1 h into a <span class="mono">.rN</span> folder; the scored copy is shown) ·
+    <div class="note">one row per VM and window start (a restart re-reads up to 1 h into a <span class="mono">.rN</span> folder; the scored copy is shown) ·
       cut-off = the "Moderate from" score in force when that window was judged · click a row to open it below · the URL keeps the range</div>
   </section>
 
@@ -195,13 +226,19 @@ tr.flag td{color:var(--anom);font-weight:600}
 
   const LLM_LABEL = {pending: "LLM: …", attack: "LLM: attack", false_positive: "LLM: FP",
                      uncertain: "LLM: ?", error: "LLM: error", skipped: "LLM: budget"};
-  let windows = new Map();       // wid -> summary
+  let hosts = [""];              // scored VMs; "" = one engine with no host name
+  let curHost = "";              // the VM the tiles and the detail panel show
+  let winsBy = {"": new Map()};  // VM -> (wid -> summary)
+  const curWins = () => (winsBy[curHost] ??= new Map());
+  const hostQ = (h = curHost) => h ? "?host=" + encodeURIComponent(h) : "";
+  let es = null, campaigns = new Map(), campSel = null;
   let status = null, selected = null, pinned = false, cy = null, detail = null, sgIdx = 0;
   let histSel = null;            // {sdir, wid} when the detail panel shows a window picked from History
 
   // ------------------------------------------------------------- status tiles
   function renderStatus() {
     const s = status?.session;
+    renderHosts();
     $("modelTxt").textContent = status ? "model " + base(status.model.run_dir) + " · converter " + status.model.converter_check : "";
     const p = status?.params;
     if (p) $("winParams").textContent = `w = ${p.window_min} min, s = ${p.stride_min} min, lateness ${p.lateness_s} s`;
@@ -244,9 +281,79 @@ tr.flag td{color:var(--anom);font-weight:600}
     renderTimeline();
   }
 
-  // ------------------------------------------------------------- timeline
+  // ------------------------------------------------------------- which VMs, and what each model was trained for
+  function renderHosts() {
+    const tf = status?.trained_for || [];
+    $("trained").innerHTML = tf.map(t => `<span class="${t.hosts.length ? "" : "unknown"}">${esc(t.text)}</span>`).join("");
+    const hs = (status?.hosts || []).map(x => x.host || "");
+    if (hs.length && hs.join() !== hosts.join()) { hosts = hs; if (!hosts.includes(curHost)) curHost = hosts[0]; }
+    const many = hosts.length > 1;
+    $("hostTabs").hidden = !many;
+    $("tilesHost").textContent = many ? "· " + curHost : "";
+    if (many) $("hostTabs").innerHTML = hosts.map(h => {
+      const red = [...(winsBy[h]?.values() || [])].filter(w => w.alert).length;
+      return `<button class="${h === curHost ? "on" : ""}" data-host="${esc(h)}">${esc(h)}${red ? ` <span class="red">${red} red</span>` : ""}</button>`;
+    }).join("");
+    $("hHostL").hidden = !many;
+    if (many && $("hHost").options.length !== hosts.length + 1)
+      $("hHost").innerHTML = '<option value="">all</option>' + hosts.map(h => `<option>${esc(h)}</option>`).join("");
+    $("cross").hidden = !status?.correlation;
+    const noBase = status?.correlation && status.correlation.baseline == null;
+    $("cWarn").hidden = !noBase;
+    if (noBase) $("cWarn").textContent = "No known-traffic list yet, so every connection between the VMs shows as new. Run: lab flows --start … --end …";
+  }
+  function switchHost(h) {
+    if (h === curHost) return;
+    curHost = h; selected = null; pinned = false;
+    if (!histSel) $("detail").hidden = true;
+    connect();
+  }
+  $("hostTabs").addEventListener("click", e => {
+    const b = e.target.closest("button[data-host]");
+    if (b) switchHost(b.dataset.host);
+  });
+
+  // ------------------------------------------------------------- cross-host (api/campaigns, src/live/correlate.py)
+  function renderCampaigns() {
+    const rows = [...campaigns.values()].sort((a,b) => b.last_ms - a.last_ms);
+    $("cTable").innerHTML = rows.length ? `<tr><th>level</th><th>first seen (lab)</th><th>connection</th><th>events</th><th>seen by</th><th>red order</th><th>LLM</th></tr>`
+      + rows.map(c => `<tr class="${c.id === campSel ? "sel" : ""}" data-c="${esc(c.id)}">
+        <td><span class="lvl ${esc(c.level)}">${esc(c.level)}</span></td><td class="num">${dhm(c.first_ms)}</td>
+        <td class="mono">${esc(c.client)} → ${esc(c.server)} ${esc(c.proto)}/${esc(c.port)}</td><td class="num">${c.count}</td>
+        <td class="mono">${esc((c.seen_by || []).join(", "))}</td><td class="mono">${c.origin ? esc(c.origin) + " → " + esc(c.target) : "–"}</td>
+        <td>${esc(c.llm?.status ? (LLM_LABEL[c.llm.status] || c.llm.status) : "")}</td></tr>`).join("")
+      : '<tr><td class="muted">no connection between the VMs that is outside the known traffic</td></tr>';
+    const c = campaigns.get(campSel), L = c?.llm;
+    if (!c) { $("cDetail").innerHTML = ""; return; }
+    const ev = Object.entries(c.evidence || {}).map(([h, ws]) => `<div><b class="mono">${esc(h)}</b>: ${ws.length
+      ? ws.map(w => `${hm(w.start_ms)} ${w.alert ? "RED" : "green"} (score ${num(w.score, 2)}, ${w.flagged} above τ)`).join(" · ")
+      : "no window with nodes above τ in range"}</div>`).join("");
+    const llm = !L ? '<div class="muted">No LLM step: it runs on suspected and confirmed campaigns when a provider is set.</div>'
+      : L.status === "pending" ? '<h3>LLM: waiting for the model…</h3>'
+      : L.error ? `<h3>LLM: ${esc(L.status)}</h3><div class="ev">${esc(L.error)}</div>`
+      : `<h3>LLM verdict on the full flow: ${esc(L.status)}${L.confidence != null ? " · confidence " + num(L.confidence, 2) : ""}</h3>
+         <div class="muted">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · not ground truth; the campaign stands either way</div>
+         <div>${esc(L.rationale)}</div>${L.note ? `<div class="muted">${esc(L.note)}</div>` : ""}
+         ${(L.tactics || []).length ? `<div class="muted">${L.tactics.map(t => esc(t.id || "") + " " + esc(t.name || "")).join(", ")}</div>` : ""}
+         <div class="ev">${(L.evidence || []).map(esc).join("\n")}</div>
+         ${L.report ? `<div class="report">${md(L.report)}</div>` : ""}
+         ${L.report_error ? `<div class="muted">report failed: ${esc(L.report_error)}</div>` : ""}`;
+    $("cDetail").innerHTML = `<div class="llmcard ${esc(L?.status || "")}"><h3>${esc(c.client)} → ${esc(c.server)} ${esc(c.proto)}/${esc(c.port)}</h3>${ev}${llm}</div>`;
+  }
+  $("cTable").addEventListener("click", e => {
+    const tr = e.target.closest("tr[data-c]");
+    if (!tr) return;
+    campSel = campSel === tr.dataset.c ? null : tr.dataset.c;
+    renderCampaigns();
+  });
+
+  // ------------------------------------------------------------- timeline: one row per VM
   function renderTimeline() {
-    const list = [...windows.values()].sort((a,b) => a.start_ms - b.start_ms).slice(-24);
+    $("timeline").innerHTML = hosts.map(timelineRow).join("");
+    document.querySelectorAll("#timeline .timeline").forEach(t => { t.scrollLeft = t.scrollWidth; });
+  }
+  function timelineRow(h) {
+    const list = [...(winsBy[h]?.values() || [])].sort((a,b) => a.start_ms - b.start_ms).slice(-24);
     let html = list.map(w => {
       const cls = w.status === "scored" ? (w.alert ? "alert" : "scored") : w.status;
       const sub = w.status === "scored"
@@ -255,21 +362,23 @@ tr.flag td{color:var(--anom);font-weight:600}
                 : w.status === "scoring" ? "scoring…" : w.status;
       const llm = w.llm?.status;
       const badge = llm ? `<div class="badge ${esc(llm)}">${esc(LLM_LABEL[llm] || llm)}</div>` : "";
-      return `<div class="win ${cls} ${llm === "false_positive" ? "fp" : ""} ${w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
+      return `<div class="win ${cls} ${llm === "false_positive" ? "fp" : ""} ${h === curHost && w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
         <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div>${badge}</div>`;
     }).join("");
-    const ow = status?.session?.open_window, wm = status?.session?.watermark_ms;
+    const hs = (status?.hosts || []).find(x => (x.host || "") === h);
+    const ow = hs?.open_window, wm = hs?.watermark_ms;
     if (ow) {
       const pct = wm ? Math.max(0, Math.min(100, (wm - ow.start_ms) / (ow.end_ms - ow.start_ms) * 100)) : 0;
       html += `<div class="win open"><div class="fill" style="width:${pct}%"></div>
         <div class="t">${hm(ow.start_ms)}–${hm(ow.end_ms)}</div><div class="s">open · ${pct.toFixed(0)}%</div></div>`;
     }
-    $("timeline").innerHTML = html || '<div class="muted">no window closed yet</div>';
-    $("timeline").scrollLeft = $("timeline").scrollWidth;
+    return `<div class="hrow">${hosts.length > 1 ? `<div class="hlabel">${esc(h)}${hs?.model ? " · " + esc(hs.model) : ""}</div>` : ""}
+      <div class="timeline" data-host="${esc(h)}">${html || '<div class="muted">no window closed yet</div>'}</div></div>`;
   }
   $("timeline").addEventListener("click", e => {
     const el = e.target.closest("[data-w]");
     if (!el) return;
+    switchHost(el.closest("[data-host]").dataset.host);
     selected = el.dataset.w; pinned = true; histSel = null; loadDetail();
   });
 
@@ -284,6 +393,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   async function queryHistory() {
     const q = new URLSearchParams({from: fromInput($("hFrom").value), to: fromInput($("hTo").value)});
     if ($("hAlert").checked) q.set("alert", "1");
+    if ($("hHost").value) q.set("host", $("hHost").value);
     history.replaceState(null, "", "#" + q.toString());
     $("hInfo").textContent = "querying…";
     const r = await fetch("api/history?" + q.toString());
@@ -297,12 +407,12 @@ tr.flag td{color:var(--anom);font-weight:600}
   }
 
   function renderHistory() {
-    $("hTable").innerHTML = hRows.length ? `<tr><th>window (lab)</th><th>UTC</th><th>session</th><th>status</th><th>edges</th>
+    $("hTable").innerHTML = hRows.length ? `<tr><th>window (lab)</th><th>UTC</th><th>VM</th><th>session</th><th>status</th><th>edges</th>
       <th>above τ</th><th>max subgraph</th><th>cut-off</th><th>alert</th><th>LLM</th></tr>` + hRows.slice().reverse().map(w => {
         const sel = histSel && histSel.sdir === w.sdir && histSel.wid === w.window;
         return `<tr class="${w.alert ? "alert" : ""} ${sel ? "sel" : ""}" data-s="${esc(w.sdir)}" data-w="${esc(w.window)}">
         <td class="num">${dhm(w.start_ms)}–${hm(w.end_ms)}</td><td class="num">${utcHm(w.start_ms)}</td>
-        <td class="mono">${esc(w.sdir)}</td><td>${esc(w.status)}</td><td class="num">${w.edges ?? "–"}</td>
+        <td class="mono">${esc(w.host || "–")}</td><td class="mono">${esc(w.sdir)}</td><td>${esc(w.status)}</td><td class="num">${w.edges ?? "–"}</td>
         <td class="num">${w.flagged ?? "–"}</td><td class="num">${w.status === "scored" ? `${num(w.max_sg_score,2)} ${esc(w.max_level || "")}` : "–"}</td>
         <td class="num">${w.moderate_from == null ? "–" : "≥ " + num(w.moderate_from, 0)}</td><td>${w.alert ? "RED" : ""}</td>
         <td>${esc(w.llm?.status ? (LLM_LABEL[w.llm.status] || w.llm.status) : "")}</td></tr>`;
@@ -335,7 +445,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     renderTimeline();
     if (!selected && !histSel) return;
     const url = histSel ? `api/history/${encodeURIComponent(histSel.sdir)}/${encodeURIComponent(histSel.wid)}`
-                        : "api/windows/" + encodeURIComponent(selected);
+                        : "api/windows/" + encodeURIComponent(selected) + hostQ();
     const r = await fetch(url);
     if (!r.ok) return;
     detail = await r.json(); sgIdx = 0;
@@ -345,7 +455,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   function renderDetail() {
     const w = detail.window;
     $("detail").hidden = false;
-    $("dTitle").textContent = (histSel ? `History · ${histSel.sdir} · ${dhm(w.start_ms)}` : `Window ${hms(w.start_ms)}`)
+    $("dTitle").textContent = (w.host ? w.host + " · " : "") + (histSel ? `History · ${histSel.sdir} · ${dhm(w.start_ms)}` : `Window ${hms(w.start_ms)}`)
       + ` – ${hms(w.end_ms)}  (${w.status}${w.alert ? ", ALERT" : ""})`;
     const by = (o) => Object.entries(o || {}).map(([k,v]) => `${k} ${v}`).join(" · ") || "–";
     $("dTiles").innerHTML = [
@@ -502,19 +612,28 @@ tr.flag td{color:var(--anom);font-weight:600}
   // session change while this tab was disconnected, the "session" event was missed and the map is stale.
   async function resync() {
     try {
-      const list = await (await fetch("api/windows")).json();
-      const st = await (await fetch("api/status")).json();
+      const st = await (await fetch("api/status" + hostQ())).json();
       if (st?.session?.id !== status?.session?.id && !histSel) { selected = null; pinned = false; $("detail").hidden = true; }
-      windows = new Map(list.map(w => [w.window, w]));
       status = st;
+      renderHosts();
+      for (const h of hosts) {
+        const list = await (await fetch("api/windows" + hostQ(h))).json();
+        winsBy[h] = new Map(list.map(w => [w.window, w]));
+      }
+      if (status.correlation) {
+        const list = await (await fetch("api/campaigns")).json();
+        campaigns = new Map(list.map(c => [c.id, c]));
+        renderCampaigns();
+      }
     } catch (e) {}
     renderStatus();
     renderTimeline();
-    if (selected && windows.has(selected)) loadDetail();
+    if (selected && curWins().has(selected)) loadDetail();
   }
 
-  async function init() {
-    const es = new EventSource("api/stream");
+  function connect() {
+    if (es) es.close();
+    es = new EventSource("api/stream" + hostQ());
     es.onopen = resync;                       // first connect and every automatic reconnect
     es.addEventListener("status", e => {
       const st = JSON.parse(e.data);
@@ -522,21 +641,30 @@ tr.flag td{color:var(--anom);font-weight:600}
       status = st; renderStatus();
       if (changed) resync();                  // the session switched while we were not listening
     });
-    es.addEventListener("session", () => {
-      windows.clear(); selected = null;
+    es.addEventListener("session", e => {
+      const h = JSON.parse(e.data).host || "";
+      winsBy[h] = new Map();
+      if (h !== curHost) return;
+      selected = null;
       if (!histSel) { pinned = false; $("detail").hidden = true; }   // a window opened from History stays open
     });
     es.addEventListener("window", e => {
-      const w = JSON.parse(e.data).window;
-      windows.set(w.window, w);
+      const ev = JSON.parse(e.data), w = ev.window, h = ev.host || "";
+      (winsBy[h] ??= new Map()).set(w.window, w);
+      if (h !== curHost) { renderHosts(); renderTimeline(); return; }
       // follow the newest scored window unless the user clicked one
       if (!pinned && w.status === "scored") selected = w.window;
       if (w.window === selected && (w.status === "scored" || w.status === "error")) loadDetail();
       else renderTimeline();
     });
+    es.addEventListener("campaign", e => {
+      const c = JSON.parse(e.data).campaign;
+      campaigns.set(c.id, c);
+      renderCampaigns();
+    });
     es.onerror = () => { $("conn").className = "dot off"; $("connTxt").textContent = "UI lost the server, retrying…"; };
   }
-  init();
+  connect();
   initHistory();
 })();
 </script>
