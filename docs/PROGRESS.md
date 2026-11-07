@@ -3,6 +3,29 @@
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 
+## 2026-11-07 exp09-ws1 trained for `ws-etw-1`: PROVISIONAL, not promoted (verified on the trainer)
+
+One model per host (user, 2026-11-07): `ws-etw-0` keeps exp08, `ws-etw-1` gets its own. Experiment
+`range-20261106T170000Z-ws-etw-1`, 11-06 17:00Z to 11-07 03:00Z, 298 windows, 20 excluded (the two 6-h rotation canaries:
+`src/artifacts/exclusions/ws-etw-1-20261107.json`). Label source: operator assertion, backed by a scan of all 495 process
+starts: no RDP, WinRM, installer or choco; the 19:05Z kfile burst is Defender (`MpCmdRun`), kept as normal OS work.
+Settings as exp08 (`--layers 2 --val-windows 60 --tnr-tolerance 0.01`), 3 seeds, converter match.
+
+| Type | n_train (exp08) | best_ep seed 360 / 361 / 362 | τ seed 360 / 361 / 362 | val_fpr seed 360 |
+|---|---|---|---|---|
+| file | 13,809 (147,021) | 99 / 99 / 99 | 0.008 / 0.196 / -0.001 | 0.0020 |
+| process | 1,692 (15,970) | 16 / 99 / 21 | 0.277 / -0.081 / -0.055 | 0.0089 |
+| net | 374 (5,107) | 13 / 4 / 3 | -0.036 / 1.196 / 2.187 | 0.0225 |
+
+FILE is fine. PROCESS and NET stop early and NET's τ is seed-dependent, so this does not meet exp08's standard (best_ep 99 on all
+types, val_fpr 0). `--patience 20` gave identical results, so it is not an early-stop setting. Cause: the 2 NET outliers
+(+3.47, +2.25; train max -0.00) are one benign job, `mousocoreworker.exe` -> `57.154.63.210:443` at 01:20Z, which appears only in
+the validation tail. 9 of 17 validation NET peers are absent from training. The baseline is too short; do not tune around it.
+
+Next: retrain on about 3 days. Loki keeps 72 h, so pull before the 11-06 17:00Z data expires: about 11-09 16:00Z, new
+exclusions for later rotations. Until then exp09-ws1 can stand in for building Part B; expect false alarms on `ws-etw-1`.
+`lineage.json` `hosts` is null for single-host builds: Part B's `lab promote --host` guard needs that recorded.
+
 ## 2026-11-07 trainer resized, monitoring live and protected from training (verified on the trainer)
 
 Trainer resized by the user to 8 cores / 12 GB (`main.tf`, applied; the VM rebooted itself, about 09:42 +07) with 50 GiB of swap.
