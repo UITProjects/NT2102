@@ -52,7 +52,8 @@
     src: compose.yaml.j2
     dest: "{{ loki_stack_dir }}/compose.yaml"
     mode: "0600"            # holds the Grafana admin password
-  notify: Restart lokistack
+  # no notify: "Start Loki + Grafana" below recreates only the service that changed. The handler would restart Loki too,
+  # and that can cost live windows (D8).
 
 - name: Start Loki + Grafana
   community.docker.docker_compose_v2:

@@ -1,0 +1,102 @@
+---
+# Trainer CPU / memory graphs: node-exporter (whole VM) + cAdvisor (per service, incl. ocr-live.service) -> Prometheus
+# -> the Grafana the ubuntu_loki role already runs. Run after ubuntu_loki: it needs Docker and Grafana's folders.
+#
+# Own compose project on purpose: the `Restart lokistack` handler restarts Loki too, and a Loki restart can cost live
+# windows (DEVIATIONS D8). Grafana picks these files up from its existing provisioning mount, so only Grafana restarts.
+# Host networking like lokistack, but every service binds 127.0.0.1: no ufw rule, nothing reachable off the VM.
+
+# ---------- resource guard: training must not starve monitoring ----------
+# Everything started over SSH (lab, raw pipeline scripts, uv sync, Ansible tasks) runs in user.slice; ocr-live and
+# Docker run in system.slice. Capping user.slice therefore covers training however it is launched, with no code change.
+# memory.low only works if every ancestor has it too, and this mount has no memory_recursiveprot, so system.slice
+# needs the sum of the containers' reservations or their mem_reservation does nothing.
+- name: Drop-in folders
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.d"
+    state: directory
+    mode: "0755"
+  loop: [user.slice, system.slice]
+
+- name: Cap everything run over SSH (training included)
+  ansible.builtin.template:
+    src: user-slice-guard.conf.j2
+    dest: /etc/systemd/system/user.slice.d/50-nt2102-training-guard.conf
+    mode: "0644"
+  notify: Reload slices
+
+- name: Let the monitoring reservations take effect
+  ansible.builtin.template:
+    src: system-slice-reserve.conf.j2
+    dest: /etc/systemd/system/system.slice.d/50-nt2102-monitoring-reserve.conf
+    mode: "0644"
+  notify: Reload slices
+
+- name: Stack folder
+  ansible.builtin.file:
+    path: "{{ monitoring_stack_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Prometheus config
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_stack_dir }}/prometheus.yml"
+    mode: "0644"
+    # promtool checks the candidate before it replaces the live file (a bad key would crash-loop Prometheus)
+    validate: docker run --rm --user root --entrypoint /bin/promtool -v %s:/tmp/check.yml:ro {{ prometheus_image }} check config /tmp/check.yml
+  notify: Restart monitoring
+
+- name: Compose file
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ monitoring_stack_dir }}/compose.yaml"
+    mode: "0644"
+  notify: Restart monitoring
+
+- name: Start Prometheus + exporters
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_stack_dir }}"
+    state: present
+    wait: true
+    wait_timeout: 120
+
+- name: Grafana dashboards folder
+  ansible.builtin.file:
+    path: "{{ loki_stack_dir }}/grafana/provisioning/dashboards"
+    state: directory
+    mode: "0755"
+
+- name: Grafana data source (Prometheus on this host)
+  ansible.builtin.template:
+    src: grafana-datasource.yaml.j2
+    dest: "{{ loki_stack_dir }}/grafana/provisioning/datasources/prometheus.yaml"
+    mode: "0644"
+  notify: Restart grafana only
+
+- name: Grafana dashboard provider + "Trainer resources" dashboard
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ loki_stack_dir }}/grafana/provisioning/dashboards/{{ item }}"
+    mode: "0644"
+  loop: [provider.yaml, trainer-resources.json]
+  notify: Restart grafana only
+
+- name: Flush the restart handlers now (the checks below need the new config live)
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Prometheus /-/ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/-/ready"
+  register: prom_ready
+  until: prom_ready.status == 200
+  retries: 30
+  delay: 2
+
+- name: Wait for Grafana /api/health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+  register: graf_ready
+  until: graf_ready.status == 200
+  retries: 30
+  delay: 3

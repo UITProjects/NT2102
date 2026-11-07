@@ -1,7 +1,26 @@
-# PROGRESS (status as of 2026-11-04)
+# PROGRESS (status as of 2026-11-07)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
+
+## 2026-11-07 trainer resized, monitoring live and protected from training (verified on the trainer)
+
+Trainer resized by the user to 8 cores / 12 GB (`main.tf`, applied; the VM rebooted itself, about 09:42 +07) with 50 GiB of swap.
+Role `ubuntu_monitoring`: Prometheus, node-exporter and cAdvisor in their own compose project, plus the Grafana dashboard
+**Trainer resources**. Checked: 3 targets up, every panel query returned data, re-run `changed=0`, ports 9090/9100/8088
+closed from the workstation.
+
+Guard (`src/ansible/README.md`): SSH work capped in `user.slice` (50 % RAM, 40 GiB swap, 7 of 8 cores); monitoring has 864 MiB
+reserved, no swap, OOM priority -500. Training peak measured at 2,524 MiB (3-day range, 1 seed, 3 epochs).
+Stress test from an SSH session (9 GiB allocation + 8 CPU burners, about 48 s): `user.slice` held at 5.4 GB, 3.9 GB went to
+swap, Grafana and Prometheus answered in under 0.03 s, no missed scrape, 0 monitoring swap, 0 OOM kills, `ocr-live` 200.
+
+Not tested: the kill at the swap limit, RAM pressure across the whole VM (4.8 GB stayed available, so the reservation never
+had to act), a sustained load, and whether monitoring `swap.max` = 0 survives a reboot. Grafana first came up with `max` despite
+a correct Docker config (cause unknown; a recreate fixed it).
+
+Next (approved plan): one model per host (`ws-etw-0` keeps exp08, new model for `ws-etw-1`), a cross-host correlation
+stage, an LLM full-flow report, `lab hosts` to switch one-VM / two-VM, and the per-host "trained for" line in the UI.
 
 ## 2026-11-06 exp08 live alert count, first 24 h (verified in `history.jsonl`)
 

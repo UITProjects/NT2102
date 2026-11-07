@@ -178,7 +178,7 @@ history of earlier progress) and, if relevant, this section.
 ## 9. Decisions already made (with rationale)
 
 - Environment: Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers. Docker is
-  used only on the Ubuntu trainer for Loki + Grafana (installed by Ansible). No RDF / GraphDB (user,
+  used only on the Ubuntu trainer for Loki + Grafana and the Prometheus monitoring stack (installed by Ansible). No RDF / GraphDB (user,
   2026-10-17): edges stay CSV and Alg. 1 runs in memory.
 - Log transport (user, 2026-10-26, superseding the 2026-10-17 Alloy decision): our collector
   (`src/etw-python`, `etwcollect`) pushes its SilkETW-format JSON lines to Loki (Docker, host network) on
@@ -239,6 +239,9 @@ history of earlier progress) and, if relevant, this section.
   shipper uid excluded) + `linux_auditship` (`src/audit-python` rsynced from the control node, systemd `auditship`
   → Loki `job="auditd"`; raw logs only, D11). (The `win_benign` role and `src/scripts/` capture scripts were removed
   2026-10-31: benign = idle pulled from Loki.)
+- Trainer monitoring: role `ubuntu_monitoring` (tag `monitoring`): Prometheus + node-exporter + cAdvisor in `/opt/monitoring`,
+  127.0.0.1 only, Grafana dashboard "Trainer resources". The same role caps everything run over SSH, training included
+  (`user.slice`, 50 % RAM), and reserves resources for monitoring; 50 GiB swap in `ubuntu_base` (`src/ansible/README.md`).
 - Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw-0 and ws-etw-1 from the Server 2022
   eval ISO with manual install, ubuntu-trainer and nt2102-vpn from a cloud image + cloud-init, per-VM
   firewall rules prefixed `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`; `proxmox-firewall.yml`

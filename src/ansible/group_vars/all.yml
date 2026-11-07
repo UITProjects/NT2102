@@ -23,6 +23,37 @@ loki_retention: "72h"         # 3 d (user, 2026-10-25: always-on capture ~2 GB/h
 loki_image: "grafana/loki:3.7.8"
 grafana_image: "grafana/grafana:13.2.2"
 loki_stack_dir: "/opt/lokistack"
+# Trainer resource monitoring (ubuntu_monitoring role): own compose project, so a change here never restarts Loki.
+# All three listen on 127.0.0.1 only (no ufw rule); Grafana reads Prometheus and shows the "Trainer resources" dashboard.
+prometheus_image: "prom/prometheus:v3.15.1"
+node_exporter_image: "prom/node-exporter:v1.12.1"
+cadvisor_image: "ghcr.io/google/cadvisor:v0.60.6"   # gcr.io stopped at older tags
+monitoring_stack_dir: "/opt/monitoring"
+prometheus_port: 9090
+node_exporter_port: 9100
+cadvisor_port: 8088           # cAdvisor defaults to 8080; moved off that common port
+prometheus_scrape_interval: "15s"
+prometheus_retention_time: "15d"
+prometheus_retention_size: "2GB"
+# Resources kept for monitoring, so a training run cannot take them (ubuntu_monitoring role, README "Trainer monitoring").
+# reservation = RAM the kernel will not reclaim from it (memory.low), limit = the most it may ever use.
+monitoring_mem:
+  prometheus:    { reservation: 256, limit: 1024 }   # MiB
+  cadvisor:      { reservation: 64,  limit: 256 }
+  node_exporter: { reservation: 32,  limit: 128 }
+  grafana:       { reservation: 512, limit: 1024 }
+monitoring_cpu_shares: 8192   # Docker's 1024 maps BELOW an unset service's weight; this one maps well above it
+monitoring_oom_score_adj: -500   # killed last; ocr-live is +500 (it restarts cleanly)
+# Cap on everything run over SSH, training included. A share of real RAM, so it follows a VM resize after an Ansible
+# re-run. 2026-11-07: a 3-day training run peaked at 2,524 MiB (1 seed, 3 epochs); 50 % of 12 GB is about 2.3x that.
+training_memory_high: "{{ (ansible_memtotal_mb * 0.45) | int }}"   # MiB: slowed down and pushed to swap from here
+training_memory_max: "{{ (ansible_memtotal_mb * 0.50) | int }}"    # MiB: RAM it can never pass
+training_swap_max_gib: 40     # of swap_size_gib: a runaway job cannot take all of it from the live server
+training_cpu_quota: "{{ (ansible_processor_vcpus - 1) * 100 }}%"   # one core always stays free
+# Swap on the trainer (user, 2026-11-07: at least 50 GB). Monitoring containers are kept out of it (memswap_limit).
+swap_size_gib: 50
+swap_file: /swapfile
+vm_swappiness: 10             # prefer dropping page cache; swap is the safety net, not working memory
 # Inventory supplies: admin_cidr (who may open Grafana, e.g. your workstation), grafana_admin_password
 # (local inventory for the lab; vault for cloud). Loki itself only accepts the Windows host's private_ip.
 

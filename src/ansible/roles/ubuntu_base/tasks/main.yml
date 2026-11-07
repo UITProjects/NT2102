@@ -45,6 +45,58 @@
   when: not uv_bin.stat.exists
   changed_when: true
 
+# ---------- swap (user, 2026-11-07) ----------
+- name: Check for the swap file
+  ansible.builtin.stat:
+    path: "{{ swap_file }}"
+  register: swap_stat
+
+- name: Refuse a swap file that would fill the disk (cloud VMs may have small disks)
+  ansible.builtin.assert:
+    that: (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_available > (swap_size_gib + 40) * 1073741824
+    fail_msg: "not enough free disk for {{ swap_size_gib }} GiB of swap plus 40 GiB of room: lower swap_size_gib"
+  when: not swap_stat.stat.exists
+
+- name: Create the swap file
+  ansible.builtin.command: "fallocate -l {{ swap_size_gib }}G {{ swap_file }}"
+  args:
+    creates: "{{ swap_file }}"
+  register: swap_created
+
+- name: Swap file is readable by root only
+  ansible.builtin.file:
+    path: "{{ swap_file }}"
+    mode: "0600"
+
+- name: Format the swap file
+  ansible.builtin.command: "mkswap {{ swap_file }}"
+  when: swap_created is changed
+
+- name: Swap is on at boot
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "{{ swap_file }} none swap sw 0 0"
+
+- name: Which swap is active
+  ansible.builtin.command: swapon --noheadings --show=NAME
+  register: swap_active
+  changed_when: false
+
+- name: Turn the swap file on
+  ansible.builtin.command: "swapon {{ swap_file }}"
+  when: swap_file not in swap_active.stdout_lines
+
+- name: Swappiness, kept across reboots
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/60-nt2102-swap.conf
+    content: "vm.swappiness = {{ vm_swappiness }}\n"
+    mode: "0644"
+  register: swappiness_conf
+
+- name: Apply swappiness now
+  ansible.builtin.command: "sysctl -w vm.swappiness={{ vm_swappiness }}"
+  when: swappiness_conf is changed
+
 - name: Allow the live-server port if ufw is managing the firewall
   community.general.ufw:
     rule: allow
