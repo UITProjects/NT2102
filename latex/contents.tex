@@ -533,7 +533,7 @@ Lưu ý: bộ điều tra luôn giả định subgraph là một phần của t�
 \subsection{Hạ tầng lab (Proxmox)}
 \label{sec:infra}
 
-Phòng lab chạy trên một hypervisor Proxmox ở nhà, dựng bằng Terraform + Ansible (cấu hình theo inventory, có thể chuyển lên cloud). Hai VNet SDN tách biệt: \texttt{it2102} (10.21.3.0/24) chứa host nạn nhân và máy xử lý, \texttt{it2102k} (10.21.4.0/24) chứa máy tấn công. Đồ án chấm điểm \emph{một} máy Windows (\texttt{ws-etw-0}, mô hình exp08); máy Windows thứ hai (\texttt{ws-etw-1}) và lớp correlation chỉ là nice-to-have (Phụ lục~\ref{sec:appendix-dev}, D12/D13):
+Phòng lab chạy trên một hypervisor Proxmox, dựng bằng Terraform + Ansible (cấu hình theo inventory, có thể chuyển lên cloud). Hai VNet SDN tách biệt: \texttt{it2102} (10.21.3.0/24) chứa host nạn nhân và máy xử lý, \texttt{it2102k} (10.21.4.0/24) chứa máy tấn công. Đồ án chấm điểm \emph{một} máy Windows (\texttt{ws-etw-0}, mô hình exp08); máy Windows thứ hai (\texttt{ws-etw-1}) và lớp correlation chỉ là nice-to-have (Phụ lục~\ref{sec:appendix-dev}, D12/D13):
 
 \begin{table}[H]
 \centering

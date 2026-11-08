@@ -122,12 +122,13 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   only. Older data says `ws-etw`: Loki lines from before the rename keep that label.
 - **Deliverables (slides + demo) commit to ONE Windows VM** (`ws-etw-0`, exp08): the recorded demo and the deck show a single host.
   The second VM (`ws-etw-1`) and cross-host correlation are **nice-to-have**, shown only as future work unless there is time (user, 2026-11-08).
-- The Slidev deck (`presentation/`) was redesigned to the user's structure on 2026-11-08 (committed).
+- The Slidev deck (`presentation/`) was redesigned to the user's structure on 2026-11-08 (committed), then **compacted to 13 slides,
+  keywords only, appendix, results and limits slides removed; demo goes straight to thanks** (user, 2026-11-08): details live in the report (`latex/`) and Q&A in `note.txt`.
 - The LaTeX report (`latex/contents.tex`) was **restructured to the deck's 5-part shape and content-aligned on 2026-11-08**
   (§1 Giới thiệu → §2 Ý tưởng cốt lõi → §3 Demo → §4 Giới hạn & thách thức → §5 Kết luận, detailed deviations in an Appendix):
   one Windows VM (`ws-etw-0`, exp08, 2 RGCN layers), benign = idle 3-day, Moderate from 10 (paper scale), exp08 results filled
   (R2 attack windows 70.17/54.42 Moderate, LLM `attack` 0.85/0.9; 288 windows / 7 alerts / 3 benign FP), D1–D13. Builds clean
-  (`latexmk -pdf main.tex`, 21 pages). Only demo screenshots + LLM-provider name left as `\todoval`. **Not committed** (user controls commits).
+  (`latexmk -pdf main.tex`, 21 pages). Only demo screenshots + LLM-provider name left as `\todoval`. Committed (PR #15).
 - **Next action: nice-to-have — verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). Then concepts 2–4.
 - SG-Det uses the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1 (D8). `ocr-live` keeps a persistent, range-queryable
   window history (`src/live/history.py`).
@@ -224,10 +225,12 @@ history of earlier progress) and, if relevant, this section.
     `latexmk -pdf main.tex`).
   - Slides: `presentation/` (Slidev; published to GitHub Pages on push to `main` by `.github/workflows/slides.yml`, images in `images/` referenced as `./images/...` so the `/NT2102/` base applies; `slides.md`; Vue diagrams in `components/`: `MessagePassing`,
     `StackedLayers`, `RgcnLayer` (one-layer animation), `HiddenLayers`, `Hypersphere`, `OurPipeline`, `Windows`, `AttackGraph`,
-    `BehaviorCounts` (graph + exact out_/in_ feature table), `LabInfra`, `KillChain`; Q&A backup in `note.txt`). `npm run dev` /
-    `npx slidev build`; check layout with `npx slidev export --format png [--range N] [--with-clicks]`. Max 30 slides. Deck redesigned
-    2026-11-08 (user structure: intro → core concept → demo → limits → thanks; one Windows VM; no source-tag chips; ≤3 bullets/group;
-    video placeholder on the "3.2 Video demo" slide for the user to fill). Slides cross-reference by name ("slide ② Kết quả"), not number.
+    `BehaviorCounts` (graph + exact out_/in_ feature table), `LabInfra`, `KillChain`; Q&A backup in `note.txt`). `StackedLayers`, `HiddenLayers` and `Windows` are kept
+    but unused since the 15-slide cut. `npm run dev` /
+    `npx slidev build`; check layout with `npx slidev export --format png [--range N] [--with-clicks]`. Max 15 slides (currently 13), keywords only;
+    explanations go to the report and speaker notes. Deck redesigned
+    2026-11-08 (user structure: intro → core concept → demo → thanks; results + limits live in the report; one Windows VM; no source-tag chips; ≤3 bullets/group;
+    video placeholder on the "3 · Video demo" slide for the user to fill). Slides cross-reference by name ("slide ② Behavior feature"), not number.
 - Root shortcuts: `selftest.sh`, `serve.sh`, `replay.sh`, `rejudge.sh` (wrap the documented commands).
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.
