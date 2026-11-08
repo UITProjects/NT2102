@@ -11,8 +11,12 @@ Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 - **Slides (`presentation/`) redesigned to the user's structure — DONE and committed** (intro → core concept → demo → limits → thanks;
   one Windows VM; source-tag chips removed; ≤3 bullets/group; `BehaviorCounts` now shows the exact out_/in_ feature columns;
   video-demo placeholder for the user to fill). New components: `BehaviorCounts`, `LabInfra`, `KillChain`.
-- **NEXT: update the LaTeX report (`latex/`) to match the redesigned deck** — same structure, scope (one VM), terms and honest claims.
-- Nice-to-have, after that: **verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`).
+- **LaTeX report (`latex/contents.tex`) restructured to the deck's 5 parts and content-aligned — DONE, NOT committed** (2026-11-08):
+  §1 Giới thiệu → §2 Ý tưởng cốt lõi → §3 Demo (infra/data-path/attack/results) → §4 Giới hạn & thách thức → §5 Kết luận, detailed
+  deviations in Appendix A. One VM (`ws-etw-0`, exp08, 2 layers), benign = idle 3-day, Moderate from 10, exp08 results filled (R2
+  70.17/54.42 Moderate, LLM `attack` 0.85/0.9; 288 win / 7 alerts / 3 benign FP), D1–D13. Builds clean (`latexmk -pdf main.tex`, 21 pp).
+  Remaining `\todoval`: demo screenshots + LLM-provider name only. (`report.docx` untracked, left alone.)
+- **NEXT (nice-to-have): verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`).
   If pursued, retrain data must be pulled by about 2026-11-09 16:00Z before the 11-06 17:00Z data leaves Loki. Steps: `docs/notes/training-runbook.md`.
 
 ## 2026-11-07 one model per host + cross-host correlation: built, NOT deployed (selftests + UI check only)
