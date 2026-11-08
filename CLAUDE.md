@@ -120,7 +120,12 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   idle data). `lab hosts` switches one-VM / two-VM. A correlation stage links hosts by code and the LLM explains the full flow (D13).
   Built on branch `trainer-monitoring-guard`, **not deployed**, shown on synthetic flows only. Until deployed, `ocr-live` scores `ws-etw-0`
   only. Older data says `ws-etw`: Loki lines from before the rename keep that label.
-- **Next: verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). After that: concepts 2–4.
+- **Deliverables (slides + demo) commit to ONE Windows VM** (`ws-etw-0`, exp08): the recorded demo and the deck show a single host.
+  The second VM (`ws-etw-1`) and cross-host correlation are **nice-to-have**, shown only as future work unless there is time (user, 2026-11-08).
+- The Slidev deck (`presentation/`) was redesigned to the user's structure on 2026-11-08 (committed).
+- **Next action (user, 2026-11-08): bring the LaTeX report (`latex/`) in line with the redesigned deck** — same structure/scope
+  (one Windows VM, OCR-APT 5 steps, exact out_/in_ behavior features, exp08 demo results, honest limits), consistent terms and claims.
+- After that, nice-to-have: **verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). Then concepts 2–4.
 - SG-Det uses the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1 (D8). `ocr-live` keeps a persistent, range-queryable
   window history (`src/live/history.py`).
 - Attack target: DVWA on XAMPP on `ws-etw-0` (user, 2026-10-19), its OS-command-injection page (`/vulnerabilities/exec/`) as the RCE sink,
@@ -214,11 +219,12 @@ history of earlier progress) and, if relevant, this section.
 - Deliverables (Vietnamese text, technical terms kept in English):
   - Report: `latex/` (`main.tex` title page + preamble, `contents.tex` body, `ref.bib`; build with
     `latexmk -pdf main.tex`).
-  - Slides: `presentation/` (Slidev; published to GitHub Pages on push to `main` by `.github/workflows/slides.yml`, images in `images/` referenced as `./images/...` so the `/NT2102/` base applies; `slides.md`; Vue diagrams in `components/`: `RgcnLayer` one-layer
-    animation, `HiddenLayers`, `Hypersphere`, `OurPipeline`, `Windows`, `AttackGraph`; Q&A backup in
-    `note.txt`). `npm run dev` / `npx slidev build`; check layout with
-    `npx slidev export --format png [--range N] [--with-clicks]`. Max 30 slides; the text cites slide
-    numbers ("slide 19"), so re-check them whenever slides are added or removed.
+  - Slides: `presentation/` (Slidev; published to GitHub Pages on push to `main` by `.github/workflows/slides.yml`, images in `images/` referenced as `./images/...` so the `/NT2102/` base applies; `slides.md`; Vue diagrams in `components/`: `MessagePassing`,
+    `StackedLayers`, `RgcnLayer` (one-layer animation), `HiddenLayers`, `Hypersphere`, `OurPipeline`, `Windows`, `AttackGraph`,
+    `BehaviorCounts` (graph + exact out_/in_ feature table), `LabInfra`, `KillChain`; Q&A backup in `note.txt`). `npm run dev` /
+    `npx slidev build`; check layout with `npx slidev export --format png [--range N] [--with-clicks]`. Max 30 slides. Deck redesigned
+    2026-11-08 (user structure: intro → core concept → demo → limits → thanks; one Windows VM; no source-tag chips; ≤3 bullets/group;
+    video placeholder on the "3.2 Video demo" slide for the user to fill). Slides cross-reference by name ("slide ② Kết quả"), not number.
 - Root shortcuts: `selftest.sh`, `serve.sh`, `replay.sh`, `rejudge.sh` (wrap the documented commands).
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.

@@ -64,17 +64,6 @@
   border-radius: 50%; background: #1e3a8a; color: #fff; font-size: 0.72rem; font-weight: 700;
 }
 
-/* Live demo slides. */
-.demo-badge {
-  display: inline-block; padding: 0.25rem 0.9rem; border-radius: 999px;
-  background: #dc2626; color: #fff; font-weight: 700; letter-spacing: 0.08em; font-size: 0.85rem;
-}
-.demo-badge { animation: demo-pulse 1.6s ease-in-out infinite; }
-@keyframes demo-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
-  50% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-}
-
 /* Click reveals: fade + rise instead of a plain opacity switch. */
 .slidev-vclick-target {
   transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);

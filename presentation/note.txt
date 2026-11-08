@@ -70,12 +70,60 @@ process -> file -> process -> mạng.
 
 Q7. Demo đã chạy thật chưa? Kết quả thế nào?
 ---------------------------------------------
-Rồi (session live-20261031T134030Z, mô hình exp05). Benign (desktop idle) các window XANH
-(subgraph ≤ Minor 8.0, không alert). Tấn công DVWA→RCE từ Kali: window đó ĐỎ — subgraph 106.96
-(Significant, alert), cờ đúng IP máy tấn công 10.21.2.30:8080, downloaded_tool.bin (T1105) và
-powershell của RCE; LLM phân loại "attack" (0.85) + báo cáo Alg. 2. rejudge.sh tái hiện lại offline.
+Rồi, trên ws-etw-0 với mô hình exp08 (baseline idle 3 ngày, RGCN 2 lớp). Lần chạy DVWA→RCE live ngày
+06-11, window 17:10Z: ĐỎ, điểm subgraph 70.17 (Moderate), 89 node bị gắn cờ (47 process / 36 file /
+6 net), LLM phân loại "attack" (conf 0.85), tactic Execution/Discovery/C2/Lateral/Exfiltration; subgraph
+giữ đúng C2 10.21.4.30:8080, tool đã chạy và dump DB. Idle window quanh đó XANH. rejudge.sh tái hiện offline.
+Một lần chạy khác (15:35Z, có thêm T1070 xoá log): ĐỎ, sg 54.42, LLM "attack" 0.9.
+
+Trung thực về false positive: trong 24h đầu của exp08 có 288 window, 7 alert — 4 là 3 lần tấn công thật,
+3 là false alarm benign (đều bị LLM gắn false_positive, xảy ra khi có hoạt động Ansible/git/choco trên VM).
+Nguồn nhãn: thời điểm nhóm tự chạy tấn công + kết luận LLM, KHÔNG phải ground truth → đây là counts, không
+phải tỉ lệ thống kê. (Số liệu: docs/PROGRESS.md.)
 
 Vì sao benign = idle? Nếu benign có sẵn các lệnh discovery (whoami/net/systeminfo/schtasks) — như
 workload script cũ — thì mô hình học chúng là "bình thường" và bỏ sót tấn công (exp04). Nền idle giữ
 chuỗi living-off-the-land của tấn công nằm ngoài phân phối benign nên tách rõ. Đánh đổi: mô hình idle
-mỏng (net val_fpr=1.0), nên giữ các window benign ở trạng thái idle khi demo.
+mỏng, nên giữ các window benign ở trạng thái idle khi demo.
+
+
+Q8. Vì sao các hệ thống hiện có chưa đủ? (slide "Bài toán")
+-----------------------------------------------------------
+[PAPER §1–2] năm hạn chế, và OCR-APT trả lời từng cái:
+- Luật / chữ ký (signature): chỉ thấy cái đã biết -> bỏ sót kỹ thuật mới. OCR-APT học bất thường, không luật.
+- Cảnh báo cả đồ thị hoặc cả window: biết "có gì đó lạ" nhưng quá thô, nhà phân tích không biết nhìn đâu.
+- Cảnh báo từng node riêng lẻ: quá vụn, mỗi node lạ một cảnh báo -> ngập false positive.
+  OCR-APT đứng giữa hai cái trên: gom node bất thường thành SUBGRAPH — một "câu chuyện" vừa đủ để điều tra.
+- Dựa vào tên file / IP / đường dẫn: học chi tiết bề mặt, kẻ tấn công đổi tên là thoát. OCR-APT chỉ dùng
+  behavior feature (đếm hành động), không đưa tên/IP vào mô hình.
+- Bỏ qua loại edge: coi "đọc" và "ghi" như nhau. OCR-APT dùng RGCN, mỗi loại edge một trọng số W_r riêng.
+
+
+Q-L2. Ví dụ số: chuẩn hoá L2 và min-max (slide behavior feature)
+----------------------------------------------------------------
+L2 (chia hàng cho độ dài Euclid ‖a‖ = √(a1² + … + a12²)) — giữ TỈ LỆ giữa các action, bỏ độ bận:
+- chrome: counts (write 1, send 2, recv 3, start_in 1, load 1) -> ‖a‖ = √(1+4+9+1+1) = √16 = 4
+  -> out_recv = 3/4 = 0.75, out_send = 2/4 = 0.5, out_write = 1/4 = 0.25.
+- Browser bận: send 300, recv 400 -> ‖a‖ = 500 -> (0.6, 0.8). Lúc rảnh: 3, 4 -> ‖a‖ = 5 -> (0.6, 0.8):
+  CÙNG hành vi, CÙNG feature, dù khối lượng khác 100 lần. Đó là ý nghĩa "bỏ độ bận, giữ tỉ lệ".
+
+Min-max cho 3 cột thời gian nghỉ ((x − min)/(max − min), min/max lấy từ scaler fit trên TRAIN):
+- Train max nghỉ = 290 s (bằng độ dài window trừ chút). Một node nghỉ 145 s -> 145/290 = 0.5.
+- Node nghỉ 300 s lúc test/live -> 300/290 = 1.03, VƯỢT [0,1] — bình thường, vì thang cố định theo train
+  (DEVIATIONS D3). rundll32 im 214 s giữa hai lần hoạt động -> cột max nghỉ ≈ 0.99, gần kịch trần.
+
+
+Q9. Lệnh chạy demo (nếu cần trình diễn trực tiếp thay vì video)
+--------------------------------------------------------------
+ws-etw-0 (PowerShell): live capture luôn chạy sẵn như SYSTEM task; etwcollect tự đẩy về Loki. Chỉ cần
+một session sạch:
+  C:\scripts\start-live.ps1 -Rotate
+  # Benign = IDLE: để desktop không thao tác (baseline idle, lấy trực tiếp từ Loki)
+
+ubuntu-trainer (bash): xem mô hình đang dùng + mở giao diện demo:
+  lab current                     # mô hình, scaler, converter_check
+  # Giao diện web:  http://<trainer>:8000/     Grafana (log thô):  http://<trainer>:3000/
+
+Tấn công từ Kali:
+  python tools/launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180
+Tái hiện offline một session đã lưu:  ./rejudge.sh <session-id>
