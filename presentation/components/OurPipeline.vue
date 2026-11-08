@@ -16,7 +16,7 @@ const boxes: B[] = [
   { id: 's1', x: 7.0, y: 0, c: 'prep', t: 'Graph + window 5 phút', s: 'lược đồ NODLINK W10', n: 1 },
   { id: 's2', x: 10.4, y: 0, c: 'prep', t: '15 behavior feature', s: 'thang đo của tập train', n: 2 },
   { id: 's3', x: 10.4, y: -1.8, c: 'det', t: 'OCRGCN theo loại node', s: 'chấm điểm từng node', n: 3 },
-  { id: 's4', x: 7.0, y: -1.8, c: 'det', t: 'Alg. 1 + lọc điểm', s: 'subgraph ≥ 30?', n: 4 },
+  { id: 's4', x: 7.0, y: -1.8, c: 'det', t: 'Alg. 1 + lọc điểm', s: 'subgraph ≥ 10?', n: 4 },
   { id: 's5', x: 3.6, y: -1.8, c: 'inv', t: 'LLM: phân loại + báo cáo', s: '(tuỳ chọn)', n: 5 },
   { id: 'ui', x: 7.0, y: -3.6, c: 'out', t: 'Giao diện web', s: 'window xanh / đỏ' },
 ]
@@ -26,7 +26,7 @@ const cy = (id: string) => Y(at[id].y)
 
 // Arrows between box borders (straight segments, as in the TikZ figure).
 const arrows = [
-  { d: `M ${cx('etw') + W / 2} ${cy('etw')} H ${cx('loki') - W / 2}`, label: 'HTTP push', lx: X(3.6) - W / 2 - 14, ly: 44 },
+  { d: `M ${cx('etw') + W / 2} ${cy('etw')} H ${cx('loki') - W / 2}`, label: 'push', lx: X(3.6) - W / 2 - 14, ly: 44 },
   { d: `M ${cx('loki') + W / 2} ${cy('loki')} H ${cx('s1') - W / 2}` },
   { d: `M ${cx('s1') + W / 2} ${cy('s1')} H ${cx('s2') - W / 2}` },
   { d: `M ${cx('s2')} ${cy('s2') + H / 2} V ${cy('s3') - H / 2}` },
@@ -39,7 +39,7 @@ const arrows = [
 const flow = ['etw', 'loki', 's1', 's2', 's3', 's4', 'ui'].map(id => `${cx(id)},${cy(id)}`).join(' L ')
 
 const frames = [
-  { l: X(0) - W / 2 - 10, t: Y(0) - H / 2 - 22, r: X(0) + W / 2 + 10, b: Y(0) + H / 2 + 10, label: 'ws-etw (Windows)' },
+  { l: X(0) - W / 2 - 10, t: Y(0) - H / 2 - 22, r: X(0) + W / 2 + 10, b: Y(0) + H / 2 + 10, label: 'ws-etw-0 (Windows)' },
   { l: X(3.6) - W / 2 - 10, t: Y(0) - H / 2 - 22, r: X(10.4) + W / 2 + 10, b: Y(-3.6) + H / 2 + 10, label: 'ubuntu-trainer' },
 ]
 </script>

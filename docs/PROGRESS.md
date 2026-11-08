@@ -8,10 +8,11 @@ Branch: **`main`** (retrain merged, PR #9). All work on the Proxmox VMs.
 **Deliverables (slides + recorded demo) commit to ONE Windows VM** (`ws-etw-0`, exp08). The second VM and cross-host correlation are
 **nice-to-have**, future-work only unless time allows (user, 2026-11-08).
 
-- **Slides (`presentation/`) redesigned to the user's structure — DONE and committed** (intro → core concept → demo → limits → thanks;
-  one Windows VM; source-tag chips removed; ≤3 bullets/group; `BehaviorCounts` now shows the exact out_/in_ feature columns;
-  video-demo placeholder for the user to fill). New components: `BehaviorCounts`, `LabInfra`, `KillChain`.
-- **LaTeX report (`latex/contents.tex`) restructured to the deck's 5 parts and content-aligned — DONE, NOT committed** (2026-11-08):
+- **Slides (`presentation/`) compacted to 13 keyword-only slides — DONE** (2026-11-08): intro → core concept (5 steps) → demo
+  (lab, data path, kill chain, video) → thanks. Appendix, results and limits slides removed; their content lives in the report
+  (§3 R1–R3, §4, Appendix), the speaker notes and `note.txt` (Q7, Q10–Q12). Lab diagram static (name + full IP + one line per VM,
+  Demo UI inside the trainer, no VPN). Video-demo placeholder still for the user to fill.
+- **LaTeX report (`latex/contents.tex`) restructured to the deck's 5 parts and content-aligned — DONE, committed** (2026-11-08, PR #15):
   §1 Giới thiệu → §2 Ý tưởng cốt lõi → §3 Demo (infra/data-path/attack/results) → §4 Giới hạn & thách thức → §5 Kết luận, detailed
   deviations in Appendix A. One VM (`ws-etw-0`, exp08, 2 layers), benign = idle 3-day, Moderate from 10, exp08 results filled (R2
   70.17/54.42 Moderate, LLM `attack` 0.85/0.9; 288 win / 7 alerts / 3 benign FP), D1–D13. Builds clean (`latexmk -pdf main.tex`, 21 pp).

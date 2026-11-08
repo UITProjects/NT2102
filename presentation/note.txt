@@ -50,7 +50,7 @@ làm khác. Dùng AUTHOR CODE khi bài báo không nói rõ chi tiết (ví dụ
 tính điểm subgraph) và nhóm đã đọc trực tiếp file của tác giả.
 
 
-Q5. Cho ví dụ có số của message passing (slide "GNN là gì?")
+Q5. Cho ví dụ có số của message passing (slide "③ GNN: message passing")
 -------------------------------------------------------------
 Mỗi node 1 số cho dễ tính; w_self = 0.5, w_nb = 1.
 A có h_A = 2, neighbor B, C, D = 4, 0, 1 -> mean = 5/3 ≈ 1.67
@@ -63,7 +63,7 @@ Cùng node A, khác neighbor -> khác vectơ mới. Ví dụ đầy đủ với 
 Q6. Vì sao không xếp 10 lớp cho nhìn xa hơn?
 ---------------------------------------------
 Mỗi lớp lấy trung bình với neighbor. Xếp quá nhiều lớp thì vectơ của mọi node bị trộn đến mức gần
-giống nhau (over-smoothing: trên slide "Xếp nhiều lớp", các màu sẽ thành cùng một màu xám), nên
+giống nhau (over-smoothing: mọi màu trộn thành cùng một màu xám), nên
 không còn phân biệt được node bất thường. OCR-APT dùng 3 lớp [PAPER §7.2.1]: đủ thấy chuỗi
 process -> file -> process -> mạng.
 
@@ -127,3 +127,34 @@ ubuntu-trainer (bash): xem mô hình đang dùng + mở giao diện demo:
 Tấn công từ Kali:
   python tools/launch_exploit.py --target http://10.21.3.10:3000 --attack-seconds 180
 Tái hiện offline một session đã lưu:  ./rejudge.sh <session-id>
+
+
+Q10. Hidden layer là gì? Kích thước tensor qua các lớp?
+--------------------------------------------------------
+Hidden layer = vectơ của node SAU mỗi lớp RGCN, do mô hình tự tính, không có trong log.
+  X [N, 15] -> H1 [N, 32] -> H2 [N, 32] (-> H3 [N, 32]) = Z (embedding)
+Lớp đầu W_r [15, 32], các lớp sau [32, 32]. Lớp cuối không qua ReLU nên Z có thể âm.
+OCR-APT dùng 3 lớp [PAPER §7.2.1]; exp08 dùng 2 lớp (nông hơn, bớt nhạy với nhiễu ngữ cảnh).
+Chỉ Z đem vào hypersphere. Hình minh hoạ: báo cáo §2.3.
+
+
+Q11. Điểm subgraph tính thế nào? Vì sao mốc Moderate = 10?
+-----------------------------------------------------------
+Điểm thô s_i khác thang giữa các loại node (NET có thể âm), nên cộng xác suất min-max đã kẹp:
+  p_i = clamp((s_i - s_min_train) / (s_max_train - s_min_train), 0, 1),  score(sg) = Σ p_i (node bị cờ)
+Ví dụ FILE có điểm train trong [0.10, 0.23]:
+  file s = 0.32  -> (0.32 - 0.10)/0.13 = 1.69 -> kẹp p = 1
+  file s = 0.165 -> (0.165 - 0.10)/0.13 = 0.5
+Vì p <= 1: điểm >= 10 ⇔ ít nhất ~10 anomalous node trong một câu chuyện liên thông.
+Thang: Minor < 10, Moderate 10–100, Significant 100–1000, Critical > 1000 [PAPER §7.2.1].
+[AUTHOR CODE] dùng > 10 và top-k khi không có gì đạt; đồ án bỏ top-k (live thì mọi window sẽ đỏ).
+Mốc [OURS] 30 cũ đã bỏ 2026-11-03 (D8). Báo cáo: Phụ lục, mục Thuật toán 1.
+
+
+Q12. Đồ án làm khác bài báo ở đâu?
+-----------------------------------
+Tấn công: CVE web -> RCE -> ATT&CK (không phải APT nhiều giai đoạn) · Dữ liệu: ETW tự thu, lược đồ NODLINK W10 ·
+Benign: idle một máy · Chế độ: gần real-time, window 5 phút · Feature: giữ đủ 15 cột, scaler fit train ·
+Mô hình: OCRGCN tự viết (RGCNConv), 2 lớp · Mức cảnh báo: Moderate từ 10, không top-k ·
+LLM: phân loại trước rồi Alg. 2 dòng 3–15 · Host: một (ws-etw-0).
+Bảng đầy đủ: báo cáo Bảng sai khác (§3) và Phụ lục; docs/DEVIATIONS.md D1–D13.
