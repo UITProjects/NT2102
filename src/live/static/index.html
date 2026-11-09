@@ -200,7 +200,7 @@ tr.flag td{color:var(--anom);font-weight:600}
         <div id="cy"></div>
         <div class="note">circle = process · square = file · diamond = socket · red ring = score above τ of its type ·
           blue dashed = connector (normal node on a 1-hop path to another anomalous node, Alg. 1) ·
-          dashed button = subgraph below the cut-off (shown, not alerted)</div>
+          dashed button = subgraph below the cut-off, or suppressed because an anomalous node type is missing (shown, not alerted)</div>
       </div>
       <div class="alertcard" id="alertcard"></div>
     </div>
@@ -245,6 +245,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     const a1 = p?.alg1;
     if (a1) $("cutTxt").textContent = a1.min_score != null ? `score > ${a1.min_score}`
       : a1.min_level === "Moderate" ? `Moderate, score ≥ ${a1.moderate_from}` : `level ≥ ${a1.min_level}`;
+    if (a1 && a1.require_types?.length) $("cutTxt").textContent += `, with anomalous ${a1.require_types.join(" + ")} nodes`;
     if (status) $("tauTxt").textContent = "τ per type: " + Object.entries(status.model.tau).map(([k,v]) => `${k} ${num(v,5)}`).join(" · ");
     if (!s) { $("tiles").innerHTML = '<div class="muted">waiting for data (shipper or Loki)…</div>'; return; }
     $("sessionTxt").textContent = `session ${s.id} (${s.mode}${s.host ? ", " + s.host : ""})`;
@@ -352,12 +353,15 @@ tr.flag td{color:var(--anom);font-weight:600}
     $("timeline").innerHTML = hosts.map(timelineRow).join("");
     document.querySelectorAll("#timeline .timeline").forEach(t => { t.scrollLeft = t.scrollWidth; });
   }
+  // [OURS] type rule (alg1.REQUIRE_TYPES): "missing anomalous node type(s): net" -> "missing net"
+  const shortReason = r => (r || "").replace("missing anomalous node type(s): ", "missing ");
   function timelineRow(h) {
     const list = [...(winsBy[h]?.values() || [])].sort((a,b) => a.start_ms - b.start_ms).slice(-24);
     let html = list.map(w => {
       const cls = w.status === "scored" ? (w.alert ? "alert" : "scored") : w.status;
       const sub = w.status === "scored"
                 ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs_kept}/${w.subgraphs} sg kept`
+                   : w.subgraphs_suppressed ? `suppressed: ${esc(shortReason(w.suppressed_reason))}`
                    : w.flagged ? `${w.flagged} above τ · filtered` : `${w.nodes} nodes`)
                 : w.status === "scoring" ? "scoring…" : w.status;
       const llm = w.llm?.status;
@@ -414,7 +418,7 @@ tr.flag td{color:var(--anom);font-weight:600}
         <td class="num">${dhm(w.start_ms)}–${hm(w.end_ms)}</td><td class="num">${utcHm(w.start_ms)}</td>
         <td class="mono">${esc(w.host || "–")}</td><td class="mono">${esc(w.sdir)}</td><td>${esc(w.status)}</td><td class="num">${w.edges ?? "–"}</td>
         <td class="num">${w.flagged ?? "–"}</td><td class="num">${w.status === "scored" ? `${num(w.max_sg_score,2)} ${esc(w.max_level || "")}` : "–"}</td>
-        <td class="num">${w.moderate_from == null ? "–" : "≥ " + num(w.moderate_from, 0)}</td><td>${w.alert ? "RED" : ""}</td>
+        <td class="num">${w.moderate_from == null ? "–" : "≥ " + num(w.moderate_from, 0)}</td><td>${w.alert ? "RED" : w.subgraphs_suppressed ? `<span class="muted" title="${esc(w.suppressed_reason)}">suppressed (${esc(shortReason(w.suppressed_reason))})</span>` : ""}</td>
         <td>${esc(w.llm?.status ? (LLM_LABEL[w.llm.status] || w.llm.status) : "")}</td></tr>`;
       }).join("") : '<tr><td class="muted">no window in this range</td></tr>';
   }
@@ -470,7 +474,7 @@ tr.flag td{color:var(--anom);font-weight:600}
 
     const sgs = detail.subgraphs || [];
     $("sgnav").innerHTML = sgs.length
-      ? sgs.map((g,i) => `<button class="${i===sgIdx?"on":""} ${g.kept?"":"dim"}" data-i="${i}" title="seed ${esc(g.seed)}">#${i+1}: ${esc(g.level)} ${num(g.sg_score,2)} · ${g.n_anomalous} anom + ${g.n_connectors} conn</button>`).join("")
+      ? sgs.map((g,i) => `<button class="${i===sgIdx?"on":""} ${g.kept?"":"dim"}" data-i="${i}" title="seed ${esc(g.seed)}${g.suppressed ? " · " + esc(g.suppressed) : ""}">#${i+1}: ${esc(g.level)} ${num(g.sg_score,2)} · ${g.n_anomalous} anom + ${g.n_connectors} conn${g.suppressed ? " · suppressed" : ""}</button>`).join("")
         + (detail.subgraphs_total > sgs.length ? `<span class="muted">showing ${sgs.length} of ${detail.subgraphs_total}</span>` : "")
         + (detail.truncated ? '<span style="color:var(--warn)">too many flagged nodes: truncated (model problem?)</span>' : "")
       : `<span class="muted">${w.flagged ? "anomalous nodes are isolated or in groups of < 3 nodes, so no subgraph" : "no node above τ in this window, so no subgraph"}</span>`;
@@ -589,6 +593,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   function renderAlert(w, g) {
     if (!g) { $("alertcard").innerHTML = '<span class="muted">no alert</span>'; return; }
     const head = g.kept ? `<b>Alert, window ${hms(w.start_ms)}–${hms(w.end_ms)}, subgraph #${sgIdx+1}</b>`
+               : g.suppressed ? `<span class="muted">Suppressed by the type rule (not alerted, no LLM): ${esc(g.suppressed)}; anomalous types ${esc((g.types_anomalous || []).join(" + ") || "–")}, window ${hms(w.start_ms)}–${hms(w.end_ms)}, subgraph #${sgIdx+1}</span>`
                         : `<span class="muted">Below cut-off (not alerted), window ${hms(w.start_ms)}–${hms(w.end_ms)}, subgraph #${sgIdx+1}</span>`;
     const score = `subgraph score ${num(g.sg_score,3)} = Σ prob of ${g.n_anomalous} anomalous nodes → ${esc(g.level)}${g.oversize ? " · oversize" : ""}`;
     const lab = Object.fromEntries(g.nodes.map(n => [n.id, base(n.attr) || n.id]));

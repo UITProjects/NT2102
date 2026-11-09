@@ -1,0 +1,80 @@
+{
+ "comment": "Windows left out of idle training for exp10 (ws-etw-0), range 2026-11-06T19:40Z -> 2026-11-09T10:25Z. UTC. The range starts at the first run with the full dos map (live-20261106T193908Z; the 13:34 run has an inferred map without cdrom0 and build_experiment refuses mixed maps), after the 11-06 Ansible/git/choco work (14:42, 15:04, 15:50) and the 15:35 attack, and ends before the 11-09 10:30 RDP/WinRM + 10:46 logon session (teammate over the VPN), so those need no entries. Found by scanning kproc ProcessStart in Loki and Kali (10.21.4.30) traffic. See docs/notes/logged-on-session-fp-lesson.md.",
+ "ranges": [
+  {
+   "start": "2026-11-06T19:38:00Z",
+   "end": "2026-11-06T19:41:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-06T22:20:00Z",
+   "end": "2026-11-06T22:40:00Z",
+   "reason": "nightly powershell from the Task Scheduler svchost (same parent as the etwlab-live watchdog) at 22:24/22:29/22:34: own tooling the filter misses [INFERENCE], kept out like the watchdog (exp08 design)"
+  },
+  {
+   "start": "2026-11-07T01:43:00Z",
+   "end": "2026-11-07T01:46:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-07T07:48:00Z",
+   "end": "2026-11-07T07:51:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-07T13:53:00Z",
+   "end": "2026-11-07T13:56:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-07T19:58:00Z",
+   "end": "2026-11-07T20:01:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-07T22:20:00Z",
+   "end": "2026-11-07T22:40:00Z",
+   "reason": "nightly powershell from the Task Scheduler svchost (same parent as the etwlab-live watchdog) at 22:24/22:29/22:34: own tooling the filter misses [INFERENCE], kept out like the watchdog (exp08 design)"
+  },
+  {
+   "start": "2026-11-08T02:03:00Z",
+   "end": "2026-11-08T02:06:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-08T05:05:00Z",
+   "end": "2026-11-08T05:30:00Z",
+   "reason": "DVWA->RCE kill chain from Kali 10.21.4.30 (05:11-05:18 mysql x45, discovery, schtasks, rclone, C2): attack, not idle"
+  },
+  {
+   "start": "2026-11-08T08:08:00Z",
+   "end": "2026-11-08T08:11:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-08T14:13:00Z",
+   "end": "2026-11-08T14:16:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-08T20:18:00Z",
+   "end": "2026-11-08T20:21:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-08T22:20:00Z",
+   "end": "2026-11-08T22:40:00Z",
+   "reason": "nightly powershell from the Task Scheduler svchost (same parent as the etwlab-live watchdog) at 22:24/22:29/22:34: own tooling the filter misses [INFERENCE], kept out like the watchdog (exp08 design)"
+  },
+  {
+   "start": "2026-11-09T02:23:00Z",
+   "end": "2026-11-09T02:26:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  },
+  {
+   "start": "2026-11-09T08:28:00Z",
+   "end": "2026-11-09T08:31:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"
+  }
+ ]
+}

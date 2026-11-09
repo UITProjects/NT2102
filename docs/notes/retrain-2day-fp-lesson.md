@@ -52,7 +52,7 @@ nothing: then the tail holds behaviour training never saw (`training-runbook.md`
 
 ## 5. Operations
 
-- Loki keeps 72 h. Pull anything worth keeping before it expires.
+- Loki kept 72 h until 2026-11-09, now 90 days (`logged-on-session-fp-lesson.md`). Pull anything worth keeping before it expires.
 - `lab pull` names experiments `range-<UTC start>[-<vm>]` and refuses an existing folder; `--force` replaces it.
 - `systemctl` shows `failed` after a plain stop of `ocr-live`: exit 143 on SIGTERM, not a crash.
 

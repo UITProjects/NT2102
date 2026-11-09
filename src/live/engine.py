@@ -11,7 +11,8 @@ engine.py - live windowed OCR-APT scoring, no web code (live_server.py is the th
       -> edge buffer (sorted by ts)
       -> window [start, start + w) closes when watermark >= end
       -> scoring thread: score_window.score_edges (train scaler + train relations)
-                         -> alg1.construct (Alg. 1 + SG-Det; window alert = >= 1 subgraph kept)
+                         -> alg1.construct (Alg. 1 + SG-Det; window alert = >= 1 subgraph kept; [OURS] kept also
+                            needs >= 1 anomalous NET node, else suppressed and logged, D8)
       -> llm thread (only alerted windows, only with --llm-provider): alg2.investigate
                          -> verdict attack / false_positive / uncertain + attack report (Alg. 2 l.3-15)
       -> sessions/<id>/windows/<wid>/*.csv|json (+ detail.json)  + listeners (SSE in live_server.py)
@@ -122,7 +123,7 @@ class Engine:
     def __init__(self, run_dir, scaler_path, sessions_dir, window_min=5, stride_min=None, lateness_s=20,
                  origin_ms=0, converter_path=DEFAULT_CONVERTER, experiment_json=None, allow_collapsed=False, top_k=20,
                  n_seed=15, min_nodes=3, max_edges=5000, sg_min_level="Moderate", sg_min_score=None,
-                 sg_moderate_from=alg1.MODERATE_FROM, llm_provider=None, llm_model=None, llm_base_url=None,
+                 sg_moderate_from=alg1.MODERATE_FROM, sg_require_types=alg1.REQUIRE_TYPES, llm_provider=None, llm_model=None, llm_base_url=None,
                  llm_api_key=None, llm_client=None, llm_max_subgraphs=5, llm_reasoning_effort=None,
                  llm_debug=False, llm_max_per_day=10, today=None, host=None, history=None, flow_sink=None):
         # two-host scoring (D12): one Engine per host. host names its session folders, history = the store they
@@ -148,9 +149,10 @@ class Engine:
         self.origin_ms = int(origin_ms)
         self.top_k = top_k
         # Alg. 1 parameters: [PAPER] n_seed 15, max_e 5000, keep >= Moderate, Moderate from sg_score 10 (§7.2.1);
-        # [AUTHOR CODE] min_nodes 3 (DEVIATIONS D8)
+        # [AUTHOR CODE] min_nodes 3; [OURS] require_types: a kept subgraph needs anomalous nodes of these types (D8)
         self.sg = {"n_seed": n_seed, "min_nodes": min_nodes, "max_edges": max_edges,
-                   "min_level": sg_min_level, "min_score": sg_min_score, "moderate_from": sg_moderate_from}
+                   "min_level": sg_min_level, "min_score": sg_min_score, "moderate_from": sg_moderate_from,
+                   "require_types": list(sg_require_types)}
 
         # LLM triage + report after SG-Det (alg2.py); None = off. Own thread: one alert can take tens of
         # seconds of LLM calls and must not delay scoring of the next window. Built here, on the main thread
@@ -393,8 +395,11 @@ class Engine:
         subgraphs, sg_stats = alg1.construct(cand, edges_norm, attrs, self.run.score_range,
                                              self.sg["n_seed"], self.sg["min_nodes"], self.sg["max_edges"],
                                              self.sg["min_level"], self.sg["min_score"],
-                                             self.sg["moderate_from"])
+                                             self.sg["moderate_from"], tuple(self.sg["require_types"]))
         sg_sum = alg1.summarise(subgraphs)
+        sup_line = alg1.suppression_log(wid, subgraphs)
+        if sup_line:      # the type rule turned a would-be alert into a normal window: say why (user, 2026-11-09)
+            print(f"[engine]{f' {self.host}' if self.host else ''} {sup_line}", flush=True)
         nodes["attr"] = nodes["node_uuid"].map(attrs)
         ms = int((time.time() - t0) * 1000)
 

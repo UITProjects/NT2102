@@ -16,8 +16,13 @@ in memory (no GraphDB). [AUTHOR CODE] l.N = upstream detect_anomalous_subgraphs.
                prob = clamp((score - train_min_t) / (train_max_t - train_min_t), 0, 1)
     level    = Negligible / Minor / Moderate / Significant / Critical ([PAPER] §7.2.1: Moderate from 10)
     kept     = level >= min_level (default Moderate, [AUTHOR CODE] l.61)               Alg. 1 l.22-24
+               AND [OURS] the subgraph's ANOMALOUS nodes cover every type in require_types
+               (default: >= 1 anomalous NET node; user, 2026-11-09). A level-kept subgraph that misses a type
+               stays in the output with kept = False and `suppressed` = the reason (logged, never alerted,
+               never sent to the LLM). --sg-require-types none = paper behaviour.
 
-Deviations (no top-k fallback, `oversize`, --sg-min-score; --sg-moderate-from 30 = the old [OURS] scale): docs/DEVIATIONS.md D8.
+Deviations (no top-k fallback, `oversize`, --sg-min-score; --sg-moderate-from 30 = the old [OURS] scale;
+--sg-require-types): docs/DEVIATIONS.md D8.
 
 Usage (from the repo root)
     uv run python src/pipeline/alg1.py --selftest
@@ -40,6 +45,26 @@ import pandas as pd
 LEVELS = ["Negligible", "Minor", "Moderate", "Significant", "Critical"]
 MODERATE_FROM = 10.0       # [PAPER] §7.2.1 "between 10 and 100 ... moderate" (user, 2026-11-03); [AUTHOR CODE] l.394 is > 10
 TYPE_ORDER = {"net": 1, "process": 2, "file": 3}        # [AUTHOR CODE] node_type_order l.674
+# [OURS] (user, 2026-11-09): a kept subgraph must hold >= 1 anomalous NET node. Re-judged on the live history
+# 11-05 -> 11-09 (exp08): 5/5 attack windows still alert, false alarms 14 -> 3 (in-sample; DEVIATIONS D8).
+# 'file,net,process' (the first version) lost the 11-06 00:50Z C2 window (net + process only).
+REQUIRE_TYPES = ("net",)
+
+
+def parse_require_types(arg: str) -> tuple[str, ...]:
+    """CLI value -> tuple: 'net' (default), any comma list such as 'file,net,process', or 'none' / '' = off
+    (paper behaviour)."""
+    if arg.strip().lower() in ("", "none"):
+        return ()
+    types = tuple(t.strip().lower() for t in arg.split(",") if t.strip())
+    bad = [t for t in types if t not in TYPE_ORDER]
+    if bad:
+        raise ValueError(f"unknown node type(s) {bad}; use a subset of {sorted(TYPE_ORDER)} or 'none'")
+    return types
+
+
+def missing_reason(missing: list) -> str:
+    return "missing anomalous node type(s): " + ", ".join(missing)
 
 
 def load_score_range(run_dir: str) -> dict:
@@ -78,9 +103,11 @@ def classify_level(score: float, moderate_from: float = MODERATE_FROM) -> str:
 
 def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range: dict, n_seed: int = 15,
               min_nodes: int = 3, max_edges: int = 5000, min_level: str = "Moderate",
-              min_score: float | None = None, moderate_from: float = MODERATE_FROM) -> tuple[list, dict]:
+              min_score: float | None = None, moderate_from: float = MODERATE_FROM,
+              require_types: tuple = REQUIRE_TYPES) -> tuple[list, dict]:
     """nodes: [node_uuid, node_type, score, tau, margin, flagged] (score_window.score_edges)
     edges: normalised edge rows (train_gnn_models.normalise_edges), one row per event.
+    require_types: [OURS] node types the ANOMALOUS members must cover for kept = True; () = off.
     Returns (subgraphs, stats); subgraphs sorted kept first, then by sg_score."""
     nodes = nodes.copy()
     nodes["prob"] = node_prob(nodes, score_range)
@@ -169,7 +196,11 @@ def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range
         in_any |= anom
         sg_score = float(sum(info.loc[n, "prob"] for n in anom))
         level = classify_level(sg_score, moderate_from)
-        kept = (sg_score > min_score) if min_score is not None else LEVELS.index(level) >= min_rank
+        level_kept = (sg_score > min_score) if min_score is not None else LEVELS.index(level) >= min_rank
+        types_anom = sorted({info.loc[n, "node_type"] for n in anom})
+        missing = [t for t in require_types if t not in types_anom]
+        kept = level_kept and not missing                 # [OURS] type rule on top of SG-Det
+        suppressed = missing_reason(missing) if level_kept and missing else None
         nlist = []
         for n in members:
             r = info.loc[n]
@@ -185,7 +216,7 @@ def construct(nodes: pd.DataFrame, edges: pd.DataFrame, attrs: dict, score_range
         elist.sort(key=lambda x: x["first_ms"])
         out.append({"id": i, "seed": seed, "n_anomalous": len(anom), "n_connectors": len(members - A),
                     "n_edges": int(len(pe)), "sg_score": round(sg_score, 4), "level": level, "kept": bool(kept),
-                    "oversize": oversize, "max_margin": max(x["margin"] for x in nlist if x["role"] == "anomalous"),
+                    "types_anomalous": types_anom, "suppressed": suppressed, "oversize": oversize, "max_margin": max(x["margin"] for x in nlist if x["role"] == "anomalous"),
                     "nodes": nlist, "edges": elist})
     stats["left_out"] = len(A - in_any)
     out.sort(key=lambda g: (not g["kept"], -g["sg_score"], g["id"]))
@@ -210,10 +241,26 @@ def _f(v):
 
 
 def summarise(subgraphs: list) -> dict:
+    """Window summary. subgraphs_suppressed / suppressed_reason: [OURS] level-kept subgraphs dropped by the
+    type rule; the reason is the top-scoring suppressed subgraph's ("" when none)."""
     kept = [g for g in subgraphs if g["kept"]]
+    sup = sorted((g for g in subgraphs if g.get("suppressed")), key=lambda g: -g["sg_score"])
     top = max(subgraphs, key=lambda g: g["sg_score"]) if subgraphs else None
     return {"subgraphs": len(subgraphs), "subgraphs_kept": len(kept),
-            "max_sg_score": top["sg_score"] if top else 0.0, "max_level": top["level"] if top else ""}
+            "max_sg_score": top["sg_score"] if top else 0.0, "max_level": top["level"] if top else "",
+            "subgraphs_suppressed": len(sup), "suppressed_reason": sup[0]["suppressed"] if sup else ""}
+
+
+def suppression_log(wid: str, subgraphs: list) -> str | None:
+    """One log line for a window whose level-kept subgraphs were ALL suppressed by the type rule (window stays
+    normal, no LLM). None when nothing was suppressed or the window alerts anyway."""
+    sup = sorted((g for g in subgraphs if g.get("suppressed")), key=lambda g: -g["sg_score"])
+    if not sup or any(g["kept"] for g in subgraphs):
+        return None
+    g = sup[0]
+    more = f" (+{len(sup) - 1} more suppressed)" if len(sup) > 1 else ""
+    return (f"window {wid}: SG-Det {g['level']} (sg {g['sg_score']:.2f}, anomalous types "
+            f"{'+'.join(g['types_anomalous']) or '-'}) suppressed, {g['suppressed']}{more} -> normal, no LLM")
 
 
 # --------------------------------------------------------------------------- selftest
@@ -244,15 +291,50 @@ def selftest():
     # (a) the 11:25 'updater' shape: 18 DLLs above the training max, loaded by ONE unflagged process
     spec = {"upd": ("process", 0.0), **{f"dll{i}": ("file", 0.32) for i in range(18)}}
     nd, ed = mk(spec, [("upd", f"dll{i}", "load") for i in range(18)])
-    sgs, st = construct(nd, ed, {}, rng, moderate_from=30)
+    sgs, st = construct(nd, ed, {}, rng, moderate_from=30, require_types=())
     assert len(sgs) == 1 and sgs[0]["n_anomalous"] == 18 and sgs[0]["n_connectors"] == 1, sgs
     assert sgs[0]["sg_score"] == 18.0 and sgs[0]["level"] == "Minor" and not sgs[0]["kept"], sgs[0]   # old [OURS] 30
     assert st["seeds"] == 15 and st["left_out"] == 0, st
     # [PAPER] scale (default, Moderate from 10) and [AUTHOR CODE] (> 10) -> kept; a numeric cut-off above -> not kept
     for mf in (MODERATE_FROM, 10.0001):
-        g = construct(nd, ed, {}, rng, moderate_from=mf)[0][0]
-        assert g["level"] == "Moderate" and g["kept"], (mf, g)
-    assert not construct(nd, ed, {}, rng, min_score=20)[0][0]["kept"]
+        g = construct(nd, ed, {}, rng, moderate_from=mf, require_types=())[0][0]
+        assert g["level"] == "Moderate" and g["kept"] and g["suppressed"] is None, (mf, g)
+    assert not construct(nd, ed, {}, rng, min_score=20, require_types=())[0][0]["kept"]
+    # [OURS] NET rule (default on): the same file-only Moderate subgraph is suppressed, with the reason
+    g = construct(nd, ed, {}, rng)[0][0]
+    assert g["level"] == "Moderate" and not g["kept"] and g["types_anomalous"] == ["file"], g
+    assert g["suppressed"] == "missing anomalous node type(s): net", g
+    s = summarise([g])
+    assert s["subgraphs_kept"] == 0 and s["subgraphs_suppressed"] == 1 and s["suppressed_reason"] == g["suppressed"], s
+    assert "suppressed, missing anomalous node type(s): net" in suppression_log("w1", [g])
+    # the three-type variant (flag 'file,net,process') names every missing type
+    g = construct(nd, ed, {}, rng, require_types=("file", "net", "process"))[0][0]
+    assert g["suppressed"] == "missing anomalous node type(s): net, process", g
+    # file + process only (the 11-09 dsregcmd shape) -> missing net
+    spec2 = {**spec, "upd": ("process", 3.0)}
+    g = construct(*mk(spec2, [("upd", f"dll{i}", "load") for i in range(18)]), {}, rng)[0][0]
+    assert g["types_anomalous"] == ["file", "process"] and g["suppressed"].endswith(": net") and not g["kept"], g
+    # net + process, no anomalous file (the 11-06 00:50Z C2-beacon shape) -> kept by the NET rule
+    spec_np = {"sh": ("process", 3.0), **{f"c{i}": ("net", 1.0) for i in range(12)}}
+    sgs_np, _ = construct(*mk(spec_np, [("sh", f"c{i}", "send") for i in range(12)]), {}, rng)
+    assert sgs_np[0]["kept"] and sgs_np[0]["types_anomalous"] == ["net", "process"], sgs_np[0]
+    assert not construct(*mk(spec_np, [("sh", f"c{i}", "send") for i in range(12)]), {}, rng,
+                         require_types=("file", "net", "process"))[0][0]["kept"]
+    # all three types anomalous (the attack shape) -> kept, nothing suppressed, no log line
+    spec3 = {**spec2, "c2": ("net", 1.0)}
+    nd3, ed3 = mk(spec3, [("upd", f"dll{i}", "load") for i in range(18)] + [("upd", "c2", "send")])
+    sgs3, _ = construct(nd3, ed3, {}, rng)
+    assert sgs3[0]["kept"] and sgs3[0]["suppressed"] is None and sgs3[0]["types_anomalous"] == ["file", "net", "process"]
+    assert suppression_log("w3", sgs3) is None and summarise(sgs3)["subgraphs_suppressed"] == 0
+    # below the level cut-off -> not kept, but NOT 'suppressed' (the type rule only explains level-kept subgraphs)
+    assert construct(nd, ed, {}, rng, moderate_from=30)[0][0]["suppressed"] is None
+    assert parse_require_types("none") == () and parse_require_types("file, NET") == ("file", "net")
+    assert parse_require_types("file,net,process") == ("file", "net", "process")
+    try:
+        parse_require_types("file,dns")
+        raise AssertionError("bad type accepted")
+    except ValueError:
+        pass
 
     # (b) isolated anomalous node + (c) 2 anomalous joined by 1 connector -> Minor/Negligible, dropped
     nd, ed = mk({"iso": ("file", 1.0), "p": ("process", 0.0), "f1": ("file", 1.0), "f2": ("file", 1.0),
@@ -292,7 +374,9 @@ def selftest():
     sgs_big, _ = construct(nd, ed, {}, rng, max_edges=0)       # 0 = no cap, as upstream
     assert len(sgs_big) == 1 and sgs_big[0]["n_edges"] == len(ed), sgs_big
     print("[SELFTEST OK] prob clamp, levels, 18-DLL subgraph = 18 -> Moderate/kept on the paper scale (Minor/dropped on the "
-          "old 30 scale), isolated node left out, "
+          "old 30 scale), NET rule (file-only / file+process suppressed with reason, net+process and file+net+process "
+          "kept; three-type variant via the flag), "
+          "isolated node left out, "
           "2-node story Minor (dropped), chain/seed rules as upstream, dedup, Louvain split")
 
 
@@ -318,10 +402,13 @@ def judge_window(wdir: str, score_range: dict, a) -> dict | None:
         edges = edges[~(edges["source-id"].isin(la) | edges["destination-id"].isin(la))].reset_index(drop=True)
         attrs = {n: v for n, v in attrs.items() if n not in la}
     sgs, st = construct(nodes, edges, attrs, score_range, a.n_seed, a.min_nodes, a.max_edges,
-                        a.sg_min_level, a.sg_min_score, a.sg_moderate_from)
+                        a.sg_min_level, a.sg_min_score, a.sg_moderate_from, a.sg_require_types)
+    line = suppression_log(os.path.basename(wdir), sgs)
+    if line:
+        print(f"[alg1] {line}")
     json.dump({"window": os.path.basename(wdir), "stats": st, "subgraphs": sgs},
               open(os.path.join(wdir, "subgraphs_alg1.json"), "w"), indent=1)
-    cols = ["id", "seed", "n_anomalous", "n_connectors", "n_edges", "sg_score", "level", "kept", "oversize"]
+    cols = ["id", "seed", "n_anomalous", "n_connectors", "n_edges", "sg_score", "level", "kept", "suppressed", "oversize"]
     pd.DataFrame([{c: g[c] for c in cols} for g in sgs], columns=cols).to_csv(
         os.path.join(wdir, "subgraphs_alg1.csv"), index=False)
     return {"window": os.path.basename(wdir), "flagged": int(nodes["flagged"].sum()), **summarise(sgs),
@@ -343,7 +430,14 @@ def main():
     ap.add_argument("--sg-moderate-from", type=float, default=MODERATE_FROM,
                     help="Moderate starts at sg_score >= X (default 10 = [PAPER] §7.2.1; [AUTHOR CODE] > 10: 10.0001; "
                          "old [OURS] live scale: 30)")
+    ap.add_argument("--sg-require-types", default=",".join(REQUIRE_TYPES), metavar="TYPES",
+                    help="[OURS] a kept subgraph's anomalous nodes must cover these types (default net: >= 1 "
+                         "anomalous NET node); e.g. file,net,process; 'none' = off (paper behaviour)")
     a = ap.parse_args()
+    try:
+        a.sg_require_types = parse_require_types(a.sg_require_types)
+    except ValueError as e:
+        ap.error(f"--sg-require-types: {e}")
     if not 1 < a.sg_moderate_from <= 100:
         ap.error("--sg-moderate-from must be in (1, 100]")
     if a.selftest:
@@ -359,8 +453,10 @@ def main():
     df = pd.DataFrame(rows)
     df["alert"] = df["subgraphs_kept"] > 0
     print(df.to_string(index=False))
+    sup = int(((df["subgraphs_suppressed"] > 0) & ~df["alert"]).sum())
     print(f"[alg1] windows with >= 1 flagged node: {(df['flagged'] > 0).sum()}  ->  alert after SG-Det: "
-          f"{df['alert'].sum()}  (of {len(df)} scored)")
+          f"{df['alert'].sum()}  (of {len(df)} scored; {sup} more suppressed by the type rule "
+          f"{'+'.join(a.sg_require_types) or 'off'})")
 
 
 if __name__ == "__main__":

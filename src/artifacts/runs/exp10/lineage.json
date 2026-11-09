@@ -1,0 +1,136 @@
+{
+ "model": "exp10",
+ "experiment": "range-20261106T194000Z-ws-etw-0",
+ "experiment_source": "loki",
+ "hosts": null,
+ "benign_split": "test",
+ "label_source": "benign by operator assertion: idle Loki range 2026-11-06 19:40:00+0000 - 2026-11-09 10:25:00+0000 (split test) minus 92 of 1880 windows listed in `excluded`",
+ "excluded": {
+  "windows_total": 1880,
+  "windows_dropped": 92,
+  "windows_kept": 1788,
+  "edges_kept": 1730987,
+  "edges_dropped": 313551,
+  "ranges": [
+   {
+    "start_ms": 1793993880000,
+    "end_ms": 1793994060000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794003600000,
+    "end_ms": 1794004800000,
+    "reason": "nightly powershell from the Task Scheduler svchost (same parent as the etwlab-live watchdog) at 22:24/22:29/22:34: own tooling the filter misses [INFERENCE], kept out like the watchdog (exp08 design)",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794015780000,
+    "end_ms": 1794015960000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794037680000,
+    "end_ms": 1794037860000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794059580000,
+    "end_ms": 1794059760000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794081480000,
+    "end_ms": 1794081660000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794090000000,
+    "end_ms": 1794091200000,
+    "reason": "nightly powershell from the Task Scheduler svchost (same parent as the etwlab-live watchdog) at 22:24/22:29/22:34: own tooling the filter misses [INFERENCE], kept out like the watchdog (exp08 design)",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794103380000,
+    "end_ms": 1794103560000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794114300000,
+    "end_ms": 1794115800000,
+    "reason": "DVWA->RCE kill chain from Kali 10.21.4.30 (05:11-05:18 mysql x45, discovery, schtasks, rclone, C2): attack, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794125280000,
+    "end_ms": 1794125460000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794147180000,
+    "end_ms": 1794147360000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794169080000,
+    "end_ms": 1794169260000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794176400000,
+    "end_ms": 1794177600000,
+    "reason": "nightly powershell from the Task Scheduler svchost (same parent as the etwlab-live watchdog) at 22:24/22:29/22:34: own tooling the filter misses [INFERENCE], kept out like the watchdog (exp08 design)",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794190980000,
+    "end_ms": 1794191160000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   },
+   {
+    "start_ms": 1794212880000,
+    "end_ms": 1794213060000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261109.json"
+   }
+  ]
+ },
+ "seeds": 3,
+ "epochs": null,
+ "created_utc": "2026-11-09T15:58:25.465769+00:00",
+ "git_commit": "e1374a8",
+ "pipeline_uncommitted_changes": false,
+ "converter_sha256": "cbbf6dcfa6581d6e4fd34d81408292b9cb1b9fc4efa6bfedcf14d1798766f35d",
+ "tools": {
+  "encode_to_features.py": "7d07efb74f3361a3a212cca1cae652e2b73f786a9bba43fecd6cd23180455e36",
+  "train_gnn_models.py": "ec91cb89ca50d8fe3ccc36819ead1c9f929b0c5d474e23a2abcf35e9de45226c"
+ },
+ "commands": [
+  "src/pipeline/encode_to_features.py --edges src/artifacts/runs/exp10/train_edges.csv --out-dir src/artifacts/runs/exp10/features",
+  "src/pipeline/train_gnn_models.py --edges src/artifacts/runs/exp10/train_edges.csv --features src/artifacts/runs/exp10/features/features_model.csv --scaler src/artifacts/runs/exp10/features/feature_scaler.json --out-dir src/artifacts/runs/exp10 --runs 3 --layers 2 --val-windows 60 --tnr-tolerance 0.01"
+ ]
+}
