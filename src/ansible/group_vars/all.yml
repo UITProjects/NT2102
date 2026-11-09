@@ -18,8 +18,8 @@ server_bind: "0.0.0.0"
 loki_port: 3100
 grafana_port: 3000            # on the Ubuntu host (vulnlab's 3000 is on the Windows host: no clash)
 loki_url: "http://{{ trainer_host }}:{{ loki_port }}"
-loki_retention: "72h"         # 3 d (user, 2026-10-25: always-on capture ~2 GB/h): how long raw ETW stays
-                              # queryable, also the max age Loki accepts. Pull a training capture within 3 days.
+loki_retention: "2160h"       # 90 d (user, 2026-11-09; was 72h): how long raw ETW stays queryable, also the max age Loki
+                              # accepts. Loki stores ~445 MB per 3 days for both VMs (compressed), so ~15 GB at 90 d.
 loki_image: "grafana/loki:3.7.8"
 grafana_image: "grafana/grafana:13.2.2"
 loki_stack_dir: "/opt/lokistack"

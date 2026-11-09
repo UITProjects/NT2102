@@ -14,7 +14,7 @@ took 4 minutes.
 ## 1. Pick the range
 
 - At least 24 h, so daily OS jobs are in the baseline: 3 days is the target (`retrain-2day-fp-lesson.md`).
-- Loki keeps 72 h. Pull before the start of the range expires.
+- Loki keeps 90 days (`loki_retention`, 72 h until 2026-11-09). Pull before the start of the range expires.
 - Keep nothing from provisioning or deploys on that VM. Ansible, `choco` and installs flood kfile and are not idle.
 
 ## 2. Scan for bursts
