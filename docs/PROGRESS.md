@@ -21,18 +21,23 @@ Branch: **`retrain-to-avoid-false-positive`** (from `main`). All work on the Pro
   on all idle data in Loki (≈ 11-06 → 11-09, attacks/RDP/Ansible/canaries excluded, exp08 settings). 8 alerts 10:30–14:10Z, all 7
   LLM-judged `false_positive` (servicing after WinRM, `ping`/`ipconfig`, `dsregcmd` hourly after the 10:46Z logon). Lesson:
   `docs/notes/logged-on-session-fp-lesson.md`. Retention 90 d: **DONE, verified** (`/config` shows `retention_period: 90d`).
-  exp10: **TRAINED + VERIFIED offline, NOT promoted** (2026-11-09 15:58Z). Idle 11-06 19:40Z → 11-09 10:25Z (1,726 train windows;
+  exp10: **PROMOTED + LIVE** (2026-11-09 16:08Z; trained + verified offline 15:58Z). Idle 11-06 19:40Z → 11-09 10:25Z (1,726 train windows;
   the first try from 16:00Z failed: runs disagreed on the dos map), exclusions `src/artifacts/exclusions/ws-etw-0-20261109.json`,
   exp08 flags. Gate PASS: best_ep 99 on all types/seeds, val_fpr ≤ 0.0016, emb_std 0.095–0.12, τ file −0.096 ± 0.068,
   net −0.128 ± 0.040, process −0.273 ± 0.103 (3 seeds), converter `cbbf6dc` = live. Re-scored the 10 alert sessions since 11-05
   with both models + Alg. 1 + NET rule (every listed window is outside exp10's training data: before the range, excluded, or
   after its end): exp08 8 alerts (5/5 attack, 3 benign) → **exp10 7 alerts (5/5 attack, sg 22.6–82.9; 2 benign: 11-06 15:50
   Ansible, 11-09 10:45 RDP session)**; the `dsregcmd` windows and 3 of 4 nightly 22:25 windows no longer reach Moderate.
-  Not yet: promote, 24 h live soak, live Kali run.
-- **[OURS] NET alert rule (user, 2026-11-09): BUILT, NOT deployed.** A ≥ Moderate subgraph alerts (and goes to the LLM, budget
+  Not yet: 24 h live soak, live Kali run. First live check: `/healthz` 200, 11 re-read windows 15:10–16:00Z scored, 0 alerts.
+- **Deploy 2026-11-09 16:08Z:** the trainer checkout moved from `e1374a8` (PR #13) to `retrain-to-avoid-false-positive` `b4c1c29` through a git
+  bundle (no push), so PR #14's two-host code now runs on the trainer in one-VM mode. `lab promote exp10` (one pointer, no `--host`).
+  Unit `/etc/systemd/system/ocr-live.service` edited by hand: `--loki-host` → `--loki-default-host` (what the PR #14 template renders;
+  backup `/root/ocr-live.service.bak-20261109`). `/etc/nt2102-hosts.json` not written (no correlation in one-VM mode). A later Ansible
+  `--tags project` run from a pushed branch reconciles both. Selftests on the trainer: alg1, engine, history, live_server, correlate OK.
+- **[OURS] NET alert rule (user, 2026-11-09): LIVE since 16:08Z (with exp10).** A ≥ Moderate subgraph alerts (and goes to the LLM, budget
   unchanged) only if it holds ≥ 1 anomalous NET node; otherwise suppressed and logged with the reason (D8). Offline re-judge
   (exp08, 10 sessions since 11-05): alert windows 19 → 8, attack windows 5/5, false alarms 14 → 3 (all human sessions). Replaced
-  the first three-type version, which lost the 00:50Z C2 window. Deploy after exp10 finishes (shared trainer checkout).
+  the first three-type version, which lost the 00:50Z C2 window.
 - **Later (nice-to-have): verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). Steps: `docs/notes/training-runbook.md`.
 
 ## 2026-11-07 one model per host + cross-host correlation: built, NOT deployed (selftests + UI check only)

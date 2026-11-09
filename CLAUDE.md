@@ -113,13 +113,14 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   benign windows stay green. The attack is general, not APT-specific (user, 2026-10-13): exploit of a lab service → RCE → ATT&CK techniques;
   OCR-APT supplies the method. No publishing-style evaluation, metrics or NODLINK baseline are required; the section 6 metrics rules
   apply only if numbers are ever reported.
-- Now live: `ocr-live` on `ubuntu-trainer` scores `ws-etw-0` with **exp08** (3-day idle baseline, 2 RGCN layers). The end-goal demo works: Kali's
-  DVWA→RCE chain goes red with an LLM `attack` verdict and idle stays green around each run. It is not airtight: benign false alarms
+- Now live (since 2026-11-09 16:08Z): `ocr-live` on `ubuntu-trainer` scores `ws-etw-0` with **exp10** (~63 h idle, 2 RGCN layers) and the
+  [OURS] NET alert rule (D8); exp08 before that. The end-goal demo worked on exp08: Kali's DVWA→RCE chain went red with an LLM `attack`
+  verdict and idle stayed green around each run; exp10 keeps all 5 attack windows red offline, live Kali run still owed. It is not airtight: benign false alarms
   still happen and the alert can rest on a few nodes (PROGRESS, `docs/notes/subgraph-score-fragility.md`).
 - Two hosts (user, 2026-11-07): one model per host, not pooled (D12). `ws-etw-0` keeps exp08; `ws-etw-1` has `exp09-ws1`, **provisional** (10 h of
   idle data). `lab hosts` switches one-VM / two-VM. A correlation stage links hosts by code and the LLM explains the full flow (D13).
-  Built on branch `trainer-monitoring-guard`, **not deployed**, shown on synthetic flows only. Until deployed, `ocr-live` scores `ws-etw-0`
-  only. Older data says `ws-etw`: Loki lines from before the rename keep that label.
+  Merged to `main` (PR #14) and on the trainer since 2026-11-09 (branch `retrain-to-avoid-false-positive`, via a git bundle) but run in
+  **one-VM mode** only (`--loki-default-host ws-etw-0`, no per-host pointer), shown on synthetic flows only. Older data says `ws-etw`: Loki lines from before the rename keep that label.
 - **Deliverables (slides + demo) commit to ONE Windows VM** (`ws-etw-0`, exp08): the recorded demo and the deck show a single host.
   The second VM (`ws-etw-1`) and cross-host correlation are **nice-to-have**, shown only as future work unless there is time (user, 2026-11-08).
 - The Slidev deck (`presentation/`) was redesigned to the user's structure on 2026-11-08 (committed), then **compacted to 13 slides,
