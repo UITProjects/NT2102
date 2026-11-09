@@ -40,6 +40,11 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   range misses daily and ~10 h OS jobs, which were 11 of exp06's 16 windows ≥ 10. Impact: idle reds on held-out windows 4 → 0
   (3 seeds, 200 windows); interactive sessions stay red, as an idle model should. `powershell.exe` stays in every window,
   because the 5-min `etwlab-live` watchdog starts it. Details: `docs/notes/retrain-2day-fp-lesson.md`.
+- Logged-on session (2026-11-09, exp08): an RDP connect + WinRM at 10:30Z and an interactive logon at 10:46Z on `ws-etw-0`
+  raised 8 benign alerts in 4 h (servicing after WinRM, `ping`/`ipconfig` in the session, then `dsregcmd.exe` hourly while the
+  session stays logged on); all 7 LLM-judged were `false_positive`. Impact: idle means no one logged on. Sign out after RDP, and
+  exclude logon → sign-out from training. A retrain does not fix this. Loki retention raised 72 h → 90 d so a baseline can cover
+  more than 3 days. Details: `docs/notes/logged-on-session-fp-lesson.md`.
 - Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
@@ -269,6 +274,22 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   (`build_experiment.py`, before windowing) and live scoring (`engine._score`). The attack's RCE PowerShell
   never reads those paths, so it is kept. Impact: removes the watchdog from the baseline and from live windows;
   does not address non-watchdog FPs (e.g. TiWorker servicing — addressed by a longer baseline).
+- **[OURS] NET alert rule (user, 2026-11-09; `alg1.REQUIRE_TYPES`, `--sg-require-types`):** a level-kept (≥ Moderate)
+  subgraph is alerted, and so sent to the LLM (daily budget unchanged), only if it holds ≥ 1 anomalous NET node. Otherwise
+  it stays in the output with `kept = False` and `suppressed = "missing anomalous node type(s): net"`. The window is
+  normal, the engine logs the reason, `history.jsonl` keeps `subgraphs_suppressed` / `suppressed_reason`, and the LLM never
+  sees it. [PAPER] / [AUTHOR CODE] keep on the level alone; `--sg-require-types none` restores that.
+  Why: the benign false alarms so far were file-only (the nightly 22:25 powershell) or file + process (`dsregcmd`,
+  servicing, Defender), while the DVWA→RCE chain touches the network in each of its windows (httpd recv, scan, download, C2).
+  Impact, re-judged offline with exp08 and today's filters over the 10 sessions that held an alert since 11-05: alert
+  windows 19 → 8, **attack windows 5/5 kept**, **false alarms 14 → 3**. The 3 left are human activity that touches the
+  network (11-06 15:50 Ansible, 11-09 10:30 and 10:45 RDP/WinRM session).
+  History: the first version required file + net + process. It lost the 11-06 00:50Z C2-beacon window (net + process; its
+  live file node was our own `c:\lab-labels` file, dropped since D9). The user's "NET or > 10 anomalous nodes" filtered
+  nothing: sg_score ≥ 10 already forces ≥ 10 anomalous nodes, because each prob ≤ 1.
+  Claims limited: the rule was chosen on the same history it was checked on (in-sample, one kill chain). An attack window
+  with no anomalous NET node is missed (local-only steps such as persistence or cleanup in a window of their own). Whether a
+  window alerts now rides on the NET model's τ, the thinnest of the three models (D2), so a retrain can move it.
 
 ## D9. LLM step after SG-Det: triage + partial Alg. 2 (`src/pipeline/alg2.py`)
 - What: [PAPER] Alg. 2 (§6, App. B) turns every anomalous subgraph into an attack report. It never

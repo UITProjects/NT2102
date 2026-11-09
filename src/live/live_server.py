@@ -273,6 +273,11 @@ def main():
                         "10.0001; old [OURS] live scale: 30)")
     g.add_argument("--sg-min-score", type=float, default=None,
                    help="[OURS] numeric cut-off instead of the level (alert if sg_score > X); calibrate on BENIGN sessions")
+    g.add_argument("--sg-require-types", default=",".join(alg1.REQUIRE_TYPES), metavar="TYPES",
+                   help="[OURS] alert only if a subgraph's anomalous nodes cover these types (default net: >= 1 anomalous "
+                        "NET node; e.g. file,net,process); "
+                        "a level-kept subgraph that misses one is logged as suppressed, stays normal and skips the LLM. "
+                        "'none' = off (paper behaviour)")
     g = ap.add_argument_group("LLM triage + attack report after SG-Det (src/pipeline/alg2.py)")
     g.add_argument("--llm-provider", choices=list(alg2.DEFAULT_MODELS), default=None,
                    help="off by default; only red windows are sent; the verdict never turns a red window green")
@@ -316,6 +321,10 @@ def main():
         print(f"[live] pointer {os.path.relpath(cur['pointer'])}: " + ", ".join(f"{p['host'] or 'any'}={p['run']}" for p in plans))
     if not 1 < a.sg_moderate_from <= 100:
         ap.error("--sg-moderate-from must be in (1, 100]")
+    try:
+        a.sg_require_types = alg1.parse_require_types(a.sg_require_types)
+    except ValueError as e:
+        ap.error(f"--sg-require-types: {e}")
 
     if a.window_min != 5:
         print(f"[live] WARNING window {a.window_min} min: the models were trained on 5-min windows "
@@ -340,7 +349,8 @@ def main():
                         a.origin_ms, experiment_json=p["experiment"], allow_collapsed=a.allow_collapsed,
                         n_seed=a.n_seed, min_nodes=a.min_nodes, max_edges=a.max_edges,
                         sg_min_level=a.sg_min_level, sg_min_score=a.sg_min_score,
-                        sg_moderate_from=a.sg_moderate_from, llm_provider=a.llm_provider,
+                        sg_moderate_from=a.sg_moderate_from, sg_require_types=a.sg_require_types,
+                        llm_provider=a.llm_provider,
                         llm_model=a.llm_model, llm_base_url=a.llm_base_url, llm_api_key=a.llm_api_key,
                         llm_max_subgraphs=a.llm_max_subgraphs, llm_reasoning_effort=a.llm_reasoning_effort,
                         llm_debug=a.llm_debug, llm_max_per_day=a.llm_max_per_day, host=p["host"], history=shared,

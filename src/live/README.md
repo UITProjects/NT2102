@@ -6,7 +6,8 @@ VM  etwcollect (SYSTEM task) → raw\test\live-<UTC>\{kfile,knet,kproc}.json    
 trainer  live_server.py --loki-url → loki_source.py (poll the newest test run, 1 s)
      → engine.py: reorder by event time → etw2nodlink.Graph (same code as training,
      src/pipeline/etw2nodlink.py) → 5-min windows → train scaler + train relations →
-     OCRGCN per type → score > τ → Alg. 1 subgraphs + SG-Det (alert = ≥ 1 subgraph ≥ Moderate)
+     OCRGCN per type → score > τ → Alg. 1 subgraphs + SG-Det (alert = ≥ 1 subgraph ≥ Moderate
+     with >= 1 anomalous NET node)
      → optional LLM verdict (alg2.py) → sessions/<id>/windows/<wid>/ + UI (SSE)
 ```
 
@@ -77,7 +78,7 @@ C:\scripts\start-live.ps1 -Pause      # stop live and keep it stopped;  -Resume 
 The server follows the newest `split="test"` run, and a new run starts a new session. Window results are kept
 forever (the history below); only the raw copy of an old `live-*` session (`<session>/raw/`, ~2 GB/h under load)
 is deleted, after 12 idle hours (`live_raw_keep_hours`; a session holding a `.keep` file keeps it). Loki keeps
-3 days (`loki_retention`): pull training captures within 3 days.
+90 days (`loki_retention`, 72 h until 2026-11-09): pull training captures within that.
 
 **History: query any time range (2026-11-03, `history.py`).** Every window state (closed, scored, error, LLM
 verdict) is appended to `sessions/history.jsonl`, and each scored window's detail to
@@ -142,7 +143,13 @@ uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train
 - Window is red only if ≥ 1 subgraph is ≥ Moderate = score ≥ 10 ([PAPER] §7.2.1; [AUTHOR CODE] is > 10; until
   2026-11-03 our own live scale was 30). `ocr-live` takes it from Ansible `live_sg_moderate_from` (default 10).
   Subgraphs below the cut-off are still listed (dashed buttons in the UI).
-- Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate --sg-moderate-from 10 [--sg-min-score X]`.
+- [OURS] NET rule (2026-11-09): a subgraph at or above the cut-off alerts (and goes to the LLM) only if it holds at
+  least one anomalous NET node. Otherwise it is **suppressed**: the window stays green, the LLM is not called, and the
+  reason is logged (`journalctl -u ocr-live | grep suppressed`). It is also shown in the UI (timeline, history, subgraph
+  buttons) and kept in `history.jsonl` (`subgraphs_suppressed`, `suppressed_reason`) and `subgraphs.json`
+  (`suppressed`, `types_anomalous`). `--sg-require-types none` turns it off (paper behaviour). Why and limits: DEVIATIONS D8.
+- Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate --sg-moderate-from 10 [--sg-min-score X]
+  [--sg-require-types net|file,net,process|none]` (default `net`).
 - Try another cut-off on a saved session without the VM: `./rejudge.sh <id> "" --sg-moderate-from 30`
   (writes `subgraphs_alg1.{json,csv}` per window).
 

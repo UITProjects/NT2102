@@ -252,7 +252,8 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
 - Live inference: clock-aligned tumbling windows, partial windows not scored, shipper PID excluded,
   no cross-window dedup. Alg. 1 runs in memory per window with the [AUTHOR CODE] subgraph score (Σ clamped
   min-max prob, not the paper text's "sum of scores"), [PAPER] §7.2.1 level scale (Moderate from 10; [AUTHOR CODE]
-  > 10; the [OURS] 30 was retired 2026-11-03), no top-k fallback. Window history persisted to files (history.jsonl).
+  > 10; the [OURS] 30 was retired 2026-11-03), no top-k fallback, [OURS] NET rule (a kept subgraph needs >= 1 anomalous
+  NET node, else suppressed and logged; 2026-11-09). Window history persisted to files (history.jsonl).
 - Two hosts: one model per host (D12); cross-host correlation is [OURS] (D13), the paper leaves lateral movement out of scope.
 - LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
   Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
