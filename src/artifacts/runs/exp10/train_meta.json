@@ -1,0 +1,78 @@
+{
+  "inputs": {
+    "/home/it2102/NT2102/src/artifacts/runs/exp10/train_edges.csv": {
+      "path": "/home/it2102/NT2102/src/artifacts/runs/exp10/train_edges.csv",
+      "sha256": "be846ec350552a4e4cc32cdbe150053d8f1de799e8cc9ef4d6c22e619f062be0"
+    },
+    "/home/it2102/NT2102/src/artifacts/runs/exp10/features/features_model.csv": {
+      "path": "/home/it2102/NT2102/src/artifacts/runs/exp10/features/features_model.csv",
+      "sha256": "ef8081dd1ff8f46a722aca3d1d22e3d3a0fa1d9293058047a82f114646861fb7"
+    },
+    "/home/it2102/NT2102/src/artifacts/runs/exp10/features/feature_scaler.json": {
+      "path": "/home/it2102/NT2102/src/artifacts/runs/exp10/features/feature_scaler.json",
+      "sha256": "80aec3fdd1e14ad7b2aac0266c109d93d8626db032f64fa18cc72327bd8fde3a"
+    }
+  },
+  "relations": [
+    "process|load|file",
+    "process|read|file",
+    "process|recv|net",
+    "process|send|net",
+    "process|start|process",
+    "process|write|file",
+    "file|inv_load|process",
+    "file|inv_read|process",
+    "net|inv_recv|process",
+    "net|inv_send|process",
+    "process|inv_start|process",
+    "file|inv_write|process"
+  ],
+  "feature_order": [
+    "out_write",
+    "in_write",
+    "out_read",
+    "in_read",
+    "out_send",
+    "in_send",
+    "out_recv",
+    "in_recv",
+    "out_start",
+    "in_start",
+    "out_load",
+    "in_load",
+    "avg_idle_time",
+    "max_idle_time",
+    "min_idle_time"
+  ],
+  "node_types": [
+    "file",
+    "net",
+    "process"
+  ],
+  "args": {
+    "selftest": false,
+    "edges": "/home/it2102/NT2102/src/artifacts/runs/exp10/train_edges.csv",
+    "features": "/home/it2102/NT2102/src/artifacts/runs/exp10/features/features_model.csv",
+    "scaler": "/home/it2102/NT2102/src/artifacts/runs/exp10/features/feature_scaler.json",
+    "out_dir": "/home/it2102/NT2102/src/artifacts/runs/exp10",
+    "val_split": "window",
+    "window_sep": "_",
+    "val_windows": 60,
+    "purge_windows": 2,
+    "val_frac": 0.15,
+    "layers": 2,
+    "hidden": 32,
+    "lr": 0.005,
+    "beta": 0.5,
+    "warmup": 2,
+    "epochs": 100,
+    "dropout": 0.0,
+    "contamination": 0.001,
+    "patience": 5,
+    "tnr_tolerance": 0.01,
+    "runs": 3,
+    "seed": 360,
+    "verbose": false
+  },
+  "label_source": "none (benign-only training; validation = held-out benign nodes)"
+}
