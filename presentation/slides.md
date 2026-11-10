@@ -338,35 +338,22 @@ class: text-center
 # 3 · Video demo
 
 <div class="video-ph" v-motion :initial="{ scale: 0.95, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 500 } }">
-  <div class="video-inner">
-    <div class="play">▶</div>
-    <div class="vt">VIDEO DEMO</div>
-    <div class="vs">benign xanh → tấn công chạy → window đỏ → kết luận LLM</div>
-  </div>
+  <iframe src="https://www.youtube-nocookie.com/embed/Jzv03v82bNo?rel=0"
+    title="Video demo" frameborder="0" allowfullscreen
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" />
 </div>
 
-<!--
-  CHÈN VIDEO Ở ĐÂY (người trình bày tự thêm link):
-  - File cục bộ:  <video src="./images/demo.mp4" controls class="w-full rounded-lg" />
-  - YouTube:      <iframe class="w-full aspect-video rounded-lg"
-                    src="https://www.youtube.com/embed/VIDEO_ID" allowfullscreen />
-  Đặt vào trong <div class="video-ph">…</div> thay cho phần placeholder, hoặc thay cả khối.
--->
-
-<div class="tiny muted mt-3">① idle <b>xanh</b> → ② kill chain chạy → ③ window <b>đỏ</b> + subgraph → ④ kết luận LLM</div>
+<div class="tiny muted mt-3">① idle <b>xanh</b> → ② kill chain chạy → ③ window <b>đỏ</b> + subgraph → ④ kết luận LLM · <a href="https://www.youtube.com/watch?v=Jzv03v82bNo" target="_blank">youtu.be/Jzv03v82bNo</a></div>
 
 <style scoped>
-.video-ph { width: 76%; margin: 0.5rem auto 0; aspect-ratio: 16/9; border-radius: 14px;
-  background: linear-gradient(135deg,#1e293b,#0f172a); display: flex; align-items: center; justify-content: center;
-  border: 2px dashed #475569; }
-.video-inner { text-align: center; color: #e2e8f0; }
-.play { font-size: 2.6rem; color: #f87171; }
-.vt { font-weight: 800; letter-spacing: 0.14em; margin-top: 0.3rem; }
-.vs { font-size: 0.82rem; color: #94a3b8; margin-top: 0.3rem; }
+.video-ph { width: 76%; margin: 0.5rem auto 0; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden;
+  background: #0f172a; box-shadow: 0 6px 24px rgba(15,23,42,0.25); }
+.video-ph iframe { width: 100%; height: 100%; display: block; }
 </style>
 
 <!--
-Chỗ chèn video đã quay sẵn. Nếu không có video, mô tả bằng lời theo bốn bước dưới khung.
+Video demo đã quay sẵn (YouTube: https://www.youtube.com/watch?v=Jzv03v82bNo). Cần mạng để phát;
+nếu mất mạng, mô tả bằng lời theo bốn bước dưới khung.
 Kết quả đo được (exp08: window tấn công 70.17 / LLM attack 0.85; 24 h: 288 window, 7 alert, 3 false alarm)
 và giới hạn nằm trong báo cáo §3–4; nếu được hỏi: note.txt Q7. Slide sau là lời cảm ơn.
 -->
