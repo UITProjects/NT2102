@@ -1,6 +1,7 @@
 # Next action: verify the `ws-etw-1` model and the correlation layer
 
-Status: **not started.** Tick results into `docs/PROGRESS.md`. No check here needs new attack code.
+Status (2026-11-11): **§2 steps 1–3 done, model not accepted; §1 and §3 not started.** Results are in `docs/PROGRESS.md` (top section).
+No check here needs new attack code.
 
 Keep three claims apart: "it runs" (selftests, done), "it works" (below), and detection of real cross-host movement, which nothing
 here proves.
@@ -8,23 +9,27 @@ here proves.
 ## 1. Deploy
 
 ```bash
-cd src/ansible && ansible-playbook -i proxmox.ini ubuntu.yml --tags project -e repo_branch=trainer-monitoring-guard
+cd src/ansible && ansible-playbook -i proxmox.ini ubuntu.yml --tags project      # from main: PR #14 and #17 are merged
 ```
+
+Run it with `--check --diff` first. The trainer is on `retrain-to-avoid-false-positive` `b4c1c29` with a hand-edited unit and no
+`/etc/nt2102-hosts.json`; this run reconciles both and restarts `ocr-live`.
 
 Then on the trainer: `/etc/nt2102-hosts.json` lists both VMs, `lab status` says `converter_check match` for exp08, and
 `ocr-live` still scores `ws-etw-0` only: nothing changes until `lab hosts` is run.
 
 ```bash
-lab promote exp08 --host ws-etw-0
-lab promote exp09-ws1 --host ws-etw-1      # or the retrained model
+lab promote exp10 --host ws-etw-0
+lab promote <ws-etw-1 model> --host ws-etw-1      # none has passed the gate yet (exp11-ws1: NET fails)
 lab hosts
 ```
 
 ## 2. The `ws-etw-1` model
 
-`exp09-ws1` is provisional: 10 h of idle data (PROGRESS). Steps:
+`exp11-ws1` (55 h of idle, 2026-11-11) fails the gate on NET; `exp09-ws1` (10 h) was provisional. Before step 4, two things are open:
+the NET stopping-rule decision, and the owner of the once-a-minute `C:\Lab` task on `ws-etw-1` (PROGRESS). Steps:
 
-1. Retrain on about 3 days, `training-runbook.md`. **Pull by about 2026-11-09 16:00Z**, before the 11-06 17:00Z data leaves Loki.
+1. Retrain on about 3 days, `training-runbook.md`. Done: 11-06 20:30Z → 11-09 10:10Z, the last clean idle before the VM was changed.
 2. Pass the gate in that runbook. Watch `best_ep` on NET and PROCESS, and τ across seeds.
 3. Held-out idle: train only on the earlier part of the range and replay the later part (`retrain-2day-fp-lesson.md`). Count red windows,
    stating the label source. Replay windows the model trained on prove nothing.

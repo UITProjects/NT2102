@@ -117,8 +117,9 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   [OURS] NET alert rule (D8); exp08 before that. The end-goal demo worked on exp08: Kali's DVWA→RCE chain went red with an LLM `attack`
   verdict and idle stayed green around each run; exp10 keeps all 5 attack windows red offline, live Kali run still owed. It is not airtight: benign false alarms
   still happen and the alert can rest on a few nodes (PROGRESS, `docs/notes/subgraph-score-fragility.md`).
-- Two hosts (user, 2026-11-07): one model per host, not pooled (D12). `ws-etw-0` keeps exp08; `ws-etw-1` has `exp09-ws1`, **provisional** (10 h of
-  idle data). `lab hosts` switches one-VM / two-VM. A correlation stage links hosts by code and the LLM explains the full flow (D13).
+- Two hosts (user, 2026-11-07): one model per host, not pooled (D12). `ws-etw-0` runs exp10; `ws-etw-1` has no accepted model:
+  `exp11-ws1` (55 h of idle, 2026-11-11) fails the gate on NET and is not promoted, `exp09-ws1` (10 h) was provisional
+  (`docs/notes/ws-etw-1-retrain-20261111.md`). `ws-etw-1` has not been idle since 2026-11-09 (software installed, a once-a-minute task of unknown owner). `lab hosts` switches one-VM / two-VM. A correlation stage links hosts by code and the LLM explains the full flow (D13).
   Merged to `main` (PR #14) and on the trainer since 2026-11-09 (branch `retrain-to-avoid-false-positive`, via a git bundle) but run in
   **one-VM mode** only (`--loki-default-host ws-etw-0`, no per-host pointer), shown on synthetic flows only. Older data says `ws-etw`: Loki lines from before the rename keep that label.
 - **Deliverables (slides + demo) commit to ONE Windows VM** (`ws-etw-0`, exp08): the recorded demo and the deck show a single host.

@@ -39,6 +39,13 @@ in `XmlEventData.ImageName`.
   Missing it from the baseline causes false alarms.
 - **Exclude** human or Ansible work: `wsmprovhost`, `rdpclip`, `mstsc`, `msiexec`, `choco`.
 - **Exclude** the 6-h rotation canary: `cmd.exe /c whoami` plus `python` at each new `live-*` run. The attack runs `whoami` too.
+- **Tally starts with `SessionID` ≠ 0 separately.** They show RDP connects (`rdpclip`, `logonui`) and anything a person ran. Exclude from
+  connect to disconnect.
+- **Look for scheduled work nobody on the team owns.** On 2026-11-10 someone added a SYSTEM task on `ws-etw-1` that runs
+  `C:\Lab\Scripts\maintenance.ps1` → `whoami` every minute. A range holding such a task is not idle: end the range before it.
+- **Start the range at a run that has its dos map in Loki.** The build refuses runs whose dos maps differ. A run with no `etw-meta` line
+  gets a map guessed from file paths, which can lack the CD-ROM entry (`live-20261106T142029Z` on both VMs). `lab pull` prints each run's
+  map only after the whole download, so a wrong start costs a full pull (16 min for 66 h).
 
 ## 4. Write the exclusion file
 
@@ -77,6 +84,10 @@ Do not promote on "it trained". A nearly untrained model passes simple checks an
 | `emb_std` | not 0 | 0.09 to 0.12 |
 | `train_flag_rate` | about 0.001 | |
 | `converter_check` | `match` | |
+
+On a host with few NET nodes the gate can fail for a second reason (exp11-ws1, 2026-11-11): `--tnr-tolerance 0.01` allows 1 % of the
+validation nodes over τ, and with about 200 NET validation nodes that is 2 nodes. One benign connection is copied into up to 3
+overlapping windows, so a single event can stop training. Check `n_val` for NET before reading `best_ep`.
 
 If `best_ep` is low, compare validation and training maxima in `train_scores.csv`. A validation node far above the training maximum
 means the tail holds behaviour the training part never saw: that is a data problem, so get more data. Do not tune around it

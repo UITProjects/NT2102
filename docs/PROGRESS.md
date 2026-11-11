@@ -1,7 +1,56 @@
-# PROGRESS (status as of 2026-11-09)
+# PROGRESS (status as of 2026-11-11)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`retrain-to-avoid-false-positive`** (from `main`). All work on the Proxmox VMs.
+Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is still
+`retrain-to-avoid-false-positive` `b4c1c29` (same pipeline code as `main`).
+
+## 2026-11-11 `ws-etw-1` retrained as exp11-ws1: gate NOT passed on NET, NOT promoted (verified on the trainer)
+
+Walk-through with the reasoning and repeat commands: `docs/notes/ws-etw-1-retrain-20261111.md`. Plan: retrain `ws-etw-1` only, then two-VM live. Phases 1–2 done, Phase 3 not started.
+`ocr-live` is unchanged: one-VM mode, `ws-etw-0`, exp10.
+
+- **`ws-etw-1` stopped being idle on 11-09 10:17Z** (Loki kproc). RDP sessions with `git`, `msiexec`, `node`, `msedge` on 11-09;
+  `winPEASany.exe`, `icacls`, `netsh` on 11-10; **since 11-10 15:36Z a SYSTEM scheduled task runs `C:\Lab\Scripts\maintenance.ps1` →
+  `whoami` every minute**. Not in this repo and not the user's: **owner to be confirmed with the team (open)**.
+- **Baseline:** experiment `range-20261106T203000Z-ws-etw-1`, 11-06 20:30Z → 11-09 10:10Z, 1,848 windows, 822,495 edges, `check.json` ok,
+  converter `cbbf6dc` = live. 184 windows excluded (`src/artifacts/exclusions/ws-etw-1-20261111.json`: 10 rotation canaries, RDP connected
+  11-07 03:40–03:56Z and 11-08 16:41–20:56Z), 1,664 kept, about 55 h. Label source: operator assertion + a tally of all 3,456 process
+  starts. A first pull from 16:30Z failed at the build: the first run has no dos map in Loki (runbook §3).
+- **Gate, exp11-ws1, exp08 flags, 3 seeds** (saved model = seed 360):
+
+| Type | n_train | n_val | best_ep 360 / 361 / 362 | τ 360 / 361 / 362 | val_fpr (mean ± std) |
+|---|---|---|---|---|---|
+| file | 127,694 | 4,078 | 99 / 99 / 99 | -0.006 / 0.113 / 0.015 | 0.0058 ± 0.0027 |
+| process | 14,230 | 550 | 99 / 31 / 12 | -0.090 / -0.058 / 1.957 | 0.0097 ± 0.0028 |
+| net | 4,189 | 204 | 14 / 9 / 4 | 0.764 / 0.885 / 2.824 | 0.0082 ± 0.0028 |
+
+  FILE passes. **NET stops early on every seed and PROCESS on 2 of 3**, so the gate fails although NET has 11× the data of exp09-ws1.
+  Cause (verified in `train_scores.csv`): `--tnr-tolerance 0.01` allows 2 of about 200 NET validation nodes over τ. In the held-out
+  models the same 2 nodes are over on every seed: one peer, `23.41.37.42:443`, the Defender signature download of 11-08 14:40Z, copied
+  into 3 overlapping windows. In the final model the 2 are the NetBIOS broadcast node `10.21.3.255:138`. The host has 585 distinct NET
+  peers in 62 h and 473 of them appear in ≤ 3 windows, so a validation tail always holds a peer never seen in training. More idle
+  data does not fix this. **Open decision (user): a stopping-rule setting for this host, or leave `ws-etw-1` unscored.** Not tuned.
+- **Held-out idle** (3 models `exp11v-ws1-s360/361/362` trained without 11-08 21:00Z → 11-09 10:10Z, replayed on those windows, NET rule
+  on, Moderate from 10, vs exp09-ws1; `lab compare`, output in `src/out/etw/eval/ws1-holdout/`): 156 windows scored by all four
+  models, 152 idle + 4 canary. **Idle red: exp09-ws1 2 (22:05Z sg 16.9, 04:15Z sg 67.7); held-out models 0 / 0 / 0 (0.0 ± 0.0).**
+  Each held-out model has one window with a subgraph ≥ Moderate that the NET rule suppressed (s360 01:25Z 10.05; s361 04:15Z 24.47;
+  s362 04:15Z 11.73), so without the rule it is 1 red per seed. Read with care: s360's NET (best_ep 2, τ 3.43) and PROCESS (16, τ 1.14)
+  barely trained, and a weak NET model alerts less under the NET rule. Only s362 trained NET and PROCESS to epoch 99 (FILE 64); it is
+  the one seed whose 0 red is evidence. Label source: operator assertion. One 13 h stretch, not a rate.
+  A first replay attempt scored 35 of 156 windows: a new replay session drops the windows still queued for scoring, so the driver
+  now waits for scoring to drain between runs
+- **Preview of today's `ws-etw-1`** (11-10 16:00Z → 11-11 16:00Z with the once-a-minute task, exp11-ws1; not benign evidence, not a
+  detection result; output in `src/out/etw/eval/ws1-preview/`): 287 windows scored, **1 alert** (11-11 11:35Z, sg 10.20: Defender
+  platform DLLs `mpclient.dll` / `mpcommu.dll`, networking DLLs and one new peer `23.56.25.40:443`, i.e. a Defender update, a false
+  alarm; label source: my reading of the kept subgraph) and 1 Moderate subgraph suppressed by the NET rule (11-10 16:10Z, 10.24,
+  file only). Median sg 0.00, p95 1.87. **The once-a-minute `powershell → whoami` task does not raise alerts**: its nodes score
+  in-distribution, as lone short-lived processes did before (D6). 1 alert per 24 h is under the plan's stop rule (≤ 3), so the
+  LLM budget is not the blocker; the failed NET gate is. The saved seed's NET is weakly trained (τ 0.76), so this count may be low
+- **exp10 on `ws-etw-0`, first 48 h live** (11-09 16:00Z → 11-11 16:00Z, `/api/history`): 568 scored windows, **1 alert** = 11-10 14:50Z,
+  the kill chain (`mysql` ×45, PsExec, rclone, `wevtutil`; sg 69.09, LLM `attack` 0.9), **0 benign alerts**, 4 Moderate subgraphs
+  suppressed by the NET rule (11-09 18:10Z, 11-10 00:10Z, 01:10Z, 17:50Z). Who launched the 11-10 run: to be confirmed by the user.
+- **Not done:** Phase 3 (deploy from `main`, `lab promote --host`, `lab hosts ws-etw-0 ws-etw-1`, 24 h soak). Blocked on the two open
+  items above. Models and eval output live only on the trainer (`src/artifacts/runs/exp11*`, `src/out/etw/eval/ws1-*`).
 
 ## Next action (user, 2026-11-09)
 
@@ -38,7 +87,7 @@ Branch: **`retrain-to-avoid-false-positive`** (from `main`). All work on the Pro
   unchanged) only if it holds ≥ 1 anomalous NET node; otherwise suppressed and logged with the reason (D8). Offline re-judge
   (exp08, 10 sessions since 11-05): alert windows 19 → 8, attack windows 5/5, false alarms 14 → 3 (all human sessions). Replaced
   the first three-type version, which lost the 00:50Z C2 window.
-- **Later (nice-to-have): verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). Steps: `docs/notes/training-runbook.md`.
+- **Nice-to-have, in progress: the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). Model status: top section.
 
 ## 2026-11-07 one model per host + cross-host correlation: built, NOT deployed (selftests + UI check only)
 
@@ -73,9 +122,8 @@ types, val_fpr 0). `--patience 20` gave identical results, so it is not an early
 (+3.47, +2.25; train max -0.00) are one benign job, `mousocoreworker.exe` -> `57.154.63.210:443` at 01:20Z, which appears only in
 the validation tail. 9 of 17 validation NET peers are absent from training. The baseline is too short; do not tune around it.
 
-Next: retrain on about 3 days. Loki keeps 72 h, so pull before the 11-06 17:00Z data expires: about 11-09 16:00Z, new
-exclusions for later rotations. Until then exp09-ws1 can stand in for building Part B; expect false alarms on `ws-etw-1`.
-`lineage.json` `hosts` is null for single-host builds: Part B's `lab promote --host` guard needs that recorded.
+Superseded 2026-11-11 by exp11-ws1 (top section): 55 h of idle fixed FILE, not NET.
+`lineage.json` `hosts` is null for single-host builds (exp10, exp09-ws1, exp11-ws1): `lab promote --host` cannot check the pairing.
 
 ## 2026-11-07 trainer resized, monitoring live and protected from training (verified on the trainer)
 

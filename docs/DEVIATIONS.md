@@ -441,8 +441,15 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   (one build would merge both hosts' FILE/NET IDs into one graph). Not used live.
 - Expected impact: a VM's windows are unchanged by adding another (selftest: identical to a plain engine). Each VM needs its own
   clean idle baseline. One-VM mode is `lab hosts ws-etw-0`: the same code with one engine and no correlation.
-- Claims limited: `exp09-ws1` is provisional (10 h baseline, PROGRESS). No attack has been run against `ws-etw-1`, so no detection
-  claim applies to it.
+- `ws-etw-1` model (2026-11-11): `exp11-ws1`, 55 h of idle (11-06 20:30Z → 11-09 10:10Z), replaces the 10 h `exp09-ws1` as the candidate.
+  FILE trains fully; NET stops early on all 3 seeds (best_ep 14 / 9 / 4) and PROCESS on 2 of 3. The paper-style stopping rule with our
+  [OURS] `--tnr-tolerance 0.01` (D5) allows 2 of about 200 NET validation nodes over τ, and one benign connection copied into 3
+  overlapping windows (D1, D3) exceeds that. This host's NET baseline is mostly one-off update-server peers (473 of 585 peers in ≤ 3
+  windows). Not tuned; not promoted (PROGRESS).
+- Claims limited: no `ws-etw-1` model has passed the gate, so `ws-etw-1` is not scored live. A weakly trained NET model raises few
+  alerts under the NET rule (D8), so a green replay on it is not evidence of a working detector. The baseline describes the VM before
+  11-09: software installed since and a once-a-minute scheduled task of unknown owner are outside it. No attack has been run against
+  `ws-etw-1`, so no detection claim applies to it.
 
 ## D13. Cross-host correlation (`src/live/correlate.py`)
 - What: [PAPER] §7: "Detecting lateral movement was beyond the scope of this work, as OCR-APT does not process network traffic
