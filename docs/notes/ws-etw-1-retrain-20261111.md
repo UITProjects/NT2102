@@ -148,3 +148,36 @@ lab compare --baseline src/out/etw/eval/ws1-holdout/exp09-ws1 --candidate src/ou
 ```
 
 Long jobs ran under `systemd-run --slice=user.slice` (runbook §5). Models and replay output exist only on the trainer.
+
+## 7. Resolution (2026-11-12): exp14-ws1 at `--tnr-tolerance 0.06`
+
+The gate failure in §4 is the best-TNR early-stop keeping a loose, undertrained NET epoch: on this churny host NET validation TNR
+peaks while the sphere is loose and **degrades monotonically** as it tightens (the ~200-node NET val set always holds 2-3 brand-new
+benign peers a trained sphere correctly flags). So selection never picks a converged epoch.
+
+- `--patience` is **not** the lever: exp13-ws1 (`--patience 15`) was byte-identical to exp12-ws1 (`--patience 5`) — NET best_ep still
+  20/99/7 — because no later epoch ever re-qualifies as a tie, so a longer patience just runs further before restoring the same early
+  "best".
+- The lever is a tolerance **larger than the irreducible fresh-peer FPR** (a fully-trained NET here has val_fpr ≈ 0.0245). Sweep:
+  0.03 → PROCESS fixed (99/99/99) but NET only 20/99/7; **0.06 → all types 99 on all seeds, NET τ −0.028/−0.073/−0.128 (stable).**
+  FILE/PROCESS are unaffected (already converge at ep 99). `ws-etw-1` thus needs tol 0.06; `ws-etw-0` keeps 0.01.
+
+```bash
+EXP=range-20261106T203000Z-ws-etw-1; X=src/artifacts/exclusions
+ARGS='--layers 2 --val-windows 60 --tnr-tolerance 0.06'
+# final model (saved = seed 360)
+lab train --experiment $EXP --model exp14-ws1 --benign-split test --seeds 3 \
+  --exclude-file $X/ws-etw-1-20261111.json --trainer-args "$ARGS"
+# held-out models (NET ep 99 on all 3 now), replay the 3 held-out runs with a drain-wait between, lab compare:
+for S in 360 361 362; do
+  lab train --experiment $EXP --model exp14v-ws1-s$S --benign-split test --seeds 1 \
+    --exclude-file $X/ws-etw-1-20261111.json --exclude-file $X/holdout-ws1-20261111.json \
+    --trainer-args "--seed $S $ARGS"; done
+# serve each (RUN_DIR/SCALER/EXPERIMENT env, PORT 8010, --sessions-dir), replay, poll /api/status .session.scoring_queue==0 between runs.
+lab compare --baseline src/out/etw/eval/ws1-holdout/exp09-ws1 \
+  --candidate src/out/etw/eval/ws1-holdout-v14/exp14v-ws1-s360 (+s361 +s362)
+```
+
+Results: gate all best_ep 99; held-out idle red **0/0/0** (vs exp09-ws1 2); preview (`notidle-...`) 287 windows, **0 alerts** (median
+0.00, p95 1.92, max 10.24). **NOT promoted** — Phase 3 (two-VM live) stays user-gated. One held-out idle window (04:15Z, seed 361) had
+raw sg 117.0 suppressed by the NET rule, so 0-idle-red is partly load-bearing on that rule (D8, `subgraph-score-fragility.md`).
