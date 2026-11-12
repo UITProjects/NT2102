@@ -4,7 +4,42 @@ Replace lines in place when status changes; no history. "Verified" = checked in 
 Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is **`main` `e40cac0`**
 since 2026-11-12 14:07Z (Ansible `ubuntu.yml --tags project`; unit and `/etc/nt2102-hosts.json` now match git).
 
-## 2026-11-12 Two-VM live: `ws-etw-1` scored by exp15-ws1, `ws-etw-0` by exp10 (verified on the trainer)
+## 2026-11-12 Topology correction + `ws-etw-0` DC retrain → `exp16-ws0` (two-VM live, verified)
+
+Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. The teammate revealed, and Loki + WinRM confirmed, that the VM roles
+are the **reverse** of our earlier records, with a change we never captured:
+- `ws-etw-1` (.11, hostname `WEB-SERVER`, DomainRole 3) = the teammate's **react2shell** node.js RCE app = the attack **entry**.
+- `ws-etw-0` (.10, hostname `WIN-3CSNFVOEN0R`, DomainRole 5) = **Primary Domain Controller** of `nt2102.lab` (ADWS/DFSR/DNS/NTDS),
+  **promoted 2026-11-09 10:41:41Z** (ntds.dit CreationTimeUtc). Still runs DVWA/XAMPP (httpd×2).
+- **exp10 was blind to the DC role:** it trained on idle ending 11-09 10:25Z, **16 min before** the promotion, so AD services/traffic were
+  out-of-distribution. red=0 under exp10 was steady-state luck, not a covered baseline — same failure mode as the ws-etw-1 NetBIOS
+  broadcast, larger surface.
+
+**Fix = `exp16-ws0`** (user decisions 2026-11-12): retrain ws-etw-0 on its current DC state; benign **includes DC steady-state + admin
+RDP/console sessions** (a D2 variant), exclude only canaries + attack bursts; deploy even if the gate fails.
+- **Data:** `range-20261109T164900Z-ws-etw-0` — start = the first clean dos-map run (`live-20261109T164916Z`) **after** the
+  promotion/reboot burst, sidestepping the one-time 10:45Z dcpromo churn (60k kproc in 15 min). 2107 windows, **67 excluded**
+  (`src/artifacts/exclusions/ws-etw-0-20261112.json`: 12 rotation canaries + the 11-10 14:49–15:05Z DVWA→RCE kill chain), 3.78M edges
+  kept. Label source: operator assertion, DC steady-state + admin benign — **no admin-looking-attacker detection claimed on ws-etw-0**.
+- **Gate (seed 360, `--layers 2 --val-windows 60 --tnr-tolerance 0.01`): PASS.**
+
+| Type | n_train | n_val | best_ep | τ | val_fpr |
+|---|---|---|---|---|---|
+| file | 202,129 | 4,149 | 99 | −0.098 | 0.0002 |
+| net | 69,603 | 2,130 | 99 | +0.037 | 0.0000 |
+| process | 31,507 | 882 | 99 | −0.315 | 0.0023 |
+
+  The NET gate — the DC risk — is the strongest (2,130 val NET nodes, val_fpr 0; vs ws-etw-1's 243): training on the DC state made its
+  NET in-distribution. converter_check `match`. The spread seeds (`exp15s`) were abandoned mid-run to free the trainer; rerun later if wanted.
+- **Deploy (2026-11-12 ~16:05Z):** `lab promote exp16-ws0 --host ws-etw-0` + `exp15-ws1 --host ws-etw-1`, `lab hosts ws-etw-0 ws-etw-1`,
+  restart. Both converter `match`. **First check:** ws-etw-0 11 scored **0 red** (max sg 6.53 < Moderate 10), ws-etw-1 0 red; `ocr-live`
+  0.79 GB and building. **Rollback:** `lab promote exp10 --host ws-etw-0 && sudo systemctl restart ocr-live`.
+- **Resolved open item:** the 11-10 14:50Z ws-etw-0 "false positive" was the **real DVWA→RCE kill chain** (psexec / mysql×45 / rclone /
+  schtasks `UpdaterSync` / wevtutil, SessionID=0 via the httpd RCE shell, 14:51–14:54Z, verified in Loki) — exp10's LLM `attack` 0.9 was a
+  **true positive**, now excluded from exp16-ws0 training.
+- **Next action corrected to react2shell (ws-etw-1) → DC (ws-etw-0)** (was "DVWA → react2shell"); see the block below.
+
+## 2026-11-12 Two-VM live: `ws-etw-1` scored by exp15-ws1, `ws-etw-0` by exp10→**exp16-ws0** (verified on the trainer)
 
 Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. User decisions (2026-11-12): retrain `ws-etw-1` on its current state,
 **include the teammate's setup and RDP sessions**, exclude only their exploit/enumeration runs, and **deploy even if the gate fails**.
@@ -40,18 +75,21 @@ Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. User decisions 
   `ocr-live` 1.06 GB. Correlation on: 5 `link`, 0 suspected / confirmed (no `lab flows` baseline yet, so benign VM↔VM traffic counts as
   links). Label source for "0 red": operator assertion that nobody acted on either VM then. Not a soak, not a detection result.
 - **Rollback:** `lab hosts ws-etw-0 && sudo systemctl restart ocr-live` (assignments stay).
-- **NEXT ACTION (user, 2026-11-12): demo lateral movement DVWA → react2shell** — a cross-host attack so the correlation layer (D13)
-  fires for real, not on synthetic flows. Shape: DVWA RCE foothold on `ws-etw-0` → pivot over the network to `ws-etw-1` → exploit
-  react2shell's RCE there. Expected: `ws-etw-0` red (DVWA chain) + a `ws-etw-0 → ws-etw-1` flow + `ws-etw-1` red (react2shell) →
-  correlation `link → suspected → confirmed`, LLM explains the full flow. Prereqs, in order: (a) `lab flows` baseline on a clean range
-  first, else benign VM↔VM traffic drowns the signal (5 benign links already seen); (b) a new attack scenario in
-  `src/atomic-attack-pack/` that reaches react2shell from the network (the 11-09 exploit was over RDP, excluded from training), with
-  self-logged labels per host; (c) react2shell must NOT be alert-blind on `ws-etw-1` — its `node` server is in-distribution, so confirm
-  the exploit's child processes/NET actually score red before claiming detection (D6 risk). This supersedes "cross-host attack is the
-  user's call; do not add unprompted" (two-host memory) — the user has now asked for it.
+- **NEXT ACTION (user, 2026-11-12): demo lateral movement `react2shell` (ws-etw-1) → DC (ws-etw-0)** — direction corrected from the
+  teammate's real topology (RCE the node.js web box first, then pivot to the Domain Controller) so the correlation layer (D13) fires on
+  real flows. Expected: `ws-etw-1` red (react2shell chain) + a `ws-etw-1 → ws-etw-0` flow (:445/:5985) + `ws-etw-0` red (pivot) →
+  correlation `link → suspected → confirmed`, LLM explains the full flow. Prereqs (plan §C/§D), in order: (a) `lab flows` baseline on a
+  clean range first, else benign VM↔VM AD traffic drowns the signal (5 benign links already seen); (b) build the scenario in
+  `src/atomic-attack-pack/` (DVWA-only today): a **react2shell exploit entry** (new auth/injection path; probe `10.21.3.11:3000` to find
+  the route) + a target-aware pivot using **on-host Windows built-ins** (net use / winrs / PsExec64 → the DC over SMB/WinRM, user Q2 —
+  no new Kali AD tooling) + **per-host labels** (today the label host is the constant `SimulatedW10`); (c) confirm the attack scores red
+  on **each** host before any claim (D6 risk: DC pivot auth can blend into legit AD traffic). Scope honesty: the pivot uses a known lab
+  credential (lateral-movement detection, not credential theft); DCSync/real cred-dump out of scope. This supersedes "cross-host attack
+  is the user's call; do not add unprompted" (two-host memory) — the user has now asked for it.
 - **Still owed alongside it:** 24 h soak of both hosts (red windows checked one by one); ask the teammate what turned NetBIOS on at
-  11-09 09:19Z; the 11-10 14:50Z `ws-etw-0` alert reconciliation (exp10 recorded LLM `attack` 0.9, user recalls `false_positive`), set
-  aside 11-12. The deliverables (deck, report, recorded demo) still show one VM; whether the lateral-movement demo joins them is open.
+  11-09 09:19Z. The 11-10 14:50Z `ws-etw-0` reconciliation is **resolved** (true positive — the DVWA→RCE kill chain, see the exp16-ws0
+  section above). The deliverables (deck, report, recorded demo) still show one VM (pre-DC); whether the lateral-movement demo joins them
+  is open — the recorded single-host demo stays frozen and internally consistent.
 
 ## 2026-11-12 exp14-ws1 (tol 0.06): passed the gate by tolerating unseen validation nodes; superseded by exp15-ws1, never deployed
 

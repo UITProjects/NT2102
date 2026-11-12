@@ -113,14 +113,17 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   benign windows stay green. The attack is general, not APT-specific (user, 2026-10-13): exploit of a lab service → RCE → ATT&CK techniques;
   OCR-APT supplies the method. No publishing-style evaluation, metrics or NODLINK baseline are required; the section 6 metrics rules
   apply only if numbers are ever reported.
-- Now live (since 2026-11-09 16:08Z): `ocr-live` on `ubuntu-trainer` scores `ws-etw-0` with **exp10** (~63 h idle, 2 RGCN layers) and the
-  [OURS] NET alert rule (D8); exp08 before that. The end-goal demo worked on exp08: Kali's DVWA→RCE chain went red with an LLM `attack`
-  verdict and idle stayed green around each run; exp10 keeps all 5 attack windows red offline, live Kali run still owed. It is not airtight: benign false alarms
-  still happen and the alert can rest on a few nodes (PROGRESS, `docs/notes/subgraph-score-fragility.md`).
+- Now live: `ocr-live` on `ubuntu-trainer` scores `ws-etw-0` with **exp16-ws0** (DC-era benign, 2 RGCN layers; since 2026-11-12 ~16:05Z)
+  and the [OURS] NET alert rule (D8); **exp10** (~63 h idle) ran it 11-09→11-12 but was blind to the DC role (`ws-etw-0` was promoted to
+  the `nt2102.lab` Domain Controller 11-09 10:41Z, 16 min after exp10's training ended — see D2/D12, PROGRESS top), so it was retrained →
+  exp16-ws0 (gate pass at tol 0.01). The end-goal demo worked on exp08: Kali's DVWA→RCE chain went red with an LLM `attack` verdict and
+  idle stayed green around each run. It is not airtight: benign false alarms still happen and the alert can rest on a few nodes (PROGRESS,
+  `docs/notes/subgraph-score-fragility.md`).
 - Two hosts (user, 2026-11-07): one model per host, not pooled (D12). **Two-VM live since 2026-11-12 ~14:10Z** (user decision): `ws-etw-0`
-  runs exp10, `ws-etw-1` runs **exp15-ws1** (gate passed at tol 0.01; `docs/notes/ws-etw-1-retrain-20261111.md` §11). `ws-etw-1` belongs to a
-  teammate, who runs react2shell (a vulnerable Next.js RCE app) and a SYSTEM task `maintenance.ps1 → whoami` every minute on it; by user
-  decision its baseline includes the teammate's setup and RDP sessions, only their exploit/enumeration runs excluded (D2). The trainer
+  (the **`nt2102.lab` Domain Controller**) runs **exp16-ws0**, `ws-etw-1` (the teammate's **react2shell** node.js RCE box) runs
+  **exp15-ws1** (both gate-passed at tol 0.01; `docs/notes/ws-etw-1-retrain-20261111.md` §11). `ws-etw-1` also runs a SYSTEM task
+  `maintenance.ps1 → whoami` every minute; by user decision each host's baseline includes admin/RDP + current-state work, only
+  exploit/enumeration runs excluded (D2). The trainer
   runs `main` via Ansible `--tags project` (hosts file written, correlation on). `lab hosts` switches one-VM / two-VM. A correlation stage
   links hosts by code and the LLM explains the full flow (D13); no `lab flows` baseline yet, no attack has crossed hosts. Older data says
   `ws-etw`: Loki lines from before the rename keep that label.
@@ -133,14 +136,19 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   one Windows VM (`ws-etw-0`, exp08, 2 RGCN layers), benign = idle 3-day, Moderate from 10 (paper scale), exp08 results filled
   (R2 attack windows 70.17/54.42 Moderate, LLM `attack` 0.85/0.9; 288 windows / 7 alerts / 3 benign FP), D1–D13. Builds clean
   (`latexmk -pdf main.tex`, 21 pages). Only demo screenshots + LLM-provider name left as `\todoval`. Committed (PR #15).
-- **Next action (user, 2026-11-12): demo lateral movement DVWA → react2shell** — a real cross-host attack (foothold on `ws-etw-0` → pivot
-  to `ws-etw-1`'s react2shell RCE) so correlation (D13) fires on real flows, not synthetic. Prereqs: `lab flows` baseline first, a new
-  network-delivered attack scenario in `src/atomic-attack-pack/`, and proof the exploit scores red on `ws-etw-1` (its `node` server is
-  in-distribution; D6 risk). Also owed: 24 h two-VM soak. Details + full prereqs: PROGRESS top. Then concepts 2–4.
+- **Next action (user, 2026-11-12): demo lateral movement react2shell (`ws-etw-1`) → DC (`ws-etw-0`)** — direction corrected 2026-11-12
+  from the teammate's real topology (verified by Loki + WinRM): RCE the node.js web box first, then pivot over the network to the Domain
+  Controller, so correlation (D13) fires on real flows, not synthetic. Prereqs: (a) retrain `ws-etw-0` on its current **DC** state first
+  (exp10 trained on idle ending 11-09 10:25Z, 16 min before the DC promotion at 10:41Z, so it is blind to AD services → `exp16-ws0`);
+  (b) `lab flows` baseline on a clean range; (c) a new network-delivered scenario + react2shell exploit entry in
+  `src/atomic-attack-pack/` (DVWA-only today) with on-host-builtins pivot and per-host labels; (d) proof the attack scores red on each
+  host before any claim (D6 risk: DC auth blends into legit AD traffic). Also owed: 24 h two-VM soak. Details: PROGRESS top. Then concepts 2–4.
 - SG-Det uses the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1 (D8). `ocr-live` keeps a persistent, range-queryable
   window history (`src/live/history.py`).
-- Attack target: DVWA on XAMPP on `ws-etw-0` (user, 2026-10-19), its OS-command-injection page (`/vulnerabilities/exec/`) as the RCE sink,
-  on :3000, login admin/password, security low.
+- Attack target (single-host demo): DVWA on XAMPP on `ws-etw-0` (user, 2026-10-19), its OS-command-injection page
+  (`/vulnerabilities/exec/`) as the RCE sink, on :3000, login admin/password, security low. (For the cross-host demo the RCE *entry* is
+  the teammate's react2shell on `ws-etw-1`:3000 and `ws-etw-0` is the DC *pivot target*; DVWA still runs on `ws-etw-0` for the recorded
+  single-host demo.)
 - Work happens on the Proxmox VMs, controlled over Ansible/SSH.
 - Data: the user's own Windows audit data (ETW), shaped to match the NODLINK simulated Windows 10 (W10) host format the repo expects. The
   graph is named `SimulatedW10` because the repo asserts host names.
@@ -159,7 +167,9 @@ history of earlier progress) and, if relevant, this section.
   conversion, windowing and scoring run on the trainer with the training converter code, scaler and relation list; the live clock is event
   time (newest event − lateness), with a host-clock fallback when idle (D8). The HTTP shipper (`etwship.py`) remains for replay only.
 - Collection lab: VMs on the home Proxmox hypervisor (`infrastructure/` Terraform builds them, `src/ansible/` provisions them, cloud-portable
-  via inventory). VNet `it2102` 10.21.3.0/24: Windows Server 2022 `ws-etw-0` (.10, DVWA) and `ws-etw-1` (.11, collector only), each running
+  via inventory). VNet `it2102` 10.21.3.0/24: Windows Server 2022 `ws-etw-0` (.10, hostname `WIN-3CSNFVOEN0R`: **Primary Domain
+  Controller** of `nt2102.lab` since 2026-11-09 10:41Z — ADWS/DFSR/DNS/NTDS — and still DVWA/XAMPP) and `ws-etw-1` (.11, hostname
+  `WEB-SERVER`, domain member: the teammate's **react2shell** Next.js RCE web app), each running
   `etwcollect` on Kernel-Process, Kernel-File, Kernel-Network; `ubuntu-trainer` (.20: 8 cores, 12 GB, 50 GiB swap; Loki, Grafana, Prometheus,
   training, live server); `nt2102-vpn` (.50). VNet `it2102k` 10.21.4.0/24: Kali `kali` (.30, attacker; `kali.yml` → role `kali_attack`).
   Terraform rules: the user runs `apply`/`destroy`, Claude only writes config and runs `plan`; values are hardcoded in `main.tf` locals and
@@ -174,7 +184,8 @@ history of earlier progress) and, if relevant, this section.
 - Benign set: **idle machine activity, pulled directly from Loki**, no capture script. A clean idle range is pulled with
   `lab pull --start <t> --end <t> --split test --host <vm>` and trained on. Why idle: a scripted workload reuses the attack's living-off-the-land
   binaries and makes the attack in-distribution. Keep benign demo windows idle: an idle model is thin, so real activity can false-positive
-  (D2). Exception (user, 2026-11-12): `ws-etw-1`'s baseline includes its owner's setup and RDP sessions (D2). How to train: `docs/notes/training-runbook.md`.
+  (D2). Exception (user, 2026-11-12): `ws-etw-1`'s baseline includes its owner's setup and RDP sessions, and `ws-etw-0`'s (now a Domain
+  Controller) includes DC steady-state + admin RDP/console sessions — both exclude only canaries + attack runs (D2). How to train: `docs/notes/training-runbook.md`.
 - Windowing: an idle benign time-range pulled from Loki, cut into 5-min sliding windows with a 2-min
   stride. Detection uses the same 5-min window length. For the small demo, tumbling windows
   (stride = window) are enough; sliding windows are the option for real attacks that cross window
@@ -197,6 +208,10 @@ history of earlier progress) and, if relevant, this section.
 - Trainer monitoring: role `ubuntu_monitoring` (tag `monitoring`): Prometheus + node-exporter + cAdvisor in `/opt/monitoring`,
   127.0.0.1 only, Grafana dashboard "Trainer resources". The same role caps everything run over SSH, training included
   (`user.slice`, 50 % RAM), and reserves resources for monitoring; 50 GiB swap in `ubuntu_base` (`src/ansible/README.md`).
+  - **Long trainer jobs (pull/build/train): run detached as a `systemd-run --slice=user.slice` unit and check it every 15 minutes**
+    (user, 2026-11-12) for a zombie/defunct process, a stalled unit (CPUUsageNSec not growing), or a failed/OOM-killed exit — and stop
+    early on any anomaly. Do not start a second heavy job while one is active (the two together blow the 6 GB user-slice cap → OOM). A
+    working heartbeat is in the session scratchpad (`heartbeat2.sh <unit> 900`). See memory `long-task-heartbeat`.
 - Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw-0 and ws-etw-1 from the Server 2022
   eval ISO with manual install, ubuntu-trainer and nt2102-vpn from a cloud image + cloud-init, per-VM
   firewall rules prefixed `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`; `proxmox-firewall.yml`

@@ -1,0 +1,124 @@
+{
+ "model": "exp16-ws0",
+ "experiment": "range-20261109T164900Z-ws-etw-0",
+ "experiment_source": "loki",
+ "hosts": [
+  "ws-etw-0"
+ ],
+ "benign_split": "test",
+ "label_source": "benign by operator assertion: idle Loki range 2026-11-09 16:49:00+0000 - 2026-11-12 15:08:00+0000 (split test) minus 67 of 2107 windows listed in `excluded`",
+ "excluded": {
+  "windows_total": 2107,
+  "windows_dropped": 67,
+  "windows_kept": 2040,
+  "edges_kept": 3781611,
+  "edges_dropped": 201091,
+  "ranges": [
+   {
+    "start_ms": 1794242820000,
+    "end_ms": 1794243120000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new live-20261109T164916Z run, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794264720000,
+    "end_ms": 1794265020000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794286620000,
+    "end_ms": 1794286920000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794308520000,
+    "end_ms": 1794308820000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794322140000,
+    "end_ms": 1794323100000,
+    "reason": "DVWA->RCE kill chain on ws-etw-0 (SessionID=0, via httpd RCE shell): psexec 14:51, whoami, mysql x45 14:52-53 (dvwa.users dump), rclone 14:52, schtasks UpdaterSync 14:54, wevtutil clear 14:54, + C2 beacon tail to ~15:00. Attack, not idle",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794330420000,
+    "end_ms": 1794330720000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794352320000,
+    "end_ms": 1794352620000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794374220000,
+    "end_ms": 1794374520000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794396120000,
+    "end_ms": 1794396420000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794418020000,
+    "end_ms": 1794418320000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794439920000,
+    "end_ms": 1794440220000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794461820000,
+    "end_ms": 1794462120000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   },
+   {
+    "start_ms": 1794483720000,
+    "end_ms": 1794484020000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": null,
+    "file": "ws-etw-0-20261112.json"
+   }
+  ]
+ },
+ "seeds": 1,
+ "epochs": null,
+ "created_utc": "2026-11-12T16:08:49.480919+00:00",
+ "git_commit": "e40cac0",
+ "pipeline_uncommitted_changes": false,
+ "converter_sha256": "cbbf6dcfa6581d6e4fd34d81408292b9cb1b9fc4efa6bfedcf14d1798766f35d",
+ "tools": {
+  "encode_to_features.py": "7d07efb74f3361a3a212cca1cae652e2b73f786a9bba43fecd6cd23180455e36",
+  "train_gnn_models.py": "ec91cb89ca50d8fe3ccc36819ead1c9f929b0c5d474e23a2abcf35e9de45226c"
+ },
+ "commands": [
+  "src/pipeline/encode_to_features.py --edges src/artifacts/runs/exp16-ws0/train_edges.csv --out-dir src/artifacts/runs/exp16-ws0/features",
+  "src/pipeline/train_gnn_models.py --edges src/artifacts/runs/exp16-ws0/train_edges.csv --features src/artifacts/runs/exp16-ws0/features/features_model.csv --scaler src/artifacts/runs/exp16-ws0/features/feature_scaler.json --out-dir src/artifacts/runs/exp16-ws0 --runs 1 --layers 2 --val-windows 60 --tnr-tolerance 0.01 --verbose"
+ ]
+}

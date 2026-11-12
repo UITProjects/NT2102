@@ -52,7 +52,13 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   `node.exe`, winPEAS, `systeminfo`, `netsh`, `runas`+`whoami` privesc tests, one ambiguous `icacls` ×8 burst): 214 of 4,070 windows,
   `src/artifacts/exclusions/ws-etw-1-20261112.json`. Why: the user's choice, so the model matches how `ws-etw-1` is really used.
   Impact: on `ws-etw-1` a human RDP session and the teammate's tools used for setup (`net user`, `icacls`, `runas`) are normal, so
-  they will not raise alerts there (unlike `ws-etw-0`, where a logged-on session does); `whoami` under `powershell` is normal too.
+  they will not raise alerts there (and, since `exp16-ws0`, on `ws-etw-0` too — see next bullet); `whoami` under `powershell` is normal too.
+- `ws-etw-0` is **now a Domain Controller and no longer idle-only** (user, 2026-11-12, exp16-ws0): it was promoted to the `nt2102.lab` DC
+  at 11-09 10:41Z (verified by Loki + WinRM), so its baseline 11-09 16:49Z → 11-12 15:08Z *includes* all DC steady-state work
+  (ADWS/DFSR/DNS/NTDS, replication) **and admin RDP/console sessions**, excluding only our rotation canaries and the 11-10 14:49–15:05Z
+  DVWA→RCE kill chain (`src/artifacts/exclusions/ws-etw-0-20261112.json`, 67 of 2107 windows). This **supersedes the logged-on-session
+  bullet above for the live model**: an admin session on `ws-etw-0` is now learned as normal, so — like `ws-etw-1` — a hands-on-keyboard
+  attacker who looks like the admin would blend in, and no such detection is claimed. `exp10` (idle, pre-DC) is retired from live use.
 - Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
@@ -459,9 +465,16 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   runs excluded, D2), tol 0.01 like `ws-etw-0`. Gate (seed 360 = the deployed model): best_ep 99 on FILE / NET / PROCESS, val_fpr
   0.0004 / 0.0000 / 0.0020. Deployed in two-VM mode (`lab hosts ws-etw-0 ws-etw-1`) by user decision, who allowed deployment even if the
   gate failed.
-- Claims limited: green windows on `ws-etw-1` show its baseline matches its current use, not that it detects attacks: no labelled
-  attack has been replayed or run against `ws-etw-1` after training. Human sessions there are learned as normal (D2), so the
-  interactive-session false alarms seen on `ws-etw-0` do not apply to it, and neither would an attacker who looks like the admin.
+- `ws-etw-0` model, history: `exp10` (≈63 h idle, 11-06 19:40Z → 11-09 10:25Z) was trained **16 min before** the DC promotion
+  (11-09 10:41:41Z), so it was blind to all AD services — the live red=0 under it was steady-state luck, not a covered baseline. Retired
+  from live use 2026-11-12. **`exp16-ws0`** live since 2026-11-12 ~16:05Z: DC-era benign 11-09 16:49Z → 11-12 15:08Z (DC steady-state +
+  admin sessions, D2), tol 0.01 like `ws-etw-1`. Gate (seed 360 = deployed): best_ep 99 on FILE / NET / PROCESS, val_fpr
+  0.0002 / 0.0000 / 0.0023; the NET gate — the DC risk — is the strongest (2,130 val nodes) now that the DC's NET is in training.
+  Deployed two-VM by user decision (deploy allowed even on gate failure). First check: 0 red on both hosts.
+- Claims limited: green windows on either host show its baseline matches its current use, not that it detects attacks: no labelled
+  attack has been replayed or run against `ws-etw-1` or the DC `ws-etw-0` after their DC-era/current-state retrain. Human/admin sessions
+  on both are now learned as normal (D2), so the old interactive-session false alarms no longer fire — and neither would an attacker who
+  looks like the admin. No cross-host attack has crossed the two yet (D13).
 
 ## D13. Cross-host correlation (`src/live/correlate.py`)
 - What: [PAPER] §7: "Detecting lateral movement was beyond the scope of this work, as OCR-APT does not process network traffic
@@ -479,6 +492,8 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - Impact: none on any window or alert: the result is an overlay. The host with no kept subgraph still gives its best subgraph to
   the LLM document, since a short hop can stay under SG-Det's cut-off. Adds LLM calls to the same daily budget.
 - Limits: validated on synthetic flows only. No attack crossing hosts has been run, so **no claim that real cross-host movement
-  is detected**. Needs a clean baseline, or every flow is new. A `suspected` needs a red window, so a hop from a host that stayed
-  green is only a `link`. Only flows between monitored hosts are seen. Windows on different hosts join by clock: skew between
-  VMs was not measured.
+  is detected**. The planned first real crossing (user, 2026-11-12) is **react2shell (`ws-etw-1`) → DC (`ws-etw-0`)** over SMB/WinRM;
+  until it runs and is labelled, this no-claim stands, and a `lab flows` baseline must be recorded first (benign AD replication/DNS/SMB
+  between the two VMs is new to the baseline otherwise). Needs a clean baseline, or every flow is new. A `suspected` needs a red window,
+  so a hop from a host that stayed green is only a `link`. Only flows between monitored hosts are seen. Windows on different hosts join by
+  clock: skew between VMs was not measured.

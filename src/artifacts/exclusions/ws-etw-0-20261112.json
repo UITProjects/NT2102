@@ -1,0 +1,18 @@
+{
+ "comment": "Benign windows left out of DC-era training for exp16-ws0 (ws-etw-0), range 2026-11-09T16:49Z -> now. UTC. ws-etw-0 was promoted to Primary Domain Controller of nt2102.lab at 2026-11-09T10:41:41Z (ntds.dit CreationTimeUtc); exp10 trained on idle ending 11-09T10:25Z, 16 min before, so it is blind to the DC role. This range starts at the first clean dos-map run AFTER the promotion/reboot churn (live-20261109T164916Z, 16:49Z), which sidesteps the one-time 10:45Z dcpromo/role-install/reboot burst (60k kproc in 15 min, settled by ~11:15Z) entirely, so no promotion entry is needed. By user decision (2026-11-12) the benign set INCLUDES all DC automated work (ADWS/DFSR/DNS/NTDS, replication, OS jobs) AND admin RDP/console sessions (e.g. the 11-10 16:20Z rdpclip SessionID=2 session is kept) -- a D2 variant, so no detection is claimed for an admin-looking attacker on ws-etw-0. Only our rotation canaries and one attack burst are excluded. Found by scanning kproc ProcessStart (ImageName/SessionID) + etw-meta in Loki. See docs/notes/ws-etw-1-retrain-20261111.md and docs/notes/training-runbook.md.",
+ "ranges": [
+  {"start": "2026-11-09T16:47:00Z", "end": "2026-11-09T16:52:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at new live-20261109T164916Z run, not idle"},
+  {"start": "2026-11-09T22:52:00Z", "end": "2026-11-09T22:57:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-10T04:57:00Z", "end": "2026-11-10T05:02:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-10T11:02:00Z", "end": "2026-11-10T11:07:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-10T14:49:00Z", "end": "2026-11-10T15:05:00Z", "reason": "DVWA->RCE kill chain on ws-etw-0 (SessionID=0, via httpd RCE shell): psexec 14:51, whoami, mysql x45 14:52-53 (dvwa.users dump), rclone 14:52, schtasks UpdaterSync 14:54, wevtutil clear 14:54, + C2 beacon tail to ~15:00. Attack, not idle"},
+  {"start": "2026-11-10T17:07:00Z", "end": "2026-11-10T17:12:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-10T23:12:00Z", "end": "2026-11-10T23:17:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-11T05:17:00Z", "end": "2026-11-11T05:22:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-11T11:22:00Z", "end": "2026-11-11T11:27:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-11T17:27:00Z", "end": "2026-11-11T17:32:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-11T23:32:00Z", "end": "2026-11-11T23:37:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-12T05:37:00Z", "end": "2026-11-12T05:42:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"},
+  {"start": "2026-11-12T11:42:00Z", "end": "2026-11-12T11:47:00Z", "reason": "etwctl rotation canary: whoami + python at new live-* run"}
+ ]
+}
