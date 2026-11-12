@@ -45,6 +45,14 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   session stays logged on); all 7 LLM-judged were `false_positive`. Impact: idle means no one logged on. Sign out after RDP, and
   exclude logon → sign-out from training. A retrain does not fix this. Loki retention raised 72 h → 90 d so a baseline can cover
   more than 3 days. Details: `docs/notes/logged-on-session-fp-lesson.md`.
+- `ws-etw-1` is **not idle-only** (user, 2026-11-12, exp15-ws1): its baseline 11-06 20:30Z → 11-12 12:15Z *includes* the
+  teammate's setup and admin work (account creation, `icacls`, git clone, Node/npm installs, Edge) and **all their RDP sessions**,
+  plus the VM's current state (react2shell `node` server, a SYSTEM task running `powershell → whoami` every minute, the NetBIOS
+  broadcast). Excluded only: our 6-h rotation canaries and the teammate's exploit / enumeration runs (react2shell RCE children of
+  `node.exe`, winPEAS, `systeminfo`, `netsh`, `runas`+`whoami` privesc tests, one ambiguous `icacls` ×8 burst): 214 of 4,070 windows,
+  `src/artifacts/exclusions/ws-etw-1-20261112.json`. Why: the user's choice, so the model matches how `ws-etw-1` is really used.
+  Impact: on `ws-etw-1` a human RDP session and the teammate's tools used for setup (`net user`, `icacls`, `runas`) are normal, so
+  they will not raise alerts there (unlike `ws-etw-0`, where a logged-on session does); `whoami` under `powershell` is normal too.
 - Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
@@ -441,15 +449,19 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   (one build would merge both hosts' FILE/NET IDs into one graph). Not used live.
 - Expected impact: a VM's windows are unchanged by adding another (selftest: identical to a plain engine). Each VM needs its own
   clean idle baseline. One-VM mode is `lab hosts ws-etw-0`: the same code with one engine and no correlation.
-- `ws-etw-1` model (2026-11-11): `exp11-ws1`, 55 h of idle (11-06 20:30Z → 11-09 10:10Z), replaces the 10 h `exp09-ws1` as the candidate.
-  FILE trains fully; NET stops early on all 3 seeds (best_ep 14 / 9 / 4) and PROCESS on 2 of 3. The paper-style stopping rule with our
-  [OURS] `--tnr-tolerance 0.01` (D5) allows 2 of about 200 NET validation nodes over τ, and one benign connection copied into 3
-  overlapping windows (D1, D3) exceeds that. This host's NET baseline is mostly one-off update-server peers (473 of 585 peers in ≤ 3
-  windows). Not tuned; not promoted (PROGRESS).
-- Claims limited: no `ws-etw-1` model has passed the gate, so `ws-etw-1` is not scored live. A weakly trained NET model raises few
-  alerts under the NET rule (D8), so a green replay on it is not evidence of a working detector. The baseline describes the VM before
-  11-09: software installed since and a once-a-minute scheduled task of unknown owner are outside it. No attack has been run against
-  `ws-etw-1`, so no detection claim applies to it.
+- `ws-etw-1` model, history: `exp11-ws1` (2026-11-11, 55 h idle to 11-09 10:10Z) failed the gate: NET stopped early on all 3 seeds.
+  The cause (found 2026-11-12, verified in `train_scores.csv` + node attrs): the NetBIOS broadcast `10.21.3.255:138` (kernel `System`)
+  first appears on `ws-etw-1` at 11-09 09:19Z, so it sat only in the validation tail and never in training; 5 of the 6 validation NET
+  nodes over τ were that broadcast. `ws-etw-0` has it in 231 training windows. It was **not** one-off peers: `ws-etw-0` meets as many
+  new peers (18 % of validation NET nodes) and flags none, because features are behaviour, not addresses. `exp14-ws1` (tol 0.06)
+  passed by tolerating those nodes; never deployed.
+- `ws-etw-1` model, live since 2026-11-12 ~14:10Z: **`exp15-ws1`**, 11-06 20:30Z → 11-12 12:15Z (teammate setup + RDP included, attack
+  runs excluded, D2), tol 0.01 like `ws-etw-0`. Gate (seed 360 = the deployed model): best_ep 99 on FILE / NET / PROCESS, val_fpr
+  0.0004 / 0.0000 / 0.0020. Deployed in two-VM mode (`lab hosts ws-etw-0 ws-etw-1`) by user decision, who allowed deployment even if the
+  gate failed.
+- Claims limited: green windows on `ws-etw-1` show its baseline matches its current use, not that it detects attacks: no labelled
+  attack has been replayed or run against `ws-etw-1` after training. Human sessions there are learned as normal (D2), so the
+  interactive-session false alarms seen on `ws-etw-0` do not apply to it, and neither would an attacker who looks like the admin.
 
 ## D13. Cross-host correlation (`src/live/correlate.py`)
 - What: [PAPER] §7: "Detecting lateral movement was beyond the scope of this work, as OCR-APT does not process network traffic

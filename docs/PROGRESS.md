@@ -1,49 +1,67 @@
 # PROGRESS (status as of 2026-11-12)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is still
-`retrain-to-avoid-false-positive` `b4c1c29` (same pipeline code as `main`).
+Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is **`main` `e40cac0`**
+since 2026-11-12 14:07Z (Ansible `ubuntu.yml --tags project`; unit and `/etc/nt2102-hosts.json` now match git).
 
-## 2026-11-12 `ws-etw-1` retrained as exp14-ws1: gate + held-out PASS at `--tnr-tolerance 0.06`, NOT promoted (verified on the trainer)
+## 2026-11-12 Two-VM live: `ws-etw-1` scored by exp15-ws1, `ws-etw-0` by exp10 (verified on the trainer)
 
-Fixes the exp11-ws1 NET gate failure below. Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. Same baseline
-experiment `range-20261106T203000Z-ws-etw-1`, same exclusions, exp08 flags; **only the stopping-rule tolerance changed**
-(`--tnr-tolerance 0.01 → 0.06`, a command-line value, no code change). `ocr-live` is unchanged: one-VM mode, `ws-etw-0`, exp10.
+Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. User decisions (2026-11-12): retrain `ws-etw-1` on its current state,
+**include the teammate's setup and RDP sessions**, exclude only their exploit/enumeration runs, and **deploy even if the gate fails**.
 
-- **Root cause of the exp11 NET failure (confirmed):** the best-TNR early-stop keeps the epoch with the highest benign-validation
-  TNR (within `--tnr-tolerance` of peak). On `ws-etw-1` NET, TNR is highest while the sphere is still **loose** (early epoch) and
-  **monotonically degrades** as it tightens, because the ~200-node NET validation set always holds 2-3 brand-new benign peers a
-  trained sphere correctly flags. So selection kept a loose, undertrained epoch. `--patience` is irrelevant (exp13-ws1 at patience 15
-  was byte-identical to exp12-ws1 at patience 5: NET best_ep still 20/99/7). The fix is a tolerance **larger than the irreducible
-  fresh-peer FPR** (seed 361 fully-trained NET val_fpr ≈ 0.0245, so ~2.5-5 %). 0.03 fixed PROCESS but only 1/3 NET seeds (20/99/7);
-  **0.06 fixes all three.** FILE/PROCESS are unaffected by the larger tolerance (they already converge at ep 99).
-- **Gate, exp14-ws1 (`--layers 2 --val-windows 60 --tnr-tolerance 0.06`), 3 seeds, saved = seed 360:** all types **best_ep 99 on all
-  seeds**. NET τ now a stable negative band **−0.028 / −0.073 / −0.128** (was 0.19/−0.07/1.60 at 0.01), val_fpr net 0.029/0.025/0.054,
-  file 0.0058, process 0.0176. emb_std ~0.09-0.13 (no collapse).
-- **Held-out idle (the real gate):** 3 single-seed held-out models `exp14v-ws1-s360/361/362` (also exclude 11-08 21:00Z→11-09 10:10Z,
-  all NET ep 99), replayed on those windows, NET rule on, Moderate from 10, `lab compare` vs `exp09-ws1`. 156 windows scored by all
-  four. **Idle red: 0 / 0 / 0 (0.0 ± 0.0)**, vs exp09-ws1's 2. Output `src/out/etw/eval/ws1-holdout-v14/`. **Caveat:** at 04:15Z seed
-  361's raw subgraph score is 117.0 (>> Moderate) but **suppressed by the NET rule** (no anomalous NET node), so 0-idle-red is partly
-  load-bearing on the NET rule (D8, `docs/notes/subgraph-score-fragility.md`). Saved seed 360 is low at both windows (2.4 / 7.0).
-- **Preview on recent (contaminated) data** (`notidle-20261110T160000Z-ws-etw-1`, 11-10→11-11, react2shell exploit + friend's admin
-  activity present): 287 scored windows, **0 alerts**, median sg 0.00, p95 1.92, max 10.24 (1 window ≥ Moderate, NET-rule-suppressed).
-  Not a benign claim and not a detection claim (no labelled attack); only shows no false-alarm storm and that the fully-trained NET is
-  more stable than exp11-ws1's (which raised 1). Output `src/out/etw/eval/ws1-preview-v14/`.
-- **NOT promoted / NOT deployed.** The plan stops at verify; promotion + two-VM live (`lab promote --host`, `lab hosts`, soak) is
-  Phase 3, still user-gated (nice-to-have, deliverables commit to one VM). `exp12-ws1`/`exp13-ws1` (failed tol sweep) kept on the
-  trainer as evidence. Models + eval output live only on the trainer (`src/artifacts/runs/exp14*`, `src/out/etw/eval/ws1-*-v14/`).
-- **`ws-etw-1` ownership resolved:** `C:\Labs\react2shell` is the user's friend's deliberately-vulnerable Next.js RCE app (the
-  `ws-etw-0`/DVWA analogue), exploited 11-10 (the `hacked` file, winPEAS). So post-11-09 `ws-etw-1` data stays contaminated; the
-  11-09 10:10Z benign cutoff holds. react2shell is a real second attack surface for future cross-host correlation (D13).
-- **Next action (user, to review 2026-11-12 evening): decide whether to take `ws-etw-1` to Phase 3 or leave it parked.**
-  `exp14-ws1` is verified and ready to promote; nothing is deployed. Two paths:
-  1. **Promote + two-VM live (Phase 3, nice-to-have):** `lab promote exp14-ws1 --host ws-etw-1`, `lab hosts ws-etw-0 ws-etw-1`,
-     deploy from `main`, 24 h soak (`docs/notes/verify-two-host.md`). react2shell now enables a real cross-host attack for D13.
-     Cost: the deliverables commit to one VM, so this is extra scope.
-  2. **Leave parked:** keep one-VM (`ws-etw-0`, exp10) for the demo/deck/report; show two-host + correlation as future work.
-     `exp14-ws1` stays on the trainer, ready if time allows.
-  Still open (set aside 11-12): the 11-10 14:50Z `ws-etw-0` alert — exp10 recorded LLM `attack` 0.9, user recalls `false_positive`;
-  confirm which window was checked, as it decides whether exp10 has a real live detection.
+- **Why exp11/exp14 struggled (root cause, verified):** the NetBIOS broadcast `10.21.3.255:138` (kernel `System`, NetBIOS datagram)
+  first appears on `ws-etw-1` at **11-09 09:19Z**, 51 min before the old range ended, so it sat only in the validation tail. 5 of the
+  6 validation NET nodes over τ in exp14 were that broadcast. `ws-etw-0` has it in 231 training windows. It is not one-off peers:
+  `ws-etw-0` meets as many new peers (594 peers, 18 % of validation NET nodes unseen in training) and flags none, because features are
+  behaviour, not addresses. After 11-10 the broadcast is in 112 of 287 `ws-etw-1` windows. Cause of the change unknown (no new
+  process started that hour) [INFERENCE: a network setting or another machine started NetBIOS].
+- **Data:** `range-20261106T203000Z-20261112T1215Z-ws-etw-1` (pulled with `loki_pull.py --id`, 37 min incl. build): 4,070 windows,
+  6,037,156 edges, `check.json` ok, converter `cbbf6dc` = live. Post-setup days carry about twice the file events of idle days.
+  Exclusions `src/artifacts/exclusions/ws-etw-1-20261112.json` (30 ranges, 214 windows): 23 rotation canaries + 7 teammate attack
+  bursts found from Loki ProcessStart (11-09 11:33–11:45Z, 12:38–13:30Z, 16:26–17:08Z, 17:12–17:32Z = react2shell RCE via
+  `node.exe` incl. the `hacked` file at 17:27Z; 11-10 12:37–13:02Z `runas`/`whoami` privesc tests; 15:10–15:44Z winPEAS/`systeminfo`/
+  `netsh`; 16:54–17:11Z `icacls` ×8, ambiguous). Kept: the 11-09 10:19–10:33Z lab setup (`net user`, `icacls`, `runas` → git clone,
+  Node/npm install), every RDP session, the every-minute `maintenance.ps1 → whoami` task, react2shell's server. Label source:
+  operator assertion, **not idle-only** (D2); `lineage.json` still says "idle Loki range", read it with this note.
+- **Gate, exp15-ws1** (`--layers 2 --val-windows 60 --tnr-tolerance 0.01`, the `ws-etw-0` setting), seed 360 = the deployed model:
+
+| Type | n_train | n_val | best_ep | τ | val_fpr |
+|---|---|---|---|---|---|
+| file | 490,478 | 9,156 | 99 | −0.063 | 0.0004 |
+| net | 16,179 | 243 | 99 | −0.172 | 0.0000 |
+| process | 57,893 | 1,527 | 99 | −0.202 | 0.0020 |
+
+  Passes at 0.01 with the broadcast in training, so the 0.06 workaround (exp14) is not needed. Seeds 361/362 (`exp15s-ws1`, same data
+  and flags) train after deployment only to report the spread: **pending**. 9.5 s per epoch, 4.5 GB peak, no swap.
+- **Deploy (2026-11-12 ~14:10Z):** Ansible `--check --diff` then apply (4 changed, 0 failed); `lab promote exp10 --host ws-etw-0`,
+  `lab promote exp15-ws1 --host ws-etw-1`, `lab hosts ws-etw-0 ws-etw-1`, restart. Both `converter_check: match`.
+- **First check (14:20Z):** both engines follow Loki (`ws-etw-0` lag −1.6 s, `ws-etw-1` caught up from 34 min behind to 3.4 s).
+  `ws-etw-1` 12 windows scored, **0 red**, median sg 0.0, max 1.99, no NET-rule suppression; `ws-etw-0` 12 scored, 0 red.
+  `ocr-live` 1.06 GB. Correlation on: 5 `link`, 0 suspected / confirmed (no `lab flows` baseline yet, so benign VM↔VM traffic counts as
+  links). Label source for "0 red": operator assertion that nobody acted on either VM then. Not a soak, not a detection result.
+- **Rollback:** `lab hosts ws-etw-0 && sudo systemctl restart ocr-live` (assignments stay).
+- **NEXT ACTION (user, 2026-11-12): demo lateral movement DVWA → react2shell** — a cross-host attack so the correlation layer (D13)
+  fires for real, not on synthetic flows. Shape: DVWA RCE foothold on `ws-etw-0` → pivot over the network to `ws-etw-1` → exploit
+  react2shell's RCE there. Expected: `ws-etw-0` red (DVWA chain) + a `ws-etw-0 → ws-etw-1` flow + `ws-etw-1` red (react2shell) →
+  correlation `link → suspected → confirmed`, LLM explains the full flow. Prereqs, in order: (a) `lab flows` baseline on a clean range
+  first, else benign VM↔VM traffic drowns the signal (5 benign links already seen); (b) a new attack scenario in
+  `src/atomic-attack-pack/` that reaches react2shell from the network (the 11-09 exploit was over RDP, excluded from training), with
+  self-logged labels per host; (c) react2shell must NOT be alert-blind on `ws-etw-1` — its `node` server is in-distribution, so confirm
+  the exploit's child processes/NET actually score red before claiming detection (D6 risk). This supersedes "cross-host attack is the
+  user's call; do not add unprompted" (two-host memory) — the user has now asked for it.
+- **Still owed alongside it:** 24 h soak of both hosts (red windows checked one by one); ask the teammate what turned NetBIOS on at
+  11-09 09:19Z; the 11-10 14:50Z `ws-etw-0` alert reconciliation (exp10 recorded LLM `attack` 0.9, user recalls `false_positive`), set
+  aside 11-12. The deliverables (deck, report, recorded demo) still show one VM; whether the lateral-movement demo joins them is open.
+
+## 2026-11-12 exp14-ws1 (tol 0.06): passed the gate by tolerating unseen validation nodes; superseded by exp15-ws1, never deployed
+
+Same baseline as exp11 (`range-20261106T203000Z-ws-etw-1`), only `--tnr-tolerance 0.01 → 0.06`. **Correction:** the explanation
+committed in `a66cd56` ("2-3 brand-new benign peers in every validation set") is wrong; the real cause is the NetBIOS broadcast above.
+The numbers stand: `--patience 15` was byte-identical to `--patience 5` (exp13 = exp12, NET best_ep 20/99/7), so patience is not the
+lever; 0.03 fixed PROCESS only; 0.06 gave best_ep 99 on all types and 3 seeds, NET τ −0.028/−0.073/−0.128. Held-out idle (3 models
+`exp14v-ws1-s36x`, 156 windows, NET rule, Moderate from 10): 0/0/0 red vs exp09-ws1's 2; seed 361 had one idle window at raw sg 117.0
+kept green only by the NET rule. Preview 11-10→11-11 (287 windows): 0 alerts. Output `src/out/etw/eval/ws1-*-v14/`; models
+`exp12`–`exp14*` kept on the trainer as evidence.
 
 ## 2026-11-11 `ws-etw-1` retrained as exp11-ws1: gate NOT passed on NET, NOT promoted (verified on the trainer)
 

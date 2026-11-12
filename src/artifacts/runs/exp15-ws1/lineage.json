@@ -1,0 +1,243 @@
+{
+ "model": "exp15-ws1",
+ "experiment": "range-20261106T203000Z-20261112T1215Z-ws-etw-1",
+ "experiment_source": "loki",
+ "hosts": [
+  "ws-etw-1"
+ ],
+ "benign_split": "test",
+ "label_source": "benign by operator assertion: idle Loki range 2026-11-06 20:30:00+0000 - 2026-11-12 12:15:00+0000 (split test) minus 214 of 4070 windows listed in `excluded`",
+ "excluded": {
+  "windows_total": 4070,
+  "windows_dropped": 214,
+  "windows_kept": 3856,
+  "edges_kept": 5334650,
+  "edges_dropped": 702506,
+  "ranges": [
+   {
+    "start_ms": 1793996607000,
+    "end_ms": 1793996847000,
+    "reason": "etwctl rotation canary (live-20261106T202527Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794018507000,
+    "end_ms": 1794018747000,
+    "reason": "etwctl rotation canary (live-20261107T023027Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794040407000,
+    "end_ms": 1794040647000,
+    "reason": "etwctl rotation canary (live-20261107T083527Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794062308000,
+    "end_ms": 1794062548000,
+    "reason": "etwctl rotation canary (live-20261107T144028Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794084207000,
+    "end_ms": 1794084447000,
+    "reason": "etwctl rotation canary (live-20261107T204527Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794106107000,
+    "end_ms": 1794106347000,
+    "reason": "etwctl rotation canary (live-20261108T025027Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794128008000,
+    "end_ms": 1794128248000,
+    "reason": "etwctl rotation canary (live-20261108T085528Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794149907000,
+    "end_ms": 1794150147000,
+    "reason": "etwctl rotation canary (live-20261108T150027Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794171807000,
+    "end_ms": 1794172047000,
+    "reason": "etwctl rotation canary (live-20261108T210527Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794193707000,
+    "end_ms": 1794193947000,
+    "reason": "etwctl rotation canary (live-20261109T031027Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794215607000,
+    "end_ms": 1794215847000,
+    "reason": "etwctl rotation canary (live-20261109T091527Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794223712000,
+    "end_ms": 1794223952000,
+    "reason": "etwctl rotation canary (live-20261109T113032Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794223983000,
+    "end_ms": 1794224710000,
+    "reason": "react2shell RCE test: node.exe -> cmd -> whoami (teammate exploit run, not setup)",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794227889000,
+    "end_ms": 1794231046000,
+    "reason": "react2shell exploitation: node.exe -> cmd -> whoami/ipconfig/hostname/powershell/ping",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794241593000,
+    "end_ms": 1794244094000,
+    "reason": "react2shell exploitation: cmd, whoami x13, powershell, runas, curl",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794244327000,
+    "end_ms": 1794245550000,
+    "reason": "react2shell exploitation incl. the 'hacked' file (17:27Z = 00:27 VM local): cmd, whoami, curl",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794245616000,
+    "end_ms": 1794245856000,
+    "reason": "etwctl rotation canary (live-20261109T173536Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794267516000,
+    "end_ms": 1794267756000,
+    "reason": "etwctl rotation canary (live-20261109T234036Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794289416000,
+    "end_ms": 1794289656000,
+    "reason": "etwctl rotation canary (live-20261110T054536Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794311316000,
+    "end_ms": 1794311556000,
+    "reason": "etwctl rotation canary (live-20261110T115036Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794314230000,
+    "end_ms": 1794315752000,
+    "reason": "privesc testing: runas x4 + whoami x5, powershell",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794323454000,
+    "end_ms": 1794325455000,
+    "reason": "enumeration: winPEASany, systeminfo, netsh, icacls, net, whoami",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794329693000,
+    "end_ms": 1794330687000,
+    "reason": "icacls x8 right after winPEAS (ambiguous: may be privesc setup; excluded to be safe)",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794333215000,
+    "end_ms": 1794333455000,
+    "reason": "etwctl rotation canary (live-20261110T175535Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794355115000,
+    "end_ms": 1794355355000,
+    "reason": "etwctl rotation canary (live-20261111T000035Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794377015000,
+    "end_ms": 1794377255000,
+    "reason": "etwctl rotation canary (live-20261111T060535Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794398915000,
+    "end_ms": 1794399155000,
+    "reason": "etwctl rotation canary (live-20261111T121035Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794420816000,
+    "end_ms": 1794421056000,
+    "reason": "etwctl rotation canary (live-20261111T181536Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794442715000,
+    "end_ms": 1794442955000,
+    "reason": "etwctl rotation canary (live-20261112T002035Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   },
+   {
+    "start_ms": 1794464616000,
+    "end_ms": 1794464856000,
+    "reason": "etwctl rotation canary (live-20261112T062536Z): cmd /c whoami + python, ours, not the teammate's",
+    "label": null,
+    "file": "ws-etw-1-20261112.json"
+   }
+  ]
+ },
+ "seeds": 1,
+ "epochs": null,
+ "created_utc": "2026-11-12T14:04:06.127285+00:00",
+ "git_commit": "b4c1c29",
+ "pipeline_uncommitted_changes": false,
+ "converter_sha256": "cbbf6dcfa6581d6e4fd34d81408292b9cb1b9fc4efa6bfedcf14d1798766f35d",
+ "tools": {
+  "encode_to_features.py": "7d07efb74f3361a3a212cca1cae652e2b73f786a9bba43fecd6cd23180455e36",
+  "train_gnn_models.py": "ec91cb89ca50d8fe3ccc36819ead1c9f929b0c5d474e23a2abcf35e9de45226c"
+ },
+ "commands": [
+  "src/pipeline/encode_to_features.py --edges src/artifacts/runs/exp15-ws1/train_edges.csv --out-dir src/artifacts/runs/exp15-ws1/features",
+  "src/pipeline/train_gnn_models.py --edges src/artifacts/runs/exp15-ws1/train_edges.csv --features src/artifacts/runs/exp15-ws1/features/features_model.csv --scaler src/artifacts/runs/exp15-ws1/features/feature_scaler.json --out-dir src/artifacts/runs/exp15-ws1 --runs 1 --layers 2 --val-windows 60 --tnr-tolerance 0.01 --verbose"
+ ]
+}

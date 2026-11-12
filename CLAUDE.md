@@ -117,11 +117,13 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   [OURS] NET alert rule (D8); exp08 before that. The end-goal demo worked on exp08: Kali's DVWA→RCE chain went red with an LLM `attack`
   verdict and idle stayed green around each run; exp10 keeps all 5 attack windows red offline, live Kali run still owed. It is not airtight: benign false alarms
   still happen and the alert can rest on a few nodes (PROGRESS, `docs/notes/subgraph-score-fragility.md`).
-- Two hosts (user, 2026-11-07): one model per host, not pooled (D12). `ws-etw-0` runs exp10; `ws-etw-1` has no accepted model:
-  `exp11-ws1` (55 h of idle, 2026-11-11) fails the gate on NET and is not promoted, `exp09-ws1` (10 h) was provisional
-  (`docs/notes/ws-etw-1-retrain-20261111.md`). `ws-etw-1` has not been idle since 2026-11-09 (software installed, a once-a-minute task of unknown owner). `lab hosts` switches one-VM / two-VM. A correlation stage links hosts by code and the LLM explains the full flow (D13).
-  Merged to `main` (PR #14) and on the trainer since 2026-11-09 (branch `retrain-to-avoid-false-positive`, via a git bundle) but run in
-  **one-VM mode** only (`--loki-default-host ws-etw-0`, no per-host pointer), shown on synthetic flows only. Older data says `ws-etw`: Loki lines from before the rename keep that label.
+- Two hosts (user, 2026-11-07): one model per host, not pooled (D12). **Two-VM live since 2026-11-12 ~14:10Z** (user decision): `ws-etw-0`
+  runs exp10, `ws-etw-1` runs **exp15-ws1** (gate passed at tol 0.01; `docs/notes/ws-etw-1-retrain-20261111.md` §11). `ws-etw-1` belongs to a
+  teammate, who runs react2shell (a vulnerable Next.js RCE app) and a SYSTEM task `maintenance.ps1 → whoami` every minute on it; by user
+  decision its baseline includes the teammate's setup and RDP sessions, only their exploit/enumeration runs excluded (D2). The trainer
+  runs `main` via Ansible `--tags project` (hosts file written, correlation on). `lab hosts` switches one-VM / two-VM. A correlation stage
+  links hosts by code and the LLM explains the full flow (D13); no `lab flows` baseline yet, no attack has crossed hosts. Older data says
+  `ws-etw`: Loki lines from before the rename keep that label.
 - **Deliverables (slides + demo) commit to ONE Windows VM** (`ws-etw-0`, exp08): the recorded demo and the deck show a single host.
   The second VM (`ws-etw-1`) and cross-host correlation are **nice-to-have**, shown only as future work unless there is time (user, 2026-11-08).
 - The Slidev deck (`presentation/`) was redesigned to the user's structure on 2026-11-08 (committed), then **compacted to 13 slides,
@@ -131,7 +133,10 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   one Windows VM (`ws-etw-0`, exp08, 2 RGCN layers), benign = idle 3-day, Moderate from 10 (paper scale), exp08 results filled
   (R2 attack windows 70.17/54.42 Moderate, LLM `attack` 0.85/0.9; 288 windows / 7 alerts / 3 benign FP), D1–D13. Builds clean
   (`latexmk -pdf main.tex`, 21 pages). Only demo screenshots + LLM-provider name left as `\todoval`. Committed (PR #15).
-- **Next action: nice-to-have — verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). Then concepts 2–4.
+- **Next action (user, 2026-11-12): demo lateral movement DVWA → react2shell** — a real cross-host attack (foothold on `ws-etw-0` → pivot
+  to `ws-etw-1`'s react2shell RCE) so correlation (D13) fires on real flows, not synthetic. Prereqs: `lab flows` baseline first, a new
+  network-delivered attack scenario in `src/atomic-attack-pack/`, and proof the exploit scores red on `ws-etw-1` (its `node` server is
+  in-distribution; D6 risk). Also owed: 24 h two-VM soak. Details + full prereqs: PROGRESS top. Then concepts 2–4.
 - SG-Det uses the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1 (D8). `ocr-live` keeps a persistent, range-queryable
   window history (`src/live/history.py`).
 - Attack target: DVWA on XAMPP on `ws-etw-0` (user, 2026-10-19), its OS-command-injection page (`/vulnerabilities/exec/`) as the RCE sink,
@@ -169,7 +174,7 @@ history of earlier progress) and, if relevant, this section.
 - Benign set: **idle machine activity, pulled directly from Loki**, no capture script. A clean idle range is pulled with
   `lab pull --start <t> --end <t> --split test --host <vm>` and trained on. Why idle: a scripted workload reuses the attack's living-off-the-land
   binaries and makes the attack in-distribution. Keep benign demo windows idle: an idle model is thin, so real activity can false-positive
-  (D2). How to train: `docs/notes/training-runbook.md`.
+  (D2). Exception (user, 2026-11-12): `ws-etw-1`'s baseline includes its owner's setup and RDP sessions (D2). How to train: `docs/notes/training-runbook.md`.
 - Windowing: an idle benign time-range pulled from Loki, cut into 5-min sliding windows with a 2-min
   stride. Detection uses the same 5-min window length. For the small demo, tumbling windows
   (stride = window) are enough; sliding windows are the option for real attacks that cross window

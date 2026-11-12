@@ -149,7 +149,11 @@ lab compare --baseline src/out/etw/eval/ws1-holdout/exp09-ws1 --candidate src/ou
 
 Long jobs ran under `systemd-run --slice=user.slice` (runbook §5). Models and replay output exist only on the trainer.
 
-## 7. Resolution (2026-11-12): exp14-ws1 at `--tnr-tolerance 0.06`
+## 10. Resolution (2026-11-12): exp14-ws1 at `--tnr-tolerance 0.06`
+
+> **Correction (2026-11-12, later the same day):** the cause given below ("2-3 brand-new benign peers") is wrong. The
+> validation NET nodes over τ were mostly the NetBIOS broadcast `10.21.3.255:138`, which first appears on `ws-etw-1` at
+> 11-09 09:19Z and so sat only in the validation tail; see §11. The numbers in this section stand.
 
 The gate failure in §4 is the best-TNR early-stop keeping a loose, undertrained NET epoch: on this churny host NET validation TNR
 peaks while the sphere is loose and **degrades monotonically** as it tightens (the ~200-node NET val set always holds 2-3 brand-new
@@ -181,3 +185,36 @@ lab compare --baseline src/out/etw/eval/ws1-holdout/exp09-ws1 \
 Results: gate all best_ep 99; held-out idle red **0/0/0** (vs exp09-ws1 2); preview (`notidle-...`) 287 windows, **0 alerts** (median
 0.00, p95 1.92, max 10.24). **NOT promoted** — Phase 3 (two-VM live) stays user-gated. One held-out idle window (04:15Z, seed 361) had
 raw sg 117.0 suppressed by the NET rule, so 0-idle-red is partly load-bearing on that rule (D8, `subgraph-score-fragility.md`).
+
+## 11. exp15-ws1 (2026-11-12): train on the VM's current state, deployed two-VM live
+
+**Root cause, checked in data.** In exp14's saved model, 5 of the 6 validation NET nodes over τ are one address,
+`10.21.3.255:138` (NetBIOS datagram broadcast, kernel `System`). On `ws-etw-1` it first appears 11-09 09:19Z and is in 17 of the
+1,848 windows, all in the validation tail; after 11-10 it is in 112 of 287 windows. `ws-etw-0` has it in 231 training windows, which
+is why its gate passes at tol 0.01. The "new peers" idea does not hold: `ws-etw-0` meets as many unseen peers (18 % of its validation
+NET nodes) and flags none; the features describe behaviour (send/recv counts, idle times), not addresses.
+
+**Fix:** put the VM's current behaviour into training. By user decision the teammate's setup and RDP sessions are included; only our
+rotation canaries and the teammate's exploit / enumeration runs are excluded (bursts from Loki ProcessStart: `node.exe` descendants =
+react2shell RCE, and winPEAS / `systeminfo` / `netsh` / `runas`+`whoami` / `icacls` in user sessions, first start − 5 min → last + 5 min).
+The 11-09 10:19–10:33Z burst also used `net user`, `icacls`, `runas`, but for setup (account, ACLs, git clone, Node/npm install), so it
+stays. VM clock = UTC+7 (the `hacked` file, 00:27 local, = 17:27Z inside an excluded burst).
+
+```bash
+# pull (lab pull has no --id; the default name was taken by exp11's experiment)
+.venv/bin/python src/pipeline/loki_pull.py --start 2026-11-06T20:30:00Z --end 2026-11-12T12:15:00Z --split test --host ws-etw-1 \
+  --yes --id range-20261106T203000Z-20261112T1215Z-ws-etw-1 --build --out-root src/out/etw/experiments
+# seed 360 first (the deployed model is always run 0; training is deterministic), then 361/362 for the spread
+lab train --experiment range-20261106T203000Z-20261112T1215Z-ws-etw-1 --model exp15-ws1 --benign-split test --seeds 1 \
+  --exclude-file src/artifacts/exclusions/ws-etw-1-20261112.json --trainer-args "--layers 2 --val-windows 60 --tnr-tolerance 0.01 --verbose"
+lab train ... --model exp15s-ws1 --seeds 2 --trainer-args "--seed 361 --layers 2 --val-windows 60 --tnr-tolerance 0.01 --verbose"
+# deploy two-VM (from the workstation, then on the trainer)
+ansible-playbook -i proxmox.ini ubuntu.yml --tags project --limit ubuntu-trainer --check --diff   # then without --check
+lab promote exp10 --host ws-etw-0 && lab promote exp15-ws1 --host ws-etw-1 && lab hosts ws-etw-0 ws-etw-1
+sudo systemctl restart ocr-live
+```
+
+Results: 4,070 windows, 6.04 M edges (about 10× exp14's training edges: post-setup windows are busy), 214 excluded. Gate at tol
+0.01, seed 360: best_ep 99 on FILE / NET / PROCESS, val_fpr 0.0004 / 0.0000 / 0.0020. ~9.5 s per epoch, ~50 min per seed, 4.5 GB peak.
+First live check: both engines on Loki, `ws-etw-1` 12 windows 0 red (max sg 1.99), `ws-etw-0` 12 windows 0 red. Status and open
+items: `docs/PROGRESS.md` top section.

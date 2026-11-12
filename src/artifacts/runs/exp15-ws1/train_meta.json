@@ -1,0 +1,78 @@
+{
+  "inputs": {
+    "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/train_edges.csv": {
+      "path": "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/train_edges.csv",
+      "sha256": "79d98e7bbc06ad5c363af64f96ab51fc8c47affa167feca408c5c225d5739ca7"
+    },
+    "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/features/features_model.csv": {
+      "path": "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/features/features_model.csv",
+      "sha256": "2a9282c75f52b88c824d42954b0d27dc27569b952dd85a698785730a8dec16f7"
+    },
+    "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/features/feature_scaler.json": {
+      "path": "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/features/feature_scaler.json",
+      "sha256": "b3dc5e5c03170166fe036dc848bf8d20f60ad421b0606534343ca4a70eb2f6e1"
+    }
+  },
+  "relations": [
+    "process|load|file",
+    "process|read|file",
+    "process|recv|net",
+    "process|send|net",
+    "process|start|process",
+    "process|write|file",
+    "file|inv_load|process",
+    "file|inv_read|process",
+    "net|inv_recv|process",
+    "net|inv_send|process",
+    "process|inv_start|process",
+    "file|inv_write|process"
+  ],
+  "feature_order": [
+    "out_write",
+    "in_write",
+    "out_read",
+    "in_read",
+    "out_send",
+    "in_send",
+    "out_recv",
+    "in_recv",
+    "out_start",
+    "in_start",
+    "out_load",
+    "in_load",
+    "avg_idle_time",
+    "max_idle_time",
+    "min_idle_time"
+  ],
+  "node_types": [
+    "file",
+    "net",
+    "process"
+  ],
+  "args": {
+    "selftest": false,
+    "edges": "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/train_edges.csv",
+    "features": "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/features/features_model.csv",
+    "scaler": "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1/features/feature_scaler.json",
+    "out_dir": "/home/it2102/NT2102/src/artifacts/runs/exp15-ws1",
+    "val_split": "window",
+    "window_sep": "_",
+    "val_windows": 60,
+    "purge_windows": 2,
+    "val_frac": 0.15,
+    "layers": 2,
+    "hidden": 32,
+    "lr": 0.005,
+    "beta": 0.5,
+    "warmup": 2,
+    "epochs": 100,
+    "dropout": 0.0,
+    "contamination": 0.001,
+    "patience": 5,
+    "tnr_tolerance": 0.01,
+    "runs": 1,
+    "seed": 360,
+    "verbose": true
+  },
+  "label_source": "none (benign-only training; validation = held-out benign nodes)"
+}
