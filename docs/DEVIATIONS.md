@@ -522,7 +522,9 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   `/u.ps1` + `/s.ps1` and uses `U_H`/`U_P`/`U_D` (`launch_exploit.py` selftest asserts no lab words in the decoded cradle).
 - Impact: the LLM sees more evidence, so **LLM verdicts before and after D14 are not comparable**. A third-party driver
   (Sysmon64) now runs on the VMs; extra events = one per process start.
-- Limits: `ws-etw-0` only so far (`ws-etw-1` waits). Processes started before Sysmon/the capture (`p<pid>_pre_<run>`) never match.
+- Status: deployed on **both hosts** (`ws-etw-0` 2026-11-13, `ws-etw-1` 2026-11-13); end-to-end verified on `ws-etw-0` (DVWA attack
+  window showed decoded command lines in the UI + LLM, no lab words, `converter_check` match).
+- Limits: processes started before Sysmon/the capture (`p<pid>_pre_<run>`) never match.
   The match assumes no lost Sysmon events; a lost one would attach the PID's previous owner's command line (the `delta_ms` column
   in `node_cmdlines.csv` shows how far apart the two stamps are). The redaction is pattern-based, not a guarantee: command lines
   still go to the external LLM provider.

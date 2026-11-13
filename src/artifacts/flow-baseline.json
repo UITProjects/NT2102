@@ -1,0 +1,31 @@
+{
+ "created_utc": "2026-11-13T13:41:08.240893+00:00",
+ "range_utc": [
+  "2026-11-12 13:40:26+0000",
+  "2026-11-13 13:40:26+0000"
+ ],
+ "hosts": {
+  "ws-etw-0": "10.21.3.10",
+  "ws-etw-1": "10.21.3.11"
+ },
+ "flows": [
+  "ws-etw-0>ws-etw-1/tcp/dyn",
+  "ws-etw-0>ws-etw-1/udp/123",
+  "ws-etw-1>ws-etw-0/tcp/135",
+  "ws-etw-1>ws-etw-0/tcp/389",
+  "ws-etw-1>ws-etw-0/tcp/445",
+  "ws-etw-1>ws-etw-0/tcp/88",
+  "ws-etw-1>ws-etw-0/udp/389",
+  "ws-etw-1>ws-etw-0/udp/53"
+ ],
+ "events": {
+  "ws-etw-1>ws-etw-0/tcp/135": 444,
+  "ws-etw-0>ws-etw-1/tcp/dyn": 816,
+  "ws-etw-1>ws-etw-0/udp/53": 1595,
+  "ws-etw-1>ws-etw-0/tcp/445": 3989,
+  "ws-etw-0>ws-etw-1/udp/123": 334,
+  "ws-etw-1>ws-etw-0/udp/389": 328,
+  "ws-etw-1>ws-etw-0/tcp/389": 661,
+  "ws-etw-1>ws-etw-0/tcp/88": 227
+ }
+}

