@@ -195,8 +195,12 @@ A red window is an observation, not a detection result, until the window has lab
 - `raw/<stream>.json`: verbatim; can be replayed or converted into a labelled test split.
 - `windows.csv`: one row per window, incl. `subgraphs_kept, max_sg_score, max_level, alert, llm`
   (`llm` = pending when written; final verdicts in `llm_verdicts.csv`).
-- `windows/<wid>/`: `edges.csv, node_attrs.csv, features_model.csv, scores.csv, subgraphs.json`, and
+- `windows/<wid>/`: `edges.csv, node_attrs.csv, node_cmdlines.csv, features_model.csv, scores.csv, subgraphs.json`, and
   `llm/` (`sg<id>_doc.txt` = exact LLM input, `triage.json`, `sg<id>_report.md`, `iocs.json`, `calls.jsonl`).
+- `node_cmdlines.csv` (DEVIATIONS D14): PROCESS nodes joined to a Sysmon EID 1 record (stream `sysmon`) by PID + start time:
+  `node, pid, start_utc, image, cmdline, decoded, parent_cmdline, delta_ms` (display copy: `-enc` decoded, secrets redacted,
+  400 chars). Investigation-only: shown in the UI and the LLM document, never scored. Empty when the VM has no Sysmon.
+  Offline for any saved window: `python src/pipeline/cmdlines.py --sysmon raw/sysmon.json --node-attrs windows/<wid>/node_attrs.csv --out x.csv`.
 
 ## Several Windows hosts
 

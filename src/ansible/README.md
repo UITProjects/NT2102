@@ -289,6 +289,8 @@ proxmox.ini  inventory.cloud.ini.example
 group_vars/   all.yml  windows.yml  ubuntu.yml  vault.yml.example
 roles/
   win_base        OS config: net profile, UTC+7, no-sleep, RDP, folders, Defender
+  win_sysmon      Sysmon, Event ID 1 (ProcessCreate) only: process command lines for the UI + LLM, never a feature
+                  (DEVIATIONS D14; sysmon_enabled, default true; the collector reads it as optional provider `sysmon`)
   win_collector   uv + etw-python venv + SYSTEM task etwlab-collector + embeddable Python + etw2nodlink.py/
                   etwwindow.py/etwship.py/etwctl; removes the old SilkService + Grafana Alloy
   win_shipper     start-live.ps1 watchdog + SYSTEM task etwlab-live (always-on live test capture)

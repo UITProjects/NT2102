@@ -29,12 +29,14 @@
 param(
     # Where this script fetched its stage from (the Kali attacker). The launcher substitutes these;
     # defaults keep a manual run on the VM working. ${attacker}:${StagePort} is the T1105/C2 endpoint.
-    [string]$Attacker  = $(if ($env:LAB_ATTACKER)   { $env:LAB_ATTACKER }   else { "10.21.4.30" }),
-    [int]   $StagePort = $(if ($env:LAB_STAGE_PORT) { [int]$env:LAB_STAGE_PORT } else { 8080 }),
+    # Env names are neutral on purpose (U_H host, U_P port, U_D duration): Sysmon logs the delivering
+    # cradle's command line and the LLM reads it decoded; "LAB_*" would leak the lab (DEVIATIONS D14).
+    [string]$Attacker  = $(if ($env:U_H) { $env:U_H } else { "10.21.4.30" }),
+    [int]   $StagePort = $(if ($env:U_P) { [int]$env:U_P } else { 8080 }),
     # Sustain the attack for this many seconds by looping the C2 beacon + DB bursts (scan/tool-download
     # run once). 0 = single pass (manual default). The launcher sets it from --attack-seconds via
-    # $env:LAB_DURATION_SECONDS. [OURS], not from the paper.
-    [int]   $DurationSeconds = $(if ($env:LAB_DURATION_SECONDS) { [int]$env:LAB_DURATION_SECONDS } else { 0 }),
+    # $env:U_D. [OURS], not from the paper.
+    [int]   $DurationSeconds = $(if ($env:U_D) { [int]$env:U_D } else { 0 }),
     [switch]$SelfTest   # dry run: stub the actions, prove one well-formed label line is written, exit 0.
 )
 

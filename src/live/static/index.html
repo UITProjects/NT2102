@@ -100,6 +100,8 @@ table{border-collapse:collapse;width:100%;font-size:.8rem}
 th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
 td.attr{font-family:var(--mono);word-break:break-all}
+/* process command line (Sysmon EID 1, D14): a muted second line under the image path */
+.cmd{display:block;color:var(--muted);font-weight:400;font-size:.72rem;margin-top:2px}
 tr.flag td{color:var(--anom);font-weight:600}
 .legend span{margin-right:12px}
 .note{font-size:.8rem;color:var(--muted);margin-top:6px}
@@ -223,6 +225,10 @@ tr.flag td{color:var(--anom);font-weight:600}
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   // NET attrs arrive decoded (engine.display_attrs); attr_raw = SilkETW's own value, to trace back to the raw line
   const full = n => n.attr_raw ? `${n.attr} (raw ${n.attr_raw})` : (n.attr ?? "");
+  // process command line (Sysmon EID 1, D14): plain-text lines for tooltips / the alert card, HTML for the tables
+  const cmdText = n => (n.cmdline ? `\n    $ ${n.cmdline}` : "") + (n.decoded ? `\n    ↳ decoded: ${n.decoded}` : "");
+  const cmdHtml = n => (n.cmdline ? `<span class="cmd">$ ${esc(n.cmdline)}</span>` : "")
+                     + (n.decoded ? `<span class="cmd">↳ decoded: ${esc(n.decoded)}</span>` : "");
 
   const LLM_LABEL = {pending: "LLM: …", attack: "LLM: attack", false_positive: "LLM: FP",
                      uncertain: "LLM: ?", error: "LLM: error", skipped: "LLM: budget"};
@@ -568,7 +574,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     $("cy").innerHTML = "";
     const shape = {process: "ellipse", file: "round-rectangle", net: "diamond"};
     const els = g.nodes.map(n => ({data: {id: n.id, label: base(n.attr) || n.id, shape: shape[n.type] || "ellipse",
-                                          role: n.role, tip: `${n.type} ${full(n)}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}  prob ${num(n.prob,3)}`}}))
+                                          role: n.role, tip: `${n.type} ${full(n)}${cmdText(n)}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}  prob ${num(n.prob,3)}`}}))
       .concat(g.edges.map((e,i) => ({data: {id: "e"+i, source: e.src, target: e.dst,
                                             label: e.type + (e.count > 1 ? " ×" + e.count : "")}})));
     cy = cytoscape({
@@ -598,7 +604,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     const score = `subgraph score ${num(g.sg_score,3)} = Σ prob of ${g.n_anomalous} anomalous nodes → ${esc(g.level)}${g.oversize ? " · oversize" : ""}`;
     const lab = Object.fromEntries(g.nodes.map(n => [n.id, base(n.attr) || n.id]));
     const lines = g.edges.map(e => `${hms(e.first_ms)}${e.last_ms !== e.first_ms ? "–" + hms(e.last_ms) : ""}  ${esc(lab[e.src])} → ${esc(lab[e.dst])} (${esc(e.type)}${e.count > 1 ? " ×" + e.count : ""})`);
-    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(full(n))}  score ${num(n.score,4)} τ ${num(n.tau,4)}${n.role === "anomalous" ? " prob " + num(n.prob,3) : ""}`);
+    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(full(n))}  score ${num(n.score,4)} τ ${num(n.tau,4)}${n.role === "anomalous" ? " prob " + num(n.prob,3) : ""}${esc(cmdText(n))}`);
     $("alertcard").innerHTML = head + "\n" + score + "\n\n"
       + (lines.length ? lines.join("\n") : "(single anomalous node, no edge to another anomaly)") + "\n\n" + nodes.join("\n");
   }
@@ -607,7 +613,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     const top = detail.top || {};
     $("tables").innerHTML = Object.keys(top).sort().map(t => `<div class="tbl"><h2>${esc(t)}</h2><table>
       <tr><th>attr</th><th>score</th><th>margin</th></tr>
-      ${top[t].map(r => `<tr class="${r.flagged ? "flag" : ""}"><td class="attr" title="${esc(r.id)}${r.attr_raw ? "\nraw " + esc(r.attr_raw) : ""}">${esc(r.attr)}</td>
+      ${top[t].map(r => `<tr class="${r.flagged ? "flag" : ""}"><td class="attr" title="${esc(r.id)}${r.attr_raw ? "\nraw " + esc(r.attr_raw) : ""}${esc(cmdText(r))}">${esc(r.attr)}${cmdHtml(r)}</td>
         <td class="num">${num(r.score,4)}</td><td class="num">${num(r.margin,4)}</td></tr>`).join("")}
     </table></div>`).join("") || '<span class="muted">window not scored</span>';
   }

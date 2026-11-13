@@ -279,6 +279,8 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
 - Two hosts: one model per host (D12); cross-host correlation is [OURS] (D13), the paper leaves lateral movement out of scope.
 - LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
   Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
+- Process command lines: Sysmon EID 1 (role `win_sysmon`, collector stream `sysmon`) joined to PROCESS nodes by PID + time
+  (`src/pipeline/cmdlines.py`), shown in the UI + LLM document only, never a feature ([PAPER] §5.1.1; D14).
 
 ## 11. Status, open items, next steps
 

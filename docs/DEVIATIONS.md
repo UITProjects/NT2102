@@ -497,3 +497,32 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   between the two VMs is new to the baseline otherwise). Needs a clean baseline, or every flow is new. A `suspected` needs a red window,
   so a hop from a host that stayed green is only a `link`. Only flows between monitored hosts are seen. Windows on different hosts join by
   clock: skew between VMs was not measured.
+
+## D14. Process command lines from Sysmon Event ID 1 (`src/pipeline/cmdlines.py`, role `win_sysmon`)
+- What: [PAPER] §2 lists command-line arguments among a provenance graph's contextual node attributes; §5.1.1 keeps such
+  attributes **out of the OCRGCN input** (spurious correlations) but "retained for the investigation phase". Our ETW
+  `Microsoft-Windows-Kernel-Process` ProcessStart event has **no CommandLine field** (only ProcessID, ParentProcessID, SessionID,
+  Flags, ImageName), so the UI and the LLM document showed only `powershell.exe` / `cmd.exe`. [OURS] (user, 2026-11-13) Sysmon is
+  installed with an **Event ID 1 (ProcessCreate) only** config and read by `etwcollect` as a 4th, optional ETW provider (stem / Loki
+  `provider` = `sysmon`). A join module maps each PROCESS node `p<pid>_<t>` to the Sysmon record with the same PID and the latest
+  start ≤ t + 2 s. The live engine shows it under the process in the UI tables, the graph tooltip and the alert card, writes
+  `node_cmdlines.csv` per window, and `alg2.serialize` puts one line per process (`process <image> (pid N) command line: … |
+  decoded: … | parent command line: …`) **before** the [AUTHOR CODE]-format event lines, so the LLM can cite it as evidence.
+- Why Sysmon, not reading the live process: ETW delivers events up to ~1 s late (FlushTimer 1), so short-lived children
+  (whoami, mysql, net) are gone before the collector could open them. Sysmon captures the command line at creation (checked on
+  `ws-etw-0` 2026-11-13: `whoami /all`, 22 ms after its `cmd` parent, recorded with its arguments).
+- Investigation-only: the converter (`etw2nodlink.py`, sha256 unchanged) counts Sysmon lines as unmapped, and the live engine does
+  not even pass them to it. Edges, features, `scores.csv` and alerts do not change; **no retrain**. Training pulls (`loki_pull`
+  range mode) still default to kproc/kfile/knet.
+- Display copy: PowerShell `-enc` payloads are decoded (also inside `Start-Process -ArgumentList '-nop','-enc','…'`); best-effort
+  secret redaction (`-Password x`, `password=x`, `/pass:x`, `ConvertTo-SecureString "x"`); each field cut to 400 chars. The raw
+  Sysmon line in Loki and `raw/sysmon.json` is not redacted.
+- Lab vocabulary (D9 rule, new channel): the RCE cradle's decoded payload carried `$env:LAB_ATTACKER`, `attack-lib.ps1` and
+  `killchain.ps1`. These lab names would push the LLM to "attack" for a reason a real intrusion lacks, so the stage now serves
+  `/u.ps1` + `/s.ps1` and uses `U_H`/`U_P`/`U_D` (`launch_exploit.py` selftest asserts no lab words in the decoded cradle).
+- Impact: the LLM sees more evidence, so **LLM verdicts before and after D14 are not comparable**. A third-party driver
+  (Sysmon64) now runs on the VMs; extra events = one per process start.
+- Limits: `ws-etw-0` only so far (`ws-etw-1` waits). Processes started before Sysmon/the capture (`p<pid>_pre_<run>`) never match.
+  The match assumes no lost Sysmon events; a lost one would attach the PID's previous owner's command line (the `delta_ms` column
+  in `node_cmdlines.csv` shows how far apart the two stamps are). The redaction is pattern-based, not a guarantee: command lines
+  still go to the external LLM provider.

@@ -19,6 +19,9 @@
        "Provider": "Microsoft-Windows-Kernel-File",    "Keywords": "0x380"},
       {"Stem": "knet",  "Required": false, "Guid": "6f1a2c10-0b7e-4c1d-9a51-3e1f00000003",
        "Provider": "Microsoft-Windows-Kernel-Network", "Keywords": "0x30"}
-    ]
+    ] + ([
+      {"Stem": "sysmon", "Required": false, "Guid": "6f1a2c10-0b7e-4c1d-9a51-3e1f00000004",
+       "Provider": "Microsoft-Windows-Sysmon", "Keywords": "0xffffffffffffffff"}
+    ] if (sysmon_enabled | default(true) | bool) else [])
   } | to_nice_json
 }}

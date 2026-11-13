@@ -1,0 +1,3 @@
+---
+- name: Reload Sysmon config
+  ansible.windows.win_command: '"{{ sysmon_dir }}\Sysmon64.exe" -c "{{ sysmon_config }}"'

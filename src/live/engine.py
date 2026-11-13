@@ -26,6 +26,7 @@ Usage (from the repo root)
 """
 from __future__ import annotations
 
+import base64
 import bisect
 import csv
 import hashlib
@@ -49,6 +50,7 @@ SRC = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(SRC, "pipeline"))
 import alg1  # noqa: E402
 import alg2  # noqa: E402
+import cmdlines  # noqa: E402  (Sysmon EID 1 command lines -> PROCESS nodes; investigation-only, D14)
 import lab_filters  # noqa: E402  (post-conversion lab-labels node drop; outside the converter hash, D9)
 import score_window as sw  # noqa: E402
 sys.path.insert(0, HERE)
@@ -198,7 +200,7 @@ class Engine:
         dmap = {str(k).lower(): str(v).lower() for k, v in (payload.get("dos_map") or {}).items()}
         dmap = dict(sorted(dmap.items(), key=lambda kv: -len(kv[0])))   # longest device prefix first
         stats = {k: Counter() for k in ("events", "edges", "excluded", "unresolved", "unmapped", "bad_lines",
-                                        "bad_events")}
+                                        "bad_events", "sysmon_skipped")}
         sink = EdgeSink()
         exclude = set(int(p) for p in (payload.get("exclude_pids") or [payload.get("pid")]) if p is not None)
         g = self.LiveGraph(sink, dmap, stats, exclude)
@@ -212,6 +214,7 @@ class Engine:
             "clock_ms": None, "last_seen": None, "late_dropped": 0, "next_k": None, "edge_base": 0,
             "windows": [], "by_id": {}, "details": {}, "rate": deque(), "lines_total": Counter(),
             "raw_fh": {}, "started": time.time(),
+            "cmd": cmdlines.CmdlineIndex(),       # Sysmon EID 1 records of this session (D14)
         }
         meta = {"session": sid, "mode": self.session["mode"], "host": self.session["host"],
                 "dos_map": dmap, "exclude_pids": sorted(exclude), "run_dir": self.run_dir,
@@ -276,6 +279,10 @@ class Engine:
             fh = S["raw_fh"][stream] = open(os.path.join(S["dir"], "raw", stream + ".json"), "a", encoding="utf-8")
         fh.write(line + "\n")
         S["lines_total"][stream] += 1
+        if stream == cmdlines.SYSMON_STREAM:      # command lines only: never an event for the converter / graph (D14)
+            if not S["cmd"].add_line(line.strip().lstrip("\ufeff")):
+                S["stats"]["sysmon_skipped"][stream] += 1    # not EID 1, unparsable, or a re-sent line
+            return
         try:
             ev = json.loads(line.strip().lstrip("\ufeff"))
             t = self.conv.ts_ms(self.conv.lower_keys(ev).get("timestamp"))
@@ -409,6 +416,17 @@ class Engine:
                 return
             wdir = os.path.join(S["dir"], "windows", wid)
             os.makedirs(wdir, exist_ok=True)
+            # [OURS] command lines (Sysmon EID 1) for the UI + LLM document, never for scoring (D14). Looked up
+            # under the lock: ingest feeds S["cmd"] under the same lock.
+            procs = nodes.loc[nodes["node_type"].str.upper() == "PROCESS", "node_uuid"]
+            cmd_rows = cmdlines.rows_for(S["cmd"], procs)
+            cmd = {r["node"]: cmdlines.display_fields(r) for r in cmd_rows}
+            for c in ("cmdline", "decoded"):
+                nodes[c] = nodes["node_uuid"].map(lambda n, c=c: cmd.get(n, {}).get(c, ""))
+            for g in subgraphs:
+                for n in g["nodes"]:
+                    n.update(cmd.get(n["id"], {}))
+            cmdlines.write_csv(os.path.join(wdir, "node_cmdlines.csv"), cmd_rows)
             edges.to_csv(os.path.join(wdir, "edges.csv"), index=False)
             ntype = dict(zip(edges["source-id"], edges["source-type"]))
             ntype.update(zip(edges["destination-id"], edges["destination-type"]))
@@ -416,7 +434,8 @@ class Engine:
                          columns=["node", "node_type", "node_attr"]).to_csv(
                 os.path.join(wdir, "node_attrs.csv"), index=False)
             feats.to_csv(os.path.join(wdir, "features_model.csv"), index_label="node_uuid", float_format="%.6f")
-            nodes.sort_values("score", ascending=False).to_csv(os.path.join(wdir, "scores.csv"), index=False)
+            nodes.drop(columns=["cmdline", "decoded"]).sort_values("score", ascending=False).to_csv(
+                os.path.join(wdir, "scores.csv"), index=False)      # scores.csv unchanged by D14
             json.dump({"window": wid, "truncated": truncated, "alg1": self.sg, "stats": sg_stats,
                        "subgraphs": subgraphs},
                       open(os.path.join(wdir, "subgraphs.json"), "w"), indent=1)
@@ -428,7 +447,7 @@ class Engine:
                        flagged_by_type=fl["node_type"].value_counts().to_dict(),
                        **sg_sum, alert=sg_sum["subgraphs_kept"] > 0, scoring_ms=ms,
                        edges_dropped_relation=info["edges_dropped_relation"],
-                       max_margin=_f(nodes["margin"].max()))
+                       max_margin=_f(nodes["margin"].max()), cmdlines_matched=len(cmd_rows))
             S["details"][wid] = make_detail(nodes, subgraphs, sg_stats, truncated, self.top_k)
             if rec["alert"] and self.llm:
                 self._queue_llm(S, rec, wdir, subgraphs, edges_norm)
@@ -632,8 +651,23 @@ def selftest():
         return json.dumps({"ProviderName": prov, "EventName": name, "ProcessID": pid, "ProcessName": pname,
                            "TimeStamp": iso(ms), "XmlEventData": data})
 
-    streams = {"kproc": [], "kfile": [], "knet": []}
+    streams = {"kproc": [], "kfile": [], "knet": [], "kproc_d14": [], "sysmon": []}
     vol = r"\Device\HarddiskVolume4"
+    # [OURS] D14: a process started inside window 1 + its Sysmon EID 1 record (header PID = Sysmon's service).
+    # Its kproc lines go on their own stream, sent on time: the main kproc stream is shipped late on purpose.
+    t300 = base + 390_000
+    streams["kproc_d14"].append(ev(kp, "ProcessStart/Start", 100, "explorer", t300, ProcessID="300",
+                               ParentProcessID="100", ImageName=vol + r"\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"))
+    streams["kproc_d14"].append(ev(kp, "ImageLoad", 300, "powershell", t300 + 50, ProcessID="300",
+                               ImageName=vol + r"\Windows\System32\amsi.dll"))
+    enc300 = base64.b64encode("Get-Date".encode("utf-16-le")).decode()
+    streams["sysmon"].append(ev("Microsoft-Windows-Sysmon", "ProcessCreate(rule:ProcessCreate)", 3000, "Sysmon64",
+                                t300 + 3, ProcessId="300", ProcessGuid="{00000000-0000-0000-0000-000000000000}",
+                                UtcTime=datetime.fromtimestamp((t300 - 4) / 1000, timezone.utc).strftime(
+                                    "%Y-%m-%d %H:%M:%S.%f")[:23],
+                                Image=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+                                CommandLine=f"powershell -nop -enc {enc300} -Password Hunter2",
+                                ParentCommandLine="C:\\Windows\\explorer.exe"))
     streams["kproc"].append(ev(kp, "ProcessStart/Start", 100, "explorer", t0, ProcessID="200",
                                ParentProcessID="100", ImageName=vol + r"\Windows\System32\cmd.exe"))
     for i in range(16 * 60 // 5):                # 16 minutes, one burst every 5 s
@@ -740,6 +774,17 @@ def selftest():
         assert not we["source-id"].str.startswith("p999_").any(), "shipper edges leaked"
         attrs = pd.read_csv(os.path.join(sdir, "windows", w1, "node_attrs.csv"))
         assert attrs["node_attr"].str.startswith("c:\\windows\\").any(), "dos_map not applied to image loads"
+        # [OURS] D14: Sysmon command line joined to the PROCESS node, never in scores / the converter
+        p300 = f"p300_{t300}"
+        nc = pd.read_csv(os.path.join(sdir, "windows", w1, "node_cmdlines.csv"), keep_default_na=False)
+        assert nc["node"].tolist() == [p300] and nc["delta_ms"].tolist() == [4], nc
+        assert nc["decoded"].tolist() == ["Get-Date"] and "Hunter2" not in nc["cmdline"][0], nc
+        proc_top = next(v for k, v in eng.window_detail(w1)["top"].items() if k.lower() == "process")
+        r300 = [r for r in proc_top if r["id"] == p300]
+        assert r300 and r300[0]["decoded"] == "Get-Date" and r300[0]["cmdline"].startswith("powershell -nop -enc"), proc_top
+        assert "cmdline" not in pd.read_csv(os.path.join(sdir, "windows", w1, "scores.csv")).columns
+        assert not any("sysmon" in k.lower() for k in eng.session["stats"]["unmapped"]), "Sysmon lines reached the converter"
+        assert wins[1]["cmdlines_matched"] == 1, wins[1]
         eng.flush_raw()
         raw_lines = sum(1 for _ in open(os.path.join(sdir, "raw", "kfile.json")))
         assert raw_lines == len(streams["kfile"]), (raw_lines, len(streams["kfile"]))

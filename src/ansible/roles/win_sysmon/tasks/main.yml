@@ -1,0 +1,33 @@
+---
+# Sysmon, Event ID 1 only (see defaults). Idempotent: a re-run reports changed=0.
+- name: Sysmon folder
+  ansible.windows.win_file:
+    path: "{{ sysmon_dir }}"
+    state: directory
+
+- name: Download Sysmon
+  ansible.windows.win_get_url:
+    url: "{{ sysmon_url }}"
+    dest: '{{ sysmon_dir }}\Sysmon.zip'
+    force: false   # unversioned URL: download once, never re-fetch on a re-run (idempotent)
+
+- name: Unzip Sysmon
+  community.windows.win_unzip:
+    src: '{{ sysmon_dir }}\Sysmon.zip'
+    dest: "{{ sysmon_dir }}"
+    creates: '{{ sysmon_dir }}\Sysmon64.exe'
+
+- name: Sysmon config (ProcessCreate only)
+  ansible.windows.win_template:
+    src: sysmon-config.xml.j2
+    dest: "{{ sysmon_config }}"
+  notify: Reload Sysmon config
+
+- name: Is the Sysmon64 service installed
+  ansible.windows.win_service_info:
+    name: Sysmon64
+  register: sysmon_svc
+
+- name: Install Sysmon (driver + Sysmon64 service) with the config
+  ansible.windows.win_command: '"{{ sysmon_dir }}\Sysmon64.exe" -accepteula -i "{{ sysmon_config }}"'
+  when: not sysmon_svc.exists

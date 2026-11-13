@@ -1,8 +1,22 @@
-# PROGRESS (status as of 2026-11-12)
+# PROGRESS (status as of 2026-11-13)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is **`main` `e40cac0`**
 since 2026-11-12 14:07Z (Ansible `ubuntu.yml --tags project`; unit and `/etc/nt2102-hosts.json` now match git).
+
+## 2026-11-13 Process command lines (Sysmon EID 1) for the UI + LLM (D14): code done, selftests pass, NOT deployed
+
+Teammate's ask: process rows only showed `powershell.exe` / `cmd.exe`. Plan: `~/.claude/plans/my-friend-suggest-me-fluttering-swan.md`.
+- **Verified on `ws-etw-0`:** Sysmon v15.22 installed by the new role `win_sysmon` (EID 1 only; re-run changed=0). A `logman` ETW trace
+  of `Microsoft-Windows-Sysmon` returned EID 1 with full command lines, including a short-lived `whoami /all`.
+- **Code (selftests pass, `./selftest.sh` 20/20):** collector 4th optional provider `sysmon` (EID 1 only); `src/pipeline/cmdlines.py`
+  (PID + time join, `-enc` decode, redaction); engine → `node_cmdlines.csv` + UI detail; UI muted command line under each process;
+  `alg2.serialize` command-line lines before the event lines; neutral cradle names in `launch_exploit.py` / `rce-killchain.ps1`.
+  Converter, features and scores unchanged (no retrain).
+- **Not yet live** — order: (1) merge to `main` (the VM collector is a git clone of `main`); (2) `windows.yml --tags collector
+  --limit ws-etw-0` (etwlab.json gets the `sysmon` entry) + collector restart; (3) trainer `ubuntu.yml --tags project` + restart
+  `ocr-live`; (4) `kali.yml` (new stage paths); (5) e2e: Loki `{provider="sysmon"}` lines, a DVWA run shows decoded command lines in
+  the UI + LLM document, `converter_check` still `match`, a re-scored window's `scores.csv` identical. `ws-etw-1` afterwards.
 
 ## 2026-11-12 Topology correction + `ws-etw-0` DC retrain → `exp16-ws0` (two-VM live, verified)
 

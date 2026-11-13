@@ -1,0 +1,9 @@
+---
+# Sysmon (Sysinternals) for process command lines ONLY: Event ID 1 ProcessCreate (DEVIATIONS D14).
+# The ETW Kernel-Process ProcessStart event has no CommandLine field; Sysmon records it at creation time,
+# so even a 50 ms whoami.exe keeps its arguments. The collector reads it as ETW provider Microsoft-Windows-Sysmon.
+# Investigation-only: the command line never reaches the features or the model ([PAPER] §5.1.1).
+sysmon_enabled: true
+sysmon_url: "https://download.sysinternals.com/files/Sysmon.zip"   # Sysinternals publishes no versioned URL
+sysmon_dir: '{{ tools_dir }}\Sysmon'
+sysmon_config: '{{ tools_dir }}\Sysmon\sysmon-config.xml'
