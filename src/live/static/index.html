@@ -63,6 +63,8 @@ header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12p
 .badge.pending,.badge.uncertain,.badge.error{color:var(--muted)}
 .win.alert.fp{border-color:var(--warn)}
 .win.alert.fp .s{text-decoration:line-through;color:var(--muted)}
+/* two-VM: an empty slot keeps the column so the same time lines up across hosts (same width as .win) */
+.win.slot-empty{border-color:transparent;background:transparent;cursor:default;box-shadow:none;pointer-events:none}
 .llmcard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
 .llmcard.attack{border-color:var(--anom)} .llmcard.false_positive{border-color:var(--warn)}
 .llmcard h3{font-size:.95rem;margin:0 0 6px}
@@ -355,35 +357,61 @@ tr.flag td{color:var(--anom);font-weight:600}
   });
 
   // ------------------------------------------------------------- timeline: one row per VM
+  let _syncScroll = false;
   function renderTimeline() {
-    $("timeline").innerHTML = hosts.map(timelineRow).join("");
-    document.querySelectorAll("#timeline .timeline").forEach(t => { t.scrollLeft = t.scrollWidth; });
+    // Shared 5-min time grid across hosts: one column per slot (union of every host's scored + open windows),
+    // so the same wall-clock window lines up vertically. Missing slots become invisible placeholders.
+    const slotSet = new Set();
+    const openOf = {};
+    hosts.forEach(h => {
+      winsBy[h]?.forEach(w => slotSet.add(w.start_ms));
+      const hs = (status?.hosts || []).find(x => (x.host || "") === h);
+      if (hs?.open_window) { slotSet.add(hs.open_window.start_ms); openOf[h] = {ow: hs.open_window, wm: hs.watermark_ms}; }
+    });
+    const slots = [...slotSet].sort((a,b) => a - b).slice(-24);
+    $("timeline").innerHTML = hosts.map(h => timelineRow(h, slots, openOf[h])).join("");
+    // Identical columns + widths, so scroll-to-end aligns every row; mirror manual scroll to keep them locked.
+    const strips = [...document.querySelectorAll("#timeline .timeline")];
+    strips.forEach(t => { t.scrollLeft = t.scrollWidth; });
+    strips.forEach(t => t.addEventListener("scroll", () => {
+      if (_syncScroll) return;
+      _syncScroll = true;
+      strips.forEach(o => { if (o !== t) o.scrollLeft = t.scrollLeft; });
+      requestAnimationFrame(() => { _syncScroll = false; });
+    }));
   }
   // [OURS] type rule (alg1.REQUIRE_TYPES): "missing anomalous node type(s): net" -> "missing net"
   const shortReason = r => (r || "").replace("missing anomalous node type(s): ", "missing ");
-  function timelineRow(h) {
-    const list = [...(winsBy[h]?.values() || [])].sort((a,b) => a.start_ms - b.start_ms).slice(-24);
-    let html = list.map(w => {
-      const cls = w.status === "scored" ? (w.alert ? "alert" : "scored") : w.status;
-      const sub = w.status === "scored"
-                ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs_kept}/${w.subgraphs} sg kept`
-                   : w.subgraphs_suppressed ? `suppressed: ${esc(shortReason(w.suppressed_reason))}`
-                   : w.flagged ? `${w.flagged} above τ · filtered` : `${w.nodes} nodes`)
-                : w.status === "scoring" ? "scoring…" : w.status;
-      const llm = w.llm?.status;
-      const badge = llm ? `<div class="badge ${esc(llm)}">${esc(LLM_LABEL[llm] || llm)}</div>` : "";
-      return `<div class="win ${cls} ${llm === "false_positive" ? "fp" : ""} ${h === curHost && w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
-        <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div>${badge}</div>`;
+  function winCell(w, h) {
+    const cls = w.status === "scored" ? (w.alert ? "alert" : "scored") : w.status;
+    const sub = w.status === "scored"
+              ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs_kept}/${w.subgraphs} sg kept`
+                 : w.subgraphs_suppressed ? `suppressed: ${esc(shortReason(w.suppressed_reason))}`
+                 : w.flagged ? `${w.flagged} above τ · filtered` : `${w.nodes} nodes`)
+              : w.status === "scoring" ? "scoring…" : w.status;
+    const llm = w.llm?.status;
+    const badge = llm ? `<div class="badge ${esc(llm)}">${esc(LLM_LABEL[llm] || llm)}</div>` : "";
+    return `<div class="win ${cls} ${llm === "false_positive" ? "fp" : ""} ${h === curHost && w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
+      <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div>${badge}</div>`;
+  }
+  function openCell(ow, wm) {
+    const pct = wm ? Math.max(0, Math.min(100, (wm - ow.start_ms) / (ow.end_ms - ow.start_ms) * 100)) : 0;
+    return `<div class="win open"><div class="fill" style="width:${pct}%"></div>
+      <div class="t">${hm(ow.start_ms)}–${hm(ow.end_ms)}</div><div class="s">open · ${pct.toFixed(0)}%</div></div>`;
+  }
+  function timelineRow(h, slots, openInfo) {
+    const byStart = new Map([...(winsBy[h]?.values() || [])].map(w => [w.start_ms, w]));
+    const ow = openInfo?.ow;
+    const any = byStart.size || ow;
+    const cells = slots.map(ms => {
+      const w = byStart.get(ms);
+      if (w) return winCell(w, h);
+      if (ow && ow.start_ms === ms) return openCell(ow, openInfo.wm);
+      return `<div class="win slot-empty" aria-hidden="true"></div>`;   // keep the column aligned
     }).join("");
     const hs = (status?.hosts || []).find(x => (x.host || "") === h);
-    const ow = hs?.open_window, wm = hs?.watermark_ms;
-    if (ow) {
-      const pct = wm ? Math.max(0, Math.min(100, (wm - ow.start_ms) / (ow.end_ms - ow.start_ms) * 100)) : 0;
-      html += `<div class="win open"><div class="fill" style="width:${pct}%"></div>
-        <div class="t">${hm(ow.start_ms)}–${hm(ow.end_ms)}</div><div class="s">open · ${pct.toFixed(0)}%</div></div>`;
-    }
     return `<div class="hrow">${hosts.length > 1 ? `<div class="hlabel">${esc(h)}${hs?.model ? " · " + esc(hs.model) : ""}</div>` : ""}
-      <div class="timeline" data-host="${esc(h)}">${html || '<div class="muted">no window closed yet</div>'}</div></div>`;
+      <div class="timeline" data-host="${esc(h)}">${any ? cells : '<div class="muted">no window closed yet</div>'}</div></div>`;
   }
   $("timeline").addEventListener("click", e => {
     const el = e.target.closest("[data-w]");
