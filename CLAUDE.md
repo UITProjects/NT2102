@@ -113,14 +113,14 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   benign windows stay green. The attack is general, not APT-specific (user, 2026-10-13): exploit of a lab service → RCE → ATT&CK techniques;
   OCR-APT supplies the method. No publishing-style evaluation, metrics or NODLINK baseline are required; the section 6 metrics rules
   apply only if numbers are ever reported.
-- Now live: `ocr-live` on `ubuntu-trainer` scores `ws-etw-0` with **exp16-ws0** (DC-era benign, 2 RGCN layers; since 2026-11-12 ~16:05Z)
-  and the [OURS] NET alert rule (D8); **exp10** (~63 h idle) ran it 11-09→11-12 but was blind to the DC role (`ws-etw-0` was promoted to
-  the `nt2102.lab` Domain Controller 11-09 10:41Z, 16 min after exp10's training ended — see D2/D12, PROGRESS top), so it was retrained →
-  exp16-ws0 (gate pass at tol 0.01). The end-goal demo worked on exp08: Kali's DVWA→RCE chain went red with an LLM `attack` verdict and
+- Now live: `ocr-live` on `ubuntu-trainer` scores `ws-etw-0` with **exp17-ws0** (all DC-era benign 11-09 16:49Z → 11-15 11:20Z, 2 RGCN
+  layers; since 2026-11-15 ~13:43Z, user decision). Benign red is down about 8 → 3 per day, but DVWA attack windows score about 7.5 instead of about 51 (still red at 4.5;
+  `docs/notes/fp-review-20261115.md`). Before it: exp16-ws0 (11-12 → 11-15); **exp10** (~63 h idle) ran it 11-09→11-12 but was blind to the DC role (`ws-etw-0` was promoted to
+  the `nt2102.lab` Domain Controller 11-09 10:41Z, 16 min after exp10's training ended — see D2/D12, PROGRESS top). The end-goal demo worked on exp08: Kali's DVWA→RCE chain went red with an LLM `attack` verdict and
   idle stayed green around each run. It is not airtight: benign false alarms still happen and the alert can rest on a few nodes (PROGRESS,
   `docs/notes/subgraph-score-fragility.md`).
 - Two hosts (user, 2026-11-07): one model per host, not pooled (D12). **Two-VM live since 2026-11-12 ~14:10Z** (user decision): `ws-etw-0`
-  (the **`nt2102.lab` Domain Controller**) runs **exp16-ws0**, `ws-etw-1` (the teammate's **react2shell** node.js RCE box) runs
+  (the **`nt2102.lab` Domain Controller**) runs **exp17-ws0** (exp16-ws0 until 11-15), `ws-etw-1` (the teammate's **react2shell** node.js RCE box) runs
   **exp15-ws1** (both gate-passed at tol 0.01; `docs/notes/ws-etw-1-retrain-20261111.md` §11). `ws-etw-1` also runs a SYSTEM task
   `maintenance.ps1 → whoami` every minute; by user decision each host's baseline includes admin/RDP + current-state work, only
   exploit/enumeration runs excluded (D2). The trainer

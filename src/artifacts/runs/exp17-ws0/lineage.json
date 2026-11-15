@@ -1,0 +1,243 @@
+{
+ "model": "exp17-ws0",
+ "experiment": "range-20261109T164900Z-20261115T1120Z-ws-etw-0",
+ "experiment_source": "loki",
+ "hosts": [
+  "ws-etw-0"
+ ],
+ "benign_split": "test",
+ "label_source": "benign by operator assertion: idle Loki range 2026-11-09 16:49:00+0000 - 2026-11-15 11:20:00+0000 (split test) minus 198 of 4153 windows listed in `excluded`",
+ "excluded": {
+  "windows_total": 4153,
+  "windows_dropped": 198,
+  "windows_kept": 3955,
+  "edges_kept": 8244590,
+  "edges_dropped": 1178579,
+  "ranges": [
+   {
+    "start_ms": 1794242820000,
+    "end_ms": 1794243120000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new live-20261109T164916Z run, not idle",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794264720000,
+    "end_ms": 1794265020000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794286620000,
+    "end_ms": 1794286920000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794308520000,
+    "end_ms": 1794308820000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794322140000,
+    "end_ms": 1794323100000,
+    "reason": "DVWA->RCE kill chain on ws-etw-0 (SessionID=0, via httpd RCE shell): psexec 14:51, whoami, mysql x45 14:52-53 (dvwa.users dump), rclone 14:52, schtasks UpdaterSync 14:54, wevtutil clear 14:54, + C2 beacon tail to ~15:00. Attack, not idle",
+    "label": "attack",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794330420000,
+    "end_ms": 1794330720000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794352320000,
+    "end_ms": 1794352620000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794374220000,
+    "end_ms": 1794374520000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794396120000,
+    "end_ms": 1794396420000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794418020000,
+    "end_ms": 1794418320000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794439920000,
+    "end_ms": 1794440220000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794461820000,
+    "end_ms": 1794462120000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794483720000,
+    "end_ms": 1794484020000,
+    "reason": "etwctl rotation canary: whoami + python at new live-* run",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794500760000,
+    "end_ms": 1794501900000,
+    "reason": "our DVWA->RCE kill chain after the exp16 deploy (kproc: net/whoami 16:31, PsExec64 + rclone + mysql x45 16:32-33, schtasks + wevtutil 16:34) + C2 tail",
+    "label": "attack",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794505576000,
+    "end_ms": 1794505936000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261112T174916Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794527476000,
+    "end_ms": 1794527836000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261112T235416Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794549376000,
+    "end_ms": 1794549736000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261113T055916Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794571276000,
+    "end_ms": 1794571636000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261113T120416Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794572100000,
+    "end_ms": 1794574800000,
+    "reason": "Ansible win_sysmon + collector redeploy (kfile ansible-* 12:15-12:40) then our DVWA kill chain 12:37-12:49 (Sysmon: PsExec64, rclone, mysql x45) + C2 tail",
+    "label": "ours",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794573229000,
+    "end_ms": 1794573589000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261113T123649Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794594976000,
+    "end_ms": 1794595336000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261113T183916Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794616877000,
+    "end_ms": 1794617237000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261114T004417Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794632280000,
+    "end_ms": 1794633120000,
+    "reason": "WinRM session (wsmprovhost 05:00 + 05:05, whoami), operator/Ansible check, not idle",
+    "label": "ours",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794638777000,
+    "end_ms": 1794639137000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261114T064917Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794660676000,
+    "end_ms": 1794661036000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261114T125416Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794676980000,
+    "end_ms": 1794678120000,
+    "reason": "WinRM sessions (wsmprovhost 17:25 + 17:35), not idle",
+    "label": "ours",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794682576000,
+    "end_ms": 1794682936000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261114T185916Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794704476000,
+    "end_ms": 1794704836000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261115T010416Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794716760000,
+    "end_ms": 1794717900000,
+    "reason": "our DVWA kill chain test 04:30-04:34 (Sysmon: PsExec64, rclone, mysql x45) + C2 tail",
+    "label": "attack",
+    "file": "ws-etw-0-20261115.json"
+   },
+   {
+    "start_ms": 1794726376000,
+    "end_ms": 1794726736000,
+    "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261115T070916Z, ours",
+    "label": "canary",
+    "file": "ws-etw-0-20261115.json"
+   }
+  ]
+ },
+ "seeds": 1,
+ "epochs": null,
+ "created_utc": "2026-11-15T13:24:39.259421+00:00",
+ "git_commit": "4aaafbc",
+ "pipeline_uncommitted_changes": false,
+ "converter_sha256": "cbbf6dcfa6581d6e4fd34d81408292b9cb1b9fc4efa6bfedcf14d1798766f35d",
+ "tools": {
+  "encode_to_features.py": "7d07efb74f3361a3a212cca1cae652e2b73f786a9bba43fecd6cd23180455e36",
+  "train_gnn_models.py": "ec91cb89ca50d8fe3ccc36819ead1c9f929b0c5d474e23a2abcf35e9de45226c"
+ },
+ "commands": [
+  "src/pipeline/encode_to_features.py --edges src/artifacts/runs/exp17-ws0/train_edges.csv --out-dir src/artifacts/runs/exp17-ws0/features",
+  "src/pipeline/train_gnn_models.py --edges src/artifacts/runs/exp17-ws0/train_edges.csv --features src/artifacts/runs/exp17-ws0/features/features_model.csv --scaler src/artifacts/runs/exp17-ws0/features/feature_scaler.json --out-dir src/artifacts/runs/exp17-ws0 --runs 1 --layers 2 --val-windows 60 --tnr-tolerance 0.01"
+ ]
+}

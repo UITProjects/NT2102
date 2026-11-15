@@ -2,7 +2,23 @@
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is
-**`test-train-with-two-window-vm` @ `6db7b2e`**, clean (2026-11-15 03:11Z, Ansible `--tags project -e repo_branch=…`), not `main`.
+**`test-train-with-two-window-vm` @ `4aaafbc`**, clean (2026-11-15 ~11:02Z, Ansible `--tags project -e repo_branch=…`), not `main`.
+This deploy also brought `a788fc8` live: anomaly-first `correlate.py` (`/api/crosshost` 200) and the projector-friendly UI
+(collapsible LLM card, Present toggle / `#present=1`, Parameters = [OURS] + τ only).
+
+## 2026-11-15 False-positive review + `ws-etw-0` retrain → `exp17-ws0` (LIVE)
+
+Details: `docs/notes/fp-review-20261115.md`. Plan: `~/.claude/plans/i-need-to-check-wondrous-chipmunk.md`.
+- **Live since ~13:43Z (user decision):** `ws-etw-0` = **exp17-ws0** (all DC-era data 11-09 16:49Z → 11-15 11:20Z, 198 of 4,153 windows
+  excluded, gate pass). `ws-etw-1` stays **exp15-ws1**: its retrain was aborted by the user (few false positives there). Verified:
+  `/healthz` ok, `/api/status` exp17-ws0 converter `match`, 4.5, NET rule off. Rollback: `lab promote exp16-ws0 --host ws-etw-0`, then restart.
+- **Re-score of the same 819 ws-etw-0 windows (4.5, rule off):** benign red 24 → 9 (≈8 → 3/day, mostly in-sample); DVWA attack windows
+  51–53 → **7.3–7.9** (still red, below benign GPO-editor windows at 14–15; 1 tail window lost) — the ngen-burst trade-off. By the
+  pre-set rule it was "not better"; the user deployed it anyway.
+- **LLM budget** reset by hand (30/30 were used by 13:20Z, mostly restart re-reads); the 2 skipped windows (13:20Z, 13:25Z, admin MMC)
+  re-ran → `false_positive`.
+- **Not done:** 24 h soak on exp17-ws0; `ws-etw-1-20261115.json` exclusions are written (8 newly found teammate runs) but unused;
+  model files committed (exp17-ws0, small set as for exp16). Trainer scratch: `~/retrain-20261115/`.
 
 ## 2026-11-15 Deliverables updated with the teammate's react2shell detection + submission bundle
 

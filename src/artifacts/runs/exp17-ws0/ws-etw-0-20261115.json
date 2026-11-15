@@ -1,0 +1,185 @@
+{
+ "note": "ws-etw-0 retrain 2026-11-15 (exp17-ws0): exp16-ws0 exclusions + everything since 11-12 11:47Z. DC steady state, admin console/RDP (GPO editor 11-14 03:12-03:34), DsmSvc, Edge update, domain traffic are KEPT as benign (D2 variant). Excluded: canaries, our DVWA tests, Ansible/WinRM. Found from Loki kproc + Sysmon EID 1 + kfile ansible-*. label: attack|ours|canary (lab compare).",
+ "ranges": [
+  {
+   "start": "2026-11-09T16:47:00Z",
+   "end": "2026-11-09T16:52:00Z",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new live-20261109T164916Z run, not idle",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-09T22:52:00Z",
+   "end": "2026-11-09T22:57:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-10T04:57:00Z",
+   "end": "2026-11-10T05:02:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-10T11:02:00Z",
+   "end": "2026-11-10T11:07:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-10T14:49:00Z",
+   "end": "2026-11-10T15:05:00Z",
+   "reason": "DVWA->RCE kill chain on ws-etw-0 (SessionID=0, via httpd RCE shell): psexec 14:51, whoami, mysql x45 14:52-53 (dvwa.users dump), rclone 14:52, schtasks UpdaterSync 14:54, wevtutil clear 14:54, + C2 beacon tail to ~15:00. Attack, not idle",
+   "label": "attack"
+  },
+  {
+   "start": "2026-11-10T17:07:00Z",
+   "end": "2026-11-10T17:12:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-10T23:12:00Z",
+   "end": "2026-11-10T23:17:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-11T05:17:00Z",
+   "end": "2026-11-11T05:22:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-11T11:22:00Z",
+   "end": "2026-11-11T11:27:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-11T17:27:00Z",
+   "end": "2026-11-11T17:32:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-11T23:32:00Z",
+   "end": "2026-11-11T23:37:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-12T05:37:00Z",
+   "end": "2026-11-12T05:42:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-12T11:42:00Z",
+   "end": "2026-11-12T11:47:00Z",
+   "reason": "etwctl rotation canary: whoami + python at new live-* run",
+   "label": "canary"
+  },
+  {
+   "start": "2026-11-12T16:26:00Z",
+   "end": "2026-11-12T16:45:00Z",
+   "label": "attack",
+   "reason": "our DVWA->RCE kill chain after the exp16 deploy (kproc: net/whoami 16:31, PsExec64 + rclone + mysql x45 16:32-33, schtasks + wevtutil 16:34) + C2 tail"
+  },
+  {
+   "start": "2026-11-12T17:46:16Z",
+   "end": "2026-11-12T17:52:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261112T174916Z, ours"
+  },
+  {
+   "start": "2026-11-12T23:51:16Z",
+   "end": "2026-11-12T23:57:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261112T235416Z, ours"
+  },
+  {
+   "start": "2026-11-13T05:56:16Z",
+   "end": "2026-11-13T06:02:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261113T055916Z, ours"
+  },
+  {
+   "start": "2026-11-13T12:01:16Z",
+   "end": "2026-11-13T12:07:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261113T120416Z, ours"
+  },
+  {
+   "start": "2026-11-13T12:15:00Z",
+   "end": "2026-11-13T13:00:00Z",
+   "label": "ours",
+   "reason": "Ansible win_sysmon + collector redeploy (kfile ansible-* 12:15-12:40) then our DVWA kill chain 12:37-12:49 (Sysmon: PsExec64, rclone, mysql x45) + C2 tail"
+  },
+  {
+   "start": "2026-11-13T12:33:49Z",
+   "end": "2026-11-13T12:39:49Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261113T123649Z, ours"
+  },
+  {
+   "start": "2026-11-13T18:36:16Z",
+   "end": "2026-11-13T18:42:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261113T183916Z, ours"
+  },
+  {
+   "start": "2026-11-14T00:41:17Z",
+   "end": "2026-11-14T00:47:17Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261114T004417Z, ours"
+  },
+  {
+   "start": "2026-11-14T04:58:00Z",
+   "end": "2026-11-14T05:12:00Z",
+   "label": "ours",
+   "reason": "WinRM session (wsmprovhost 05:00 + 05:05, whoami), operator/Ansible check, not idle"
+  },
+  {
+   "start": "2026-11-14T06:46:17Z",
+   "end": "2026-11-14T06:52:17Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261114T064917Z, ours"
+  },
+  {
+   "start": "2026-11-14T12:51:16Z",
+   "end": "2026-11-14T12:57:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261114T125416Z, ours"
+  },
+  {
+   "start": "2026-11-14T17:23:00Z",
+   "end": "2026-11-14T17:42:00Z",
+   "label": "ours",
+   "reason": "WinRM sessions (wsmprovhost 17:25 + 17:35), not idle"
+  },
+  {
+   "start": "2026-11-14T18:56:16Z",
+   "end": "2026-11-14T19:02:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261114T185916Z, ours"
+  },
+  {
+   "start": "2026-11-15T01:01:16Z",
+   "end": "2026-11-15T01:07:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261115T010416Z, ours"
+  },
+  {
+   "start": "2026-11-15T04:26:00Z",
+   "end": "2026-11-15T04:45:00Z",
+   "label": "attack",
+   "reason": "our DVWA kill chain test 04:30-04:34 (Sysmon: PsExec64, rclone, mysql x45) + C2 tail"
+  },
+  {
+   "start": "2026-11-15T07:06:16Z",
+   "end": "2026-11-15T07:12:16Z",
+   "label": "canary",
+   "reason": "etwctl rotation canary: cmd /c whoami + python at new run live-20261115T070916Z, ours"
+  }
+ ]
+}

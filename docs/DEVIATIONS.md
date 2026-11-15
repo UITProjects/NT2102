@@ -59,6 +59,10 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   DVWA→RCE kill chain (`src/artifacts/exclusions/ws-etw-0-20261112.json`, 67 of 2107 windows). This **supersedes the logged-on-session
   bullet above for the live model**: an admin session on `ws-etw-0` is now learned as normal, so — like `ws-etw-1` — a hands-on-keyboard
   attacker who looks like the admin would blend in, and no such detection is claimed. `exp10` (idle, pre-DC) is retired from live use.
+  **Since 2026-11-15 (`exp17-ws0`)** the range is all DC-era data, 11-09 16:49Z → 11-15 11:20Z (4,153 windows, 198 excluded:
+  `src/artifacts/exclusions/ws-etw-0-20261115.json`; canaries, our DVWA chains, Ansible/WinRM). It also keeps the admin GPO-editor session,
+  DsmSvc, an Edge update and a 545-process .NET ngen burst as benign. Label source: operator reading of Loki kproc/Sysmon/kfile
+  (`docs/notes/fp-review-20261115.md`).
 - Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
@@ -516,6 +520,12 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   admin sessions, D2), tol 0.01 like `ws-etw-1`. Gate (seed 360 = deployed): best_ep 99 on FILE / NET / PROCESS, val_fpr
   0.0002 / 0.0000 / 0.0023; the NET gate — the DC risk — is the strongest (2,130 val nodes) now that the DC's NET is in training.
   Deployed two-VM by user decision (deploy allowed even on gate failure). First check: 0 red on both hosts.
+  **`exp17-ws0`** live since 2026-11-15 ~13:43Z (user decision), replacing exp16-ws0: all DC-era data to 11-15 11:20Z, same settings.
+  Gate pass: best_ep 99 ×3, val_fpr 0.0048 / 0.0067 / 0.0026. Re-score of the same 819 saved live windows at 4.5, NET rule off:
+  benign red 24 → 9 (mostly in-sample), our DVWA attack windows 51–53 → 7.3–7.9 (still red, but below benign GPO-editor windows at
+  14–15; one 4.55 tail window lost). [INFERENCE] The ngen burst in training makes the attack's 45 short-lived `mysql.exe` look normal.
+  Impact: fewer false alarms, a much thinner attack margin on `ws-etw-0`. Claims limited: no "attack ranks above benign" claim on
+  `ws-etw-0` under exp17; the recorded demo (exp08) is unaffected.
 - Claims limited: green windows on either host show its baseline matches its current use, not that it detects attacks: no labelled
   attack has been replayed or run against `ws-etw-1` or the DC `ws-etw-0` after their DC-era/current-state retrain. Human/admin sessions
   on both are now learned as normal (D2), so the old interactive-session false alarms no longer fire — and neither would an attacker who
