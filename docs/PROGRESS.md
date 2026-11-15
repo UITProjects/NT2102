@@ -4,6 +4,23 @@ Replace lines in place when status changes; no history. "Verified" = checked in 
 Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is
 **`test-train-with-two-window-vm` @ `6db7b2e`**, clean (2026-11-15 03:11Z, Ansible `--tags project -e repo_branch=…`), not `main`.
 
+## 2026-11-15 Deliverables updated with the teammate's react2shell detection + submission bundle
+
+User: the teammate confirmed their attack was caught (UI history 11-15 06:07–12:07 +07). Deck + report now carry it as a
+**second result** (exp08 DVWA demo stays the main story; in-sample caveat stated everywhere).
+- **Report (`latex/`, 26 pages, builds clean):** abstract, goals, lab table (`ws-etw-1` row, `ws-etw-0` = DC note), deviation
+  table (4.5 cut-off, NET rule, D12, D14), new **R4** (`sec:res-ws1`: 11-14 green at 10 → 4.5; 11-15 13.44/9.93 NET-suppressed →
+  rule off → 04:15Z 7.24 / 04:20Z 19.86 red, LLM attack 0.85/0.95; 04:40Z 4.66→3.03 after restart; 04:50Z 5.92 FP), limits,
+  conclusion, appendix D12/D14 + cut-off/NET-rule paragraphs. All `\todoval` filled: UI screenshots (`images/res-*.png`), LLM =
+  DeepSeek `deepseek-flash`, report excerpt. **Fixed a wrong date:** the exp08 attack window 17:10Z and FP 22:25Z are **11-05**,
+  not 11-06 (report + note.txt). Fixed "UTC thật" → LLM document times are UTC+7 (`alg2.DISPLAY_TZ`).
+- **Deck (`presentation/`, 15 slides, builds):** LabInfra shows both hosts + VPN attacker; "live ≥ 4.5" line; new "Video demo 2"
+  **placeholder** (teammate puts the YouTube id in the commented iframe) + "Kết quả thứ hai" slide; note.txt Q7 extended, Q13 added.
+- **Submission:** `submit/` (gitignored) holds the form answers + docx/pptx/source/demo/dataset files; rebuild with the project
+  skill `sync-submit` (`.claude/skills/sync-submit/scripts/sync_submit.py [report|slides|source|demo|check]`).
+- **Mismatch:** this file's D14 section still says the `ws-etw-1` Sysmon rollout is owed; DEVIATIONS D14 says both hosts
+  (2026-11-13) and the 11-15 ws-etw-1 windows carry command lines → looks done; user to confirm.
+
 ## 2026-11-15 Cross-host correlation rebuilt anomaly-first (D13), local only
 
 User: the flow-first layer ("connections between the monitored VMs, found by code") was network monitoring, not anomaly

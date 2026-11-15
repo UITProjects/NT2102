@@ -3,7 +3,7 @@ theme: default
 title: Phát hiện bất thường trên endpoint device log dựa trên OCR-APT
 info: |
   NT2102 – Đồ án phát hiện bất thường trên log thiết bị đầu cuối.
-  Demo trực tiếp OCR-APT trên một Windows host (ws-etw-0, exp08).
+  Demo trực tiếp OCR-APT: demo chính trên ws-etw-0 (exp08), kết quả thứ hai trên ws-etw-1 (exp15-ws1).
 colorSchema: light
 aspectRatio: 16/9
 canvasWidth: 980
@@ -48,7 +48,7 @@ Trần Quang Kiệt – 26848108@grad.uit.edu.vn
 <!--
 Chào thầy/cô và các bạn. Nhóm trình bày một demo trực tiếp của OCR-APT (CCS 2025): phát hiện tấn công
 trên log nhân (kernel log) của Windows bằng subgraph anomaly detection. Bốn phần: bài toán → ý tưởng cốt
-lõi (5 bước) → demo trên một máy Windows → cảm ơn. Chi tiết đầy đủ nằm trong báo cáo (latex/).
+lõi (5 bước) → demo (video chính trên ws-etw-0 + tấn công thật của thành viên trên ws-etw-1) → cảm ơn. Chi tiết đầy đủ nằm trong báo cáo (latex/).
 -->
 
 ---
@@ -76,7 +76,7 @@ clicks: 2
 
 **OCR-APT** (CCS 2025)
 - **Subgraph** · **behavior** · **LLM**
-- Mục tiêu: **1 host**, tấn công **đỏ**, benign **xanh**, live
+- Mục tiêu: tấn công **đỏ**, benign **xanh**, live · **mỗi host một mô hình**
 
 </div>
 </div>
@@ -99,7 +99,7 @@ clicks: 2
 Tấn công ẩn trong audit log khổng lồ, cực hiếm, không nhãn. Cách cũ: luật thì bỏ sót kỹ thuật mới;
 anomaly detection thì hoặc quá vụn (từng node) hoặc quá thô (cả đồ thị); và chỉ cho cảnh báo rời, không
 dựng được câu chuyện. OCR-APT trả lời bằng subgraph + học hành vi (không dùng tên/IP) + LLM.
-Mục tiêu đồ án rất hẹp: demo phần lõi chạy sống trên một Windows host, không đua số liệu với bài báo.
+Mục tiêu đồ án rất hẹp: demo phần lõi chạy sống trên Windows host (mỗi host một mô hình), không đua số liệu với bài báo.
 Năm bước dưới hình là bản đồ cho phần 2. Chi tiết hạn chế cách cũ: note.txt Q8; báo cáo §1.
 -->
 
@@ -244,6 +244,7 @@ theo loại. β, threshold, Hình 2 bài báo: báo cáo §2.4–2.5.
 - Nối node bị cờ → **subgraph**
 - Điểm = **Σ xác suất** node bị cờ
 - **≥ 10 → Moderate → đỏ** (thang bài báo)
+- Live hiện tại: **≥ 4.5** (nhóm chỉnh)
 
 </div>
 <div class="card inv">
@@ -260,6 +261,8 @@ theo loại. β, threshold, Hình 2 bài báo: báo cáo §2.4–2.5.
 Node rời rạc → subgraph có điểm → báo cáo. Điểm subgraph là TỔNG xác suất (min-max, kẹp [0,1]) của node
 bị cờ, nên ≥10 ≈ ít nhất ~10 node bất thường nối thành một câu chuyện. Thang Minor <10, Moderate 10–100,
 Significant 100–1000, Critical >1000 (§7.2.1); không dùng top-k fallback vì sẽ làm mọi window đỏ.
+Video demo chính (exp08) dùng đúng mốc 10. Từ 15-11 live hạ xuống 4.5 vì tấn công thật trên ws-etw-1 chỉ đạt
+4.72 — chỉnh trên chính lần chạy đó, nên in-sample (note.txt Q13).
 LLM đọc subgraph, trích IOC, lọc phần bịa, viết báo cáo; nhóm thêm bước phân loại trước (bài báo luôn giả
 định tấn công). LLM chỉ là lớp phủ (rủi ro prompt injection). Công thức: báo cáo Phụ lục.
 -->
@@ -270,13 +273,15 @@ LLM đọc subgraph, trích IOC, lọc phần bịa, viết báo cáo; nhóm th�
 
 <div style="max-width:84%;margin:0 auto"><LabInfra /></div>
 
-<div class="tiny muted mt-1 text-center">Terraform + Ansible · <b>một</b> Windows host được chấm điểm</div>
+<div class="tiny muted mt-1 text-center">Terraform + Ansible · <b>hai</b> Windows host, mỗi host một mô hình</div>
 
 <!--
-Lab trên một hypervisor Proxmox. ws-etw-0 chạy DVWA (web có lỗ hổng) và etwcollect (collector ETW nhóm tự viết).
-ubuntu-trainer chạy Loki, Grafana, huấn luyện và ocr-live (máy chủ demo). Kali ở VNet riêng là máy tấn
-công. Ba mũi tên: ① Kali khai thác DVWA, ② log ETW đẩy về Loki, ③ ocr-live phục vụ giao diện cảnh báo.
-Đồ án cam kết một host; host thứ hai + correlation là nice-to-have.
+Lab trên một hypervisor Proxmox. ws-etw-0 chạy DVWA (web có lỗ hổng) và etwcollect (collector ETW nhóm tự viết);
+từ 09-11 nó còn là Domain Controller (video demo chính quay trước đó, mô hình exp08). ws-etw-1 là máy thứ hai:
+ứng dụng Next.js có lỗ hổng RCE (react2shell) do một thành viên dựng, mô hình riêng exp15-ws1.
+ubuntu-trainer chạy Loki, Grafana, huấn luyện và ocr-live (máy chủ demo, một engine cho mỗi host).
+① Kali khai thác DVWA, ② log ETW của cả hai host đẩy về Loki, ③ ocr-live phục vụ giao diện cảnh báo,
+④ thành viên tấn công thật ws-etw-1 từ máy mình qua VPN. Correlation giữa hai host: đã viết, chưa kiểm chứng.
 -->
 
 ---
@@ -354,8 +359,86 @@ class: text-center
 <!--
 Video demo đã quay sẵn (YouTube: https://www.youtube.com/watch?v=Jzv03v82bNo). Cần mạng để phát;
 nếu mất mạng, mô tả bằng lời theo bốn bước dưới khung.
-Kết quả đo được (exp08: window tấn công 70.17 / LLM attack 0.85; 24 h: 288 window, 7 alert, 3 false alarm)
-và giới hạn nằm trong báo cáo §3–4; nếu được hỏi: note.txt Q7. Slide sau là lời cảm ơn.
+Kết quả đo được (exp08: window tấn công 05-11 17:10Z 70.17 / LLM attack 0.85; 24 h: 288 window, 7 alert, 3 false alarm)
+và giới hạn nằm trong báo cáo §3–4; nếu được hỏi: note.txt Q7. Slide sau: video 2 (tấn công thật trên ws-etw-1).
+-->
+
+---
+layout: center
+class: text-center
+---
+
+# 3 · Video demo 2: tấn công thật trên ws-etw-1
+
+<div class="video-ph" v-motion :initial="{ scale: 0.95, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 500 } }">
+  <!-- TODO (thành viên): thay khối placeholder này bằng iframe YouTube, giống slide "3 · Video demo":
+  <iframe src="https://www.youtube-nocookie.com/embed/<VIDEO_ID>?rel=0" title="Video demo 2" frameborder="0" allowfullscreen
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" /> -->
+  <div class="ph">
+    <div class="ph-i"><span class="tri"></span></div>
+    <div>Video demo 2 · đang cập nhật</div>
+  </div>
+</div>
+
+<div class="tiny muted mt-3">① react2shell RCE → ② <code>powershell -enc</code> → recon → winPEAS → ③ window <b>đỏ</b> trên ws-etw-1 → ④ LLM <code>attack</code></div>
+
+<style scoped>
+.video-ph { width: 76%; margin: 0.5rem auto 0; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden;
+  background: #0f172a; box-shadow: 0 6px 24px rgba(15,23,42,0.25); }
+.video-ph iframe { width: 100%; height: 100%; display: block; }
+.ph { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.6rem; color: #cbd5e1; font-size: 1rem; }
+.ph-i { width: 64px; height: 64px; border-radius: 50%; border: 2px solid #cbd5e1; display: flex; align-items: center;
+  justify-content: center; }
+.tri { width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent;
+  border-left: 20px solid #cbd5e1; margin-left: 5px; }
+</style>
+
+<!--
+Placeholder: video do thành viên quay lần tấn công react2shell vào ws-etw-1 (15-11, 03:35–04:40Z), sẽ thay bằng
+link YouTube. Nếu chưa có video, chuyển thẳng sang slide kết quả sau và giải thích bằng ảnh chụp giao diện.
+-->
+
+---
+
+# 3 · Kết quả thứ hai: tấn công thật trên ws-etw-1
+
+<div class="grid gap-4 mt-2" style="grid-template-columns: 1fr 1.35fr">
+<div class="small">
+
+<div class="card atk">
+
+**Chuỗi** (thành viên tự làm, không theo kịch bản)
+- Next.js RCE → `powershell -enc`
+- recon.bat · **winPEAS**
+
+</div>
+
+<div class="card det mt-3">
+
+**Kết quả** (exp15-ws1)
+- 04:15Z **7.24** · 04:20Z **19.86** → **đỏ**
+- LLM **attack** 0.85 · 0.95
+
+</div>
+
+<div class="tiny muted mt-3">Mốc 4.5 + tắt luật NET: chỉnh trên chính lần chạy này → <b>in-sample</b></div>
+
+</div>
+<div>
+  <img src="./images/ws1-subgraph.png" class="fig" style="max-height:330px;object-fit:contain" />
+  <div class="src">Giao diện demo, window 04:20Z: subgraph 47 node quanh winpeasx64.exe</div>
+</div>
+</div>
+
+<!--
+Kết quả thứ hai, trên máy khác, mô hình riêng, tấn công không do nhóm viết kịch bản. Thành viên khai thác ứng dụng
+Next.js (react2shell) từ máy mình qua VPN: node.exe → cmd → powershell -EncodedCommand (reverse shell tới
+20.210.106.182:4444) → recon.bat (sc, schtasks, driverquery, whoami /all, netstat) → winPEAS. Hai window đỏ, LLM
+trích đúng các lệnh (nhờ dòng lệnh Sysmon) và đánh attack.
+Trung thực: lần chạy 14-11 giữ xanh ở mốc 10 (đỉnh 4.72) → hạ mốc 4.5; lần 15-11 bị luật NET chặn (RCE dùng lại socket
+HTTP đi vào) → tắt luật. Cả hai chỉnh trên chính tấn công này nên là in-sample; đổi lại ~5 false alarm/ngày/máy.
+Tấn công không đi sang DC ws-etw-0, nên correlation giữa hai host chưa kiểm chứng. Chi tiết: báo cáo R4; note.txt Q13.
 -->
 
 ---
@@ -378,5 +461,5 @@ Kết quả, giới hạn, công thức, bảng sai khác: báo cáo <code>latex
 
 <!--
 Cảm ơn. Câu hỏi thường gặp đã chuẩn bị trong note.txt (RGCN vs GCN, 12 quan hệ, vì sao benign idle, kết
-quả demo, công thức điểm subgraph...). Công thức RGCN, điểm subgraph và bảng sai khác đầy đủ nằm trong báo cáo.
+quả demo, công thức điểm subgraph, vì sao hạ mốc 4.5 / tắt luật NET...). Công thức RGCN, điểm subgraph và bảng sai khác đầy đủ nằm trong báo cáo.
 -->

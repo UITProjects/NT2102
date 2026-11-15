@@ -128,9 +128,12 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   follows a red window's NET nodes to the other VM's process at the other end and the LLM aggregates both sides (D13, anomaly-first
   since 2026-11-15, local only, not deployed); no attack has crossed hosts. Older data says
   `ws-etw`: Loki lines from before the rename keep that label.
-- **Deliverables (slides + demo) commit to ONE Windows VM** (`ws-etw-0`, exp08): the recorded demo and the deck show a single host.
-  The second VM (`ws-etw-1`) and cross-host correlation are **nice-to-have**, shown only as future work unless there is time (user, 2026-11-08).
-- The Slidev deck (`presentation/`) was redesigned to the user's structure on 2026-11-08 (committed), then **compacted to 13 slides,
+- **Deliverables (slides + demo):** the main recorded demo is ONE Windows VM (`ws-etw-0`, exp08). **Since 2026-11-15 (user)** the deck
+  and report also show the teammate's real react2shell attack on `ws-etw-1` (exp15-ws1, 11-15 04:15Z 7.24 / 04:20Z 19.86 red, LLM
+  attack 0.85/0.95) as a **second result**, flagged in-sample (4.5 cut-off + NET rule off were tuned on it). Cross-host correlation stays
+  future work. Deck: 15 slides incl. a "Video demo 2" placeholder (teammate fills the YouTube id) + one "Kết quả thứ hai" slide;
+  report: new §R4 (`sec:res-ws1`), D12/D14 appendix. Submission files for the course form are built into gitignored `submit/` by the project skill `sync-submit` (`.claude/skills/sync-submit/`).
+- The Slidev deck (`presentation/`) was redesigned to the user's structure on 2026-11-08 (committed), then **compacted to 13 slides (15 since 2026-11-15: + video 2 placeholder + second-result slide),
   keywords only, appendix, results and limits slides removed; demo goes straight to thanks** (user, 2026-11-08): details live in the report (`latex/`) and Q&A in `note.txt`.
 - The LaTeX report (`latex/contents.tex`) was **restructured to the deck's 5-part shape and content-aligned on 2026-11-08**
   (§1 Giới thiệu → §2 Ý tưởng cốt lõi → §3 Demo → §4 Giới hạn & thách thức → §5 Kết luận, detailed deviations in an Appendix):
@@ -256,7 +259,7 @@ history of earlier progress) and, if relevant, this section.
     `StackedLayers`, `RgcnLayer` (one-layer animation), `HiddenLayers`, `Hypersphere`, `OurPipeline`, `Windows`, `AttackGraph`,
     `BehaviorCounts` (graph + exact out_/in_ feature table), `LabInfra`, `KillChain`; Q&A backup in `note.txt`). `StackedLayers`, `HiddenLayers` and `Windows` are kept
     but unused since the 15-slide cut. `npm run dev` /
-    `npx slidev build`; check layout with `npx slidev export --format png [--range N] [--with-clicks]`. Max 15 slides (currently 13), keywords only;
+    `npx slidev build`; check layout with `npx slidev export --format png [--range N] [--with-clicks]`. Max 15 slides (currently 15), keywords only;
     explanations go to the report and speaker notes. Deck redesigned
     2026-11-08 (user structure: intro → core concept → demo → thanks; results + limits live in the report; one Windows VM; no source-tag chips; ≤3 bullets/group;
     video placeholder on the "3 · Video demo" slide for the user to fill). Slides cross-reference by name ("slide ② Behavior feature"), not number.

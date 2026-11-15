@@ -15,7 +15,7 @@
 
 Đồ án lấy \emph{phương pháp} từ OCR-APT \cite{aly2025ocrapt}, một hệ thống vốn được thiết kế cho tấn công APT. OCR-APT biểu diễn log thành provenance graph, trích behavior feature cho từng node, huấn luyện cho mỗi loại node một mô hình one-class RGCN (OCRGCN) chỉ trên dữ liệu benign, gom các anomalous node thành subgraph có anomaly score (Thuật toán 1), rồi dùng mô hình ngôn ngữ lớn (LLM) để dựng lại câu chuyện tấn công (Thuật toán 2). Vì mô hình chỉ học hành vi benign, nó gắn cờ mọi hành vi mà dữ liệu huấn luyện chưa từng có, nên không bị giới hạn ở APT.
 
-Đồ án xây dựng lại phần lõi của OCR-APT dưới dạng một bản chứng minh khái niệm (proof of concept) chạy gần thời gian thực trên dữ liệu ETW do nhóm tự thu thập từ một máy Windows trong phòng lab: collector Python tự viết đẩy thẳng từng dòng log về Loki, chuyển sang lược đồ NODLINK Windows 10, cắt thành window 5 phút, chấm điểm bằng OCRGCN tự hiện thực, lọc bằng điểm subgraph, và (tuỳ chọn) được LLM phân loại và viết báo cáo. Báo cáo trình bày lý thuyết cốt lõi của bài báo, các điểm nhóm làm khác bài báo cùng lý do và giới hạn kèm theo, và kết quả thực nghiệm. Trên mô hình \textbf{exp08} (nền idle 3 ngày), một lần chạy tấn công DVWA$\rightarrow$RCE trực tiếp làm window chứa tấn công chuyển đỏ (điểm subgraph 70.17, mức Moderate, 89 node bị gắn cờ) và được LLM phân loại \texttt{attack}, trong khi các idle window quanh đó giữ xanh; 24 giờ đầu có 288 window với 7 cảnh báo (4 thuộc 3 lần tấn công thật, 3 là báo nhầm benign và đều bị LLM đánh \texttt{false\_positive}). Đây là số đếm từ các lần nhóm tự chạy, không phải tỉ lệ thống kê.
+Đồ án xây dựng lại phần lõi của OCR-APT dưới dạng một bản chứng minh khái niệm (proof of concept) chạy gần thời gian thực trên dữ liệu ETW do nhóm tự thu thập từ một máy Windows trong phòng lab: collector Python tự viết đẩy thẳng từng dòng log về Loki, chuyển sang lược đồ NODLINK Windows 10, cắt thành window 5 phút, chấm điểm bằng OCRGCN tự hiện thực, lọc bằng điểm subgraph, và (tuỳ chọn) được LLM phân loại và viết báo cáo. Báo cáo trình bày lý thuyết cốt lõi của bài báo, các điểm nhóm làm khác bài báo cùng lý do và giới hạn kèm theo, và kết quả thực nghiệm. Trên mô hình \textbf{exp08} (nền idle 3 ngày), một lần chạy tấn công DVWA$\rightarrow$RCE trực tiếp làm window chứa tấn công chuyển đỏ (điểm subgraph 70.17, mức Moderate, 89 node bị gắn cờ) và được LLM phân loại \texttt{attack}, trong khi các idle window quanh đó giữ xanh; 24 giờ đầu có 288 window với 7 cảnh báo (4 thuộc 3 lần tấn công thật, 3 là báo nhầm benign và đều bị LLM đánh \texttt{false\_positive}). Kết quả thứ hai: trên máy Windows thứ hai (\texttt{ws-etw-1}, ứng dụng Next.js có lỗ hổng RCE, mô hình riêng \textbf{exp15-ws1}), một cuộc tấn công thật do một thành viên nhóm tự thực hiện (encoded PowerShell reverse shell $\rightarrow$ recon $\rightarrow$ winPEAS) làm hai window chuyển đỏ (điểm 7.24 và 19.86) và được LLM phân loại \texttt{attack} (0.85 và 0.95); tuy nhiên mốc cảnh báo 4.5 và việc tắt luật NET được chỉnh trên chính các lần chạy này, nên đây là bằng chứng in-sample. Đây là số đếm từ các lần nhóm tự chạy, không phải tỉ lệ thống kê.
 \end{abstract}
 
 \vspace{1cm}
@@ -86,6 +86,7 @@ Mục tiêu của đồ án là:
     \item Hiểu và trình bày được từng thành phần cốt lõi của OCR-APT: provenance graph, behavior feature, RGCN, one-class learning, mô hình theo loại node, xây dựng anomalous subgraph và điều tra bằng LLM.
     \item Tự hiện thực lại phần lõi đó thành một pipeline có thể kiểm tra từng bước: mỗi giai đoạn ghi ra CSV/JSON độc lập để phân tích (EDA).
     \item Trình diễn trực tiếp ý tưởng của bài báo: khi một cuộc tấn công thật (khai thác CVE trên dịch vụ lab $\rightarrow$ remote code execution $\rightarrow$ các kỹ thuật MITRE ATT\&CK \cite{mitre_attack}) chạy trong buổi demo, window chứa tấn công chuyển sang cảnh báo đỏ, còn các benign window giữ màu xanh. Tấn công mục tiêu là một tấn công phổ biến, không phải APT: OCR-APT cung cấp phương pháp, không phải threat model.
+    \item Kiểm tra lại trên một máy thứ hai với tấn công thật không do kịch bản của nhóm sinh ra: mỗi máy một mô hình riêng như bài báo đánh giá từng host riêng (Mục~\ref{sec:res-ws1}).
     \item Ghi lại trung thực quan hệ với bài báo: phần nào tái hiện, phần nào điều chỉnh, phần nào bỏ qua, và những khẳng định nào vì thế không được phép đưa ra.
 \end{itemize}
 
@@ -528,12 +529,12 @@ Lưu ý: bộ điều tra luôn giả định subgraph là một phần của t�
 % =====================================================
 \section{Demo}
 \label{sec:demo}
-Đồ án hiện thực lại phần lõi của OCR-APT thành một pipeline chạy gần thời gian thực và trình diễn trực tiếp trên \emph{một} máy Windows (\texttt{ws-etw-0}, mô hình \textbf{exp08}). Phần này trình bày hạ tầng lab, đường đi của dữ liệu, kịch bản tấn công và kết quả đo được. Bảng~\ref{tab:deviations} tóm tắt các điểm đồ án làm khác bài báo; chi tiết từng điểm (lý do, tác động, giới hạn) ở Phụ lục~\ref{sec:appendix-dev}. Danh sách đầy đủ trong \texttt{docs/DEVIATIONS.md} (D1--D13) của kho mã.
+Đồ án hiện thực lại phần lõi của OCR-APT thành một pipeline chạy gần thời gian thực. Demo chính (video) chạy trên \emph{một} máy Windows (\texttt{ws-etw-0}, mô hình \textbf{exp08}); kết quả thứ hai đến từ máy Windows thứ hai (\texttt{ws-etw-1}, mô hình \textbf{exp15-ws1}) với một cuộc tấn công thật do thành viên nhóm thực hiện (Mục~\ref{sec:res-ws1}). Phần này trình bày hạ tầng lab, đường đi của dữ liệu, kịch bản tấn công và kết quả đo được. Bảng~\ref{tab:deviations} tóm tắt các điểm đồ án làm khác bài báo; chi tiết từng điểm (lý do, tác động, giới hạn) ở Phụ lục~\ref{sec:appendix-dev}. Danh sách đầy đủ trong \texttt{docs/DEVIATIONS.md} (D1--D14) của kho mã.
 
 \subsection{Hạ tầng lab (Proxmox)}
 \label{sec:infra}
 
-Phòng lab chạy trên một hypervisor Proxmox, dựng bằng Terraform + Ansible (cấu hình theo inventory, có thể chuyển lên cloud). Hai VNet SDN tách biệt: \texttt{it2102} (10.21.3.0/24) chứa host nạn nhân và máy xử lý, \texttt{it2102k} (10.21.4.0/24) chứa máy tấn công. Đồ án chấm điểm \emph{một} máy Windows (\texttt{ws-etw-0}, mô hình exp08); máy Windows thứ hai (\texttt{ws-etw-1}) và lớp correlation chỉ là nice-to-have (Phụ lục~\ref{sec:appendix-dev}, D12/D13):
+Phòng lab chạy trên một hypervisor Proxmox, dựng bằng Terraform + Ansible (cấu hình theo inventory, có thể chuyển lên cloud). Hai VNet SDN tách biệt: \texttt{it2102} (10.21.3.0/24) chứa host nạn nhân và máy xử lý, \texttt{it2102k} (10.21.4.0/24) chứa máy tấn công. Hai máy Windows được chấm điểm trực tiếp, \emph{mỗi máy một mô hình riêng} (D12): \texttt{ws-etw-0} (demo chính, exp08) và \texttt{ws-etw-1} (kết quả thứ hai, exp15-ws1). Lớp correlation giữa hai máy (D13) đã viết nhưng chưa kiểm chứng trên tấn công thật, nên chỉ là hướng tiếp theo:
 
 \begin{table}[H]
 \centering
@@ -542,9 +543,10 @@ Phòng lab chạy trên một hypervisor Proxmox, dựng bằng Terraform + Ansi
 \toprule
 \textbf{Máy} & \textbf{Hệ điều hành} & \textbf{Vai trò} \\
 \midrule
-\texttt{ws-etw-0} (.10) & Windows Server 2022 & Host nạn nhân được chấm điểm. Thu thập kernel log bằng collector Python tự viết \texttt{etwcollect} (Kernel-Process, Kernel-File, Kernel-Network) và tự đẩy thẳng từng dòng log về Loki; collector này thay SilkETW \cite{silketw} + Grafana Alloy, vì SilkETW ghi mỗi event bằng một lần mở file riêng nên tự sinh thêm Kernel-File event của chính nó (vòng lặp làm log file đến trễ nhiều phút, D10). Chạy ứng dụng web chưa vá (\texttt{DVWA}) làm mục tiêu tấn công. Không huấn luyện. \\
+\texttt{ws-etw-0} (.10) & Windows Server 2022 & Host nạn nhân được chấm điểm. Thu thập kernel log bằng collector Python tự viết \texttt{etwcollect} (Kernel-Process, Kernel-File, Kernel-Network) và tự đẩy thẳng từng dòng log về Loki; collector này thay SilkETW \cite{silketw} + Grafana Alloy, vì SilkETW ghi mỗi event bằng một lần mở file riêng nên tự sinh thêm Kernel-File event của chính nó (vòng lặp làm log file đến trễ nhiều phút, D10). Chạy ứng dụng web chưa vá (\texttt{DVWA}) làm mục tiêu tấn công của demo chính (exp08). Từ 2026-11-09 máy này còn là Domain Controller của miền \texttt{nt2102.lab}; exp08 được huấn luyện và demo \emph{trước} thời điểm đó, còn mô hình đang chạy trực tiếp là \texttt{exp16-ws0} (huấn luyện lại trên trạng thái DC). Không huấn luyện trên máy. \\
+\texttt{ws-etw-1} (.11) & Windows Server 2022 & Máy thứ hai được chấm điểm (\texttt{WEB-SERVER}, thành viên miền). Chạy ứng dụng Next.js có lỗ hổng RCE (``react2shell'') do một thành viên nhóm dựng; cùng collector \texttt{etwcollect}. Mô hình riêng \texttt{exp15-ws1} (nền gồm hoạt động cài đặt và RDP của chủ máy, loại các lần tấn công). Cả hai máy chạy thêm Sysmon (chỉ Event ID 1) để lấy dòng lệnh process cho giao diện và LLM, không đưa vào feature (D14). \\
 \texttt{ubuntu-trainer} (.20) & Ubuntu 24.04 & Loki + Grafana \cite{grafana_loki}; chuyển đổi, cắt window, trích feature, huấn luyện; máy chủ demo trực tiếp \texttt{ocr-live} (FastAPI + giao diện web). \\
-\texttt{kali} (.30) & Kali Linux & Máy tấn công ở VNet riêng \texttt{it2102k}; chạy \texttt{launch\_exploit.py} để phát động RCE kill chain vào \texttt{DVWA}. \\
+\texttt{kali} (.30) & Kali Linux & Máy tấn công ở VNet riêng \texttt{it2102k}; chạy \texttt{launch\_exploit.py} để phát động RCE kill chain vào \texttt{DVWA}. (Tấn công vào \texttt{ws-etw-1} đi từ máy của thành viên qua VPN, không qua Kali.) \\
 \bottomrule
 \end{tabularx}
 \caption{Các máy trong phòng lab. Mọi xử lý chạy trên \texttt{ubuntu-trainer} với cùng mã chuyển đổi, scaler và danh sách quan hệ như lúc huấn luyện.}
@@ -608,7 +610,10 @@ Mô hình & OCRGCN trong mã của tác giả (3 lớp) & OCRGCN tự viết b�
 Validation & 15\% node ngẫu nhiên, dừng sớm ngay lần đầu chỉ số validation giảm & Giữ lại nguyên window cuối, loại các overlapping window; patience 5; seed cố định & Tránh rò rỉ giữa các sliding window chồng nhau \\
 Nhãn & Ground truth của bộ dữ liệu công khai & Tấn công được tiêm vào và tự ghi nhãn; khớp theo indicator + thời gian & Biết chính xác cái gì đã chạy \\
 Điểm subgraph & Tổng điểm node (văn bản); mã gốc: tổng xác suất min-max & Tổng xác suất min-max bị kẹp $[0,1]$ theo khoảng điểm huấn luyện & Điểm thô khác thang đo giữa các loại node \\
-Mức cảnh báo & Moderate từ $>10$; lấy top-$k$ khi không có gì đạt & Moderate từ 10 (đúng thang bài báo §7.2.1); không lấy top-$k$ & Mốc 30 cũ của nhóm đã bỏ 2026-11-03, dùng lại thang bài báo (D8); top-$k$ làm mọi window đỏ khi chạy trực tiếp \\
+Mức cảnh báo & Moderate từ $>10$; lấy top-$k$ khi không có gì đạt & exp08 (R1--R3): Moderate từ 10 (đúng thang bài báo §7.2.1). Chạy trực tiếp từ 2026-11-15: Moderate từ \textbf{4.5} trên cả hai máy. Không lấy top-$k$ & Mốc 10 bỏ sót tấn công thật trên \texttt{ws-etw-1} (đỉnh 4.72); mốc 4.5 chỉnh trên chính lần chạy đó nên in-sample (D8); top-$k$ làm mọi window đỏ khi chạy trực tiếp \\
+Luật NET & Không có & Thêm 2026-11-09: subgraph phải có $\ge 1$ NET node bất thường mới cảnh báo; \textbf{tắt} khi chạy trực tiếp từ 2026-11-15 & Luật loại phần lớn false alarm của exp08 nhưng chặn tấn công react2shell (RCE dùng lại socket HTTP đi vào); tắt thì chấp nhận khoảng 5 false alarm/ngày/máy (D8) \\
+Số host & Đánh giá từng host riêng & Hai máy Windows, mỗi máy một mô hình (exp08 hoặc exp16-ws0 cho \texttt{ws-etw-0}, exp15-ws1 cho \texttt{ws-etw-1}) & Mỗi máy có ``bình thường'' khác nhau; gộp sẽ làm baseline rộng hơn (D12) \\
+Dòng lệnh process & Thuộc tính ngữ cảnh, không vào mô hình (§5.1.1) & Lấy từ Sysmon Event ID 1, chỉ hiển thị và đưa cho LLM; không phải feature & Kernel ETW không có dòng lệnh; LLM cần thấy lệnh nào đã chạy (D14) \\
 LLM & Alg.~2 đầy đủ & Thêm bước phân loại (tấn công / benign / chưa rõ) trước Alg.~2 dòng 3--15; bỏ dòng 16--25 & GNN không phân biệt được ``chưa từng thấy'' với ``malicious''; tài liệu một window vừa trong prompt \\
 \bottomrule
 \end{tabularx}
@@ -673,11 +678,11 @@ Mỗi node được sao riêng cho từng window (tiền tố \texttt{w0007\_}),
     \item \textbf{Chuỗi tấn công (các giai đoạn, kèm mã ATT\&CK):} khai thác command injection (T1190) $\rightarrow$ RCE qua PowerShell (T1059.001, chuỗi \texttt{httpd}$\to$\texttt{cmd}$\to$\texttt{powershell}) $\rightarrow$ discovery $\rightarrow$ quét mạng (T1046) $\rightarrow$ tải và chạy tool thật qua service (T1105, T1569.002: PsExec, rclone) $\rightarrow$ dump MySQL / credential access (T1552, T1213) $\rightarrow$ C2 beacon (T1071) $\rightarrow$ scheduled task (T1053.005) $\rightarrow$ xoá dấu vết (T1070.001/.004: xoá Windows event log, xoá file).
     \item \textbf{Hiện trạng:} chuỗi chạy từ máy Kali (\texttt{tools/launch\_exploit.py}) và đã được xác nhận đầu--cuối trên exp08 (Mục~\ref{sec:res-attack}); bước T1070 chạy trọn nhưng nằm trong phân phối benign nên \emph{không} nâng mức cảnh báo (D5/D8).
 \end{itemize}
-\textbf{Giới hạn:} chỉ một loại tấn công trên một host, nên đồ án không khẳng định gì về khả năng phát hiện APT, tấn công nhiều host, hay tấn công trải dài nhiều ngày.
+Ngoài kịch bản này, một thành viên nhóm tự tấn công máy thứ hai \texttt{ws-etw-1} bằng chuỗi của riêng mình (Mục~\ref{sec:res-ws1}). \textbf{Giới hạn:} hai cuộc tấn công trên hai host riêng rẽ, không có bước nào đi từ host này sang host kia, nên đồ án không khẳng định gì về khả năng phát hiện APT, lateral movement, hay tấn công trải dài nhiều ngày.
 
 % ----- Kết quả đo được (exp08) -----
-\subsection*{Kết quả đo được (exp08)}
-Mô hình dùng cho mọi thí nghiệm là \textbf{exp08}: huấn luyện trên nền \emph{idle} ba ngày (\texttt{range-3d-20261105}, 11-02 17:10Z $\rightarrow$ 11-05 15:49Z, 2\,118 window), OCRGCN 2 lớp RGCN, 32 chiều, learning rate 0.005, $\beta = 0.5$, contamination $\gamma = 0.001$, seed 360/361/362. Mọi thí nghiệm dùng cùng một mô hình, scaler và danh sách quan hệ. \textbf{Nguồn nhãn:} các con số dưới đây là \emph{số đếm} (counts) từ các lần nhóm tự chạy tấn công cộng kết luận của LLM, \emph{không} phải tỉ lệ thống kê và không phải ground truth của chuyên gia phân tích.
+\subsection*{Kết quả đo được}
+Mô hình dùng cho R1--R3 là \textbf{exp08}: huấn luyện trên nền \emph{idle} ba ngày (\texttt{range-3d-20261105}, 11-02 17:10Z $\rightarrow$ 11-05 15:49Z, 2\,118 window), OCRGCN 2 lớp RGCN, 32 chiều, learning rate 0.005, $\beta = 0.5$, contamination $\gamma = 0.001$, seed 360/361/362. R1--R3 dùng cùng một mô hình, scaler và danh sách quan hệ; R4 dùng mô hình riêng của \texttt{ws-etw-1} (exp15-ws1). \textbf{Nguồn nhãn:} các con số dưới đây là \emph{số đếm} (counts) từ các lần nhóm tự chạy tấn công cộng kết luận của LLM, \emph{không} phải tỉ lệ thống kê và không phải ground truth của chuyên gia phân tích.
 
 \subsection{R1 -- Các benign window}
 \label{sec:res-benign}
@@ -686,7 +691,7 @@ Mô hình dùng cho mọi thí nghiệm là \textbf{exp08}: huấn luyện trên
 Trả lời RQ1. Với hoạt động idle, kỳ vọng mọi window giữ xanh (không subgraph nào đạt Moderate, $score \ge 10$); nhưng vì nền idle mỏng, một tỉ lệ nhỏ window benign vẫn có thể đạt Moderate (false alarm).
 
 \paragraph{Thiết lập.}
-Nguồn: lịch sử window của exp08 trong 24 giờ đầu sau khi promote (11-05 16:00Z $\rightarrow$ 11-06 15:55Z), đọc từ \texttt{history.jsonl}; mỗi window được chấm trực tiếp. \todoval[Ảnh chụp dòng thời gian window trên giao diện demo.]
+Nguồn: lịch sử window của exp08 trong 24 giờ đầu sau khi promote (11-05 16:00Z $\rightarrow$ 11-06 15:55Z), đọc từ \texttt{history.jsonl}; mỗi window được chấm trực tiếp (Hình~\ref{fig:res-benign}).
 
 \begin{table}[H]
 \centering
@@ -698,14 +703,14 @@ Nguồn: lịch sử window của exp08 trong 24 giờ đầu sau khi promote (1
 exp08, 24 h idle & 288 (279) & 7 & 3 & 4 window còn lại là 3 lần tấn công thật \\
 \bottomrule
 \end{tabular}
-\caption{Kết quả 24 giờ đầu của exp08 (idle baseline). 3 benign false alarm đều bị LLM đánh \texttt{false\_positive} (ví dụ 22:25Z điểm 21.20); 276/279 window idle giữ xanh. Đây là số đếm, không phải tỉ lệ.}
+\caption{Kết quả 24 giờ đầu của exp08 (idle baseline). 3 benign false alarm đều bị LLM đánh \texttt{false\_positive} (ví dụ 05-11 22:25Z điểm 21.20); 276/279 window idle giữ xanh. Đây là số đếm, không phải tỉ lệ.}
 \label{tab:res-benign}
 \end{table}
 
 \begin{figure}[H]
 \centering
-\fbox{\parbox[c][4cm][c]{0.9\textwidth}{\centering \todoval[Ảnh chụp dòng thời gian window trên giao diện demo (xanh/đỏ)]}}
-\caption{Dòng thời gian các window của một benign session.}
+\includegraphics[width=\textwidth]{images/res-exp08-history.png}
+\caption{Bảng lịch sử window trên giao diện demo quanh lần tấn công 05-11 17:10Z (giờ hiển thị là giờ lab UTC+7, nên window đỏ ghi 12:10 AM ngày 11/06): các idle window trước và sau giữ xanh, chỉ window chứa tấn công đỏ.}
 \label{fig:res-benign}
 \end{figure}
 
@@ -734,7 +739,7 @@ Kịch bản RCE kill chain (Mục~\ref{sec:dev-attack}) chạy từ Kali vào \
 \toprule
 \textbf{Window} & \textbf{$score(sg)$} & \textbf{Mức} & \textbf{Anomalous node chính trong subgraph giữ lại} \\
 \midrule
-17:10Z (06-11) & 70.17 & Moderate & 89 node (47 P / 36 F / 6 N): C2 \texttt{10.21.4.30:8080}, tool đã chạy, dump MySQL \\
+17:10Z (05-11) & 70.17 & Moderate & 89 node (47 P / 36 F / 6 N): C2 \texttt{10.21.4.30:8080}, tool đã chạy, dump MySQL \\
 15:35Z (06-11) & 54.42 & Moderate & C2 \texttt{10.21.4.30:8080}, \texttt{mysql.exe} dump, PsExec/rclone/nmap/ncat \\
 \bottomrule
 \end{tabularx}
@@ -744,13 +749,13 @@ Kịch bản RCE kill chain (Mục~\ref{sec:dev-attack}) chạy từ Kali vào \
 
 \begin{figure}[H]
 \centering
-\fbox{\parbox[c][5cm][c]{0.9\textwidth}{\centering \todoval[Ảnh subgraph cảnh báo trên giao diện demo]}}
-\caption{Anomalous subgraph của window tấn công.}
+\includegraphics[width=\textwidth]{images/res-exp08-subgraph.png}
+\caption{Anomalous subgraph của window tấn công 05-11 17:10Z trên giao diện demo: subgraph \#1 đạt 70.17 (Moderate); bên phải là dòng thời gian các edge của nó (powershell nạp thư viện .NET, chạy \texttt{mysql.exe} nhiều lần, socket tới \texttt{10.21.4.30}).}
 \label{fig:res-attack}
 \end{figure}
 
 \paragraph{Nhận xét.}
-Cả hai window tấn công đều chuyển đỏ, vượt xa mốc 10, và subgraph giữ lại chứa đúng các thực thể của tấn công (socket C2 \texttt{10.21.4.30:8080}, dump MySQL, các tool PsExec/rclone đã chạy). Bước xoá log T1070 (window 15:35Z) bị bắt nhưng nằm trong phân phối benign nên không tự nâng cảnh báo; window vẫn đỏ nhờ các node khác (D5/D8). \todoval[Nhóm bổ sung: tấn công có bị cắt qua hai window không; malicious node nào bị bỏ sót.]
+Cả hai window tấn công đều chuyển đỏ, vượt xa mốc 10, và subgraph giữ lại chứa đúng các thực thể của tấn công (socket C2 \texttt{10.21.4.30:8080}, dump MySQL, các tool PsExec/rclone đã chạy). Bước xoá log T1070 (window 15:35Z) bị bắt nhưng nằm trong phân phối benign nên không tự nâng cảnh báo; window vẫn đỏ nhờ các node khác (D5/D8). Nhóm chưa đối chiếu từng node của subgraph với nhãn oracle, nên chưa nêu được malicious node nào bị bỏ sót hay tấn công có bị cắt qua hai window không; đây là số đếm theo window, không phải độ đo theo node.
 
 \paragraph{Giới hạn của R2.}
 \begin{itemize}
@@ -765,7 +770,7 @@ Cả hai window tấn công đều chuyển đỏ, vượt xa mốc 10, và subg
 Trả lời RQ3. Với window tấn công ở R2, LLM kết luận \emph{attack} và báo cáo nêu được các IOC và giai đoạn chính; với các benign red window (nếu có), LLM kết luận \emph{benign} hoặc \emph{uncertain}.
 
 \paragraph{Thiết lập.}
-Nhà cung cấp và mô hình: \todoval[tên nhà cung cấp/mô hình]. Số lần chạy lại mỗi window: \todoval{} (với các mô hình không đặt được temperature thì kết quả không tất định). Kết luận dưới đây lấy từ chính các window đỏ của exp08.
+Nhà cung cấp và mô hình: DeepSeek API, \texttt{deepseek-flash}, tắt chế độ suy luận (thinking). Mỗi window đỏ được gọi \emph{một} lần khi chạy trực tiếp, không chạy lại; kết quả không tất định nên chạy lại có thể cho kết luận khác. Kết luận dưới đây lấy từ chính các window đỏ của exp08.
 
 \begin{table}[H]
 \centering
@@ -774,26 +779,98 @@ Nhà cung cấp và mô hình: \todoval[tên nhà cung cấp/mô hình]. Số l�
 \toprule
 \textbf{Window} & \textbf{Nhãn nhóm} & \textbf{Kết luận LLM} & \textbf{Tactic ATT\&CK} \\
 \midrule
-17:10Z (06-11) & attack & \texttt{attack} (0.85) & Execution/Discovery/C2/Lateral/Exfiltration (TA0002, TA0007, TA0011, TA0008, TA0010) \\
+17:10Z (05-11) & attack & \texttt{attack} (0.85) & Execution/Discovery/C2/Lateral/Exfiltration (TA0002, TA0007, TA0011, TA0008, TA0010) \\
 15:35Z (06-11) & attack & \texttt{attack} (0.9) & Execution / C2 / Exfiltration \\
-22:25Z (06-11) & benign FP & \texttt{false\_positive} & -- \\
+22:25Z (05-11) & benign FP & \texttt{false\_positive} (0.8) & -- \\
 \bottomrule
 \end{tabularx}
 \caption{Kết luận của LLM trên các window đỏ của exp08. LLM là lớp phủ: nó \emph{không} xoá cảnh báo của GNN (window vẫn đỏ, nhãn \texttt{false\_positive} chỉ hiển thị).}
 \label{tab:res-llm}
 \end{table}
 
-\begin{lstlisting}[caption={Trích đoạn báo cáo tấn công do LLM sinh ra (điền sau).}, label={lst:report}]
-[TODO: paste report excerpt: summary, attack stages, IOCs, timeline]
+\begin{lstlisting}[caption={Trích nguyên văn (rút gọn) báo cáo do LLM sinh ra cho window 05-11 17:10Z; giờ trong báo cáo là giờ lab UTC+7.}, label={lst:report}, breaklines=true]
+# Attack Report - Document sg0
+## 1. Summary of Attack Behavior
+On 2026-11-06 between 00:10 and 00:12, a single PowerShell process
+(c:\windows\system32\windowspowershell\v1.0\powershell.exe) executed a rapid,
+scripted sequence of actions consistent with a post-compromise intrusion
+toolkit being staged and operated.
+- Tooling staging: PowerShell wrote psexec64.exe and rclone.exe into
+  c:\users\public\tools\ ...
+- Internal reconnaissance / lateral movement targeting: PowerShell received
+  sockets to 10.21.3.10:3306, 10.21.3.11:22, 10.21.3.20:22, 10.21.3.50:22,
+  10.21.4.30:22 ...
+- Database interaction: PowerShell started c:\xampp\mysql\bin\mysql.exe nine
+  times ...
+Overall assessment: Internal Reconnaissance -> Lateral Movement (preparation)
+-> Collection -> Data Exfiltration (preparation).
 \end{lstlisting}
 
 \paragraph{Nhận xét.}
-Trong các lần chạy này, LLM phân loại đúng \texttt{attack} cho cả hai window tấn công và \texttt{false\_positive} cho các benign red window, nên lớp phủ LLM khớp với nhãn của nhóm. \todoval[Nhóm bổ sung: IOC có bị hallucination không; giai đoạn nào bị bỏ sót.]
+Trong các lần chạy này, LLM phân loại đúng \texttt{attack} cho cả hai window tấn công và \texttt{false\_positive} cho các benign red window, nên lớp phủ LLM khớp với nhãn của nhóm. Trong báo cáo của window 17:10Z (Đoạn mã~\ref{lst:report}), các IOC (\texttt{powershell.exe}, \texttt{psexec64.exe}, \texttt{rclone.exe}, \texttt{mysql.exe}, các socket \texttt{:22}/\texttt{:3306}) đều có trong tài liệu đưa vào; việc gọi các socket quét là ``chuẩn bị lateral movement'' là suy diễn của LLM, thực tế đó là bước quét mạng T1046. Báo cáo không nhắc tới bước scheduled task và xoá dấu vết vì chúng không nằm trong subgraph của window này. Nhóm chưa đối chiếu có hệ thống trên mọi báo cáo.
 
 \paragraph{Giới hạn của R3.}
 \begin{itemize}
     \item Số window đỏ ít; kết luận của LLM không phải ground truth.
-    \item Thuộc tính process chỉ có tên ảnh (không có dòng lệnh), nên LLM có ít ngữ cảnh cho node process.
+    \item Ở thời điểm exp08, thuộc tính process chỉ có tên ảnh (không có dòng lệnh), nên LLM có ít ngữ cảnh cho node process. Từ 2026-11-13 dòng lệnh lấy từ Sysmon được đưa vào tài liệu của LLM (D14), nên kết luận trước và sau mốc đó (R3 so với R4) không so sánh trực tiếp được.
+\end{itemize}
+
+\subsection{R4 -- Tấn công thật trên máy thứ hai (\texttt{ws-etw-1})}
+\label{sec:res-ws1}
+
+\paragraph{Câu hỏi.}
+Phương pháp có bắt được một cuộc tấn công \emph{không} do kịch bản của nhóm sinh ra, trên một máy khác, với mô hình huấn luyện riêng cho máy đó không? Đây là RQ2 và RQ3 lặp lại trên host thứ hai.
+
+\paragraph{Thiết lập.}
+\begin{itemize}
+    \item \textbf{Máy và mô hình:} \texttt{ws-etw-1} (\texttt{WEB-SERVER}) chạy ứng dụng Next.js có lỗ hổng RCE (``react2shell'') trên cổng 3000. Mô hình \textbf{exp15-ws1}: nền 11-06 20:30Z $\rightarrow$ 11-12 12:15Z, gồm hoạt động cài đặt và RDP của chủ máy, loại các lần tấn công (D2); OCRGCN 2 lớp, các hyperparameter như exp08; live từ 2026-11-12.
+    \item \textbf{Tấn công:} một thành viên nhóm tự thực hiện từ máy của mình qua VPN (10.8.0.3), không dùng kịch bản của nhóm: khai thác RCE $\rightarrow$ \texttt{node.exe} $\rightarrow$ \texttt{cmd} $\rightarrow$ \texttt{powershell -NoProfile -EncodedCommand} (reverse shell TCP tới \texttt{20.210.106.182:4444}) $\rightarrow$ \texttt{recon.bat} (\texttt{sc query}, \texttt{schtasks /query}, \texttt{driverquery}, \texttt{whoami /all}, \texttt{netstat -ano}, ghi ra \texttt{recon\_web-server.txt}) $\rightarrow$ winPEAS.
+    \item \textbf{Ground truth:} lời kể và khoảng thời gian của thành viên tấn công, đối chiếu với dòng lệnh Sysmon. \emph{Không} có oracle nhãn (D6), nên không tính được precision/recall.
+\end{itemize}
+
+\paragraph{Diễn biến và hai lần chỉnh tham số.}
+\begin{enumerate}
+    \item \textbf{Lần chạy 1 (11-14 18:10--19:00Z):} ở mốc Moderate = 10, mọi window giữ \emph{xanh}. Chấm lại offline 24 giờ subgraph đã lưu cho thấy đỉnh cao nhất qua được luật NET chỉ là 4.72. Nhóm hạ mốc trực tiếp xuống \textbf{4.5} (2026-11-15 02:55Z).
+    \item \textbf{Lần chạy 2 (11-15 03:35--04:40Z):} điểm 13.44 và 9.93 (03:35Z, 03:40Z) đạt Moderate nhưng bị \emph{luật NET} chặn: RCE dùng lại chính socket HTTP đi vào, một NET node trông bình thường. Nhóm \textbf{tắt luật NET} khi chạy trực tiếp (05:03Z), chấp nhận thêm false alarm.
+    \item Sau khi khởi động lại, máy chủ đọc lại một giờ log gần nhất từ Loki và chấm lại: hai window 04:15Z và 04:20Z chuyển \textbf{đỏ} (Bảng~\ref{tab:res-ws1}).
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{l r l l >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Window (11-15)} & \textbf{$score(sg)$} & \textbf{Kết quả} & \textbf{LLM} & \textbf{Bằng chứng chính LLM trích} \\
+\midrule
+03:35Z & 13.44 & bị luật NET chặn & -- & (trước khi tắt luật) \\
+03:40Z & 9.93 & bị luật NET chặn & -- & (trước khi tắt luật) \\
+04:15Z & 7.24 & \textbf{RED} & \texttt{attack} (0.85) & \texttt{recon.bat}: \texttt{sc}, \texttt{schtasks}, \texttt{driverquery}, \texttt{whoami /all}, \texttt{netstat -ano} ghi vào \texttt{recon\_web-server.txt}; T1046, T1057, T1033, T1059.001 \\
+04:20Z & 19.86 & \textbf{RED} & \texttt{attack} (0.95) & \texttt{winPEASx64.exe} chạy từ thư mục web app, cha là \texttt{powershell -EncodedCommand} (giải mã: TCP client tới \texttt{20.210.106.182:4444}); nạp \texttt{vaultcli}, \texttt{ntdsapi}, \texttt{adsldp}, \texttt{msv1\_0}; T1059.001, T1082, T1087, T1016 \\
+04:40Z & 3.03 & xanh & -- & trước lần khởi động lại window này được 4.66 \\
+04:50Z & 5.92 & RED & \texttt{false\_positive} (0.95) & benign false alarm sau tấn công \\
+\bottomrule
+\end{tabularx}
+\caption{Các window quanh lần chạy 2 trên \texttt{ws-etw-1} (exp15-ws1, mốc 4.5, luật NET tắt). Nguồn: \texttt{/api/history} của máy chủ demo. Đây là số đếm, không phải tỉ lệ.}
+\label{tab:res-ws1}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{images/res-ws1-history.png}\\[4pt]
+\includegraphics[width=0.85\textwidth]{images/res-ws1-subgraph.png}
+\caption{Trên: lịch sử window của \texttt{ws-etw-1} (giờ lab UTC+7; 11:15 và 11:20 AM là 04:15Z và 04:20Z). Dưới: subgraph \#1 của window 04:20Z, 47 anomalous node quanh \texttt{winpeasx64.exe}, điểm 19.86.}
+\label{fig:res-ws1}
+\end{figure}
+
+\paragraph{Nhận xét.}
+Trên một máy khác, với mô hình riêng và một chuỗi tấn công không do nhóm viết kịch bản, hai window chứa các bước discovery và winPEAS chuyển đỏ, subgraph giữ đúng các process tấn công, và LLM (có dòng lệnh Sysmon) phân loại \texttt{attack} với bằng chứng khớp lời kể của thành viên tấn công. Ở window 04:20Z, socket reverse shell \texttt{20.210.106.182:4444} là NET node có margin cao nhất (bị gắn cờ), dù subgraph đạt mức cảnh báo là cụm winPEAS.
+
+\paragraph{Giới hạn của R4 (quan trọng).}
+\begin{itemize}
+    \item \textbf{In-sample:} mốc 4.5 và việc tắt luật NET được chọn sau khi nhìn chính hai lần chạy này. Kết quả cho thấy cấu hình hiện tại \emph{có thể} bắt được chuỗi này, không phải bằng chứng độc lập. Cần một lần tấn công mới, chạy sau khi đã cố định tham số.
+    \item \textbf{Điểm phụ thuộc thời điểm bắt đầu đọc:} cùng window 04:40Z được 4.66 trước và 3.03 sau khi khởi động lại, vì lần đọc lại bắt đầu giữa chừng nên process/NET node mất các event trước đó (thời gian nghỉ, edge Start) \taginf.
+    \item \textbf{Giá của việc hạ mốc và tắt luật:} chấm lại offline cho thấy khoảng 5 benign window đỏ mỗi ngày trên mỗi máy; ngân sách LLM được nâng từ 15 lên 30 lần/ngày để false alarm không dùng hết.
+    \item Hai host được chấm riêng; cuộc tấn công không đi từ \texttt{ws-etw-1} sang Domain Controller \texttt{ws-etw-0}, nên lớp correlation (D13) chưa được kiểm chứng.
 \end{itemize}
 
 % =====================================================
@@ -819,7 +896,10 @@ Trong các lần chạy này, LLM phân loại đúng \texttt{attack} cho cả h
     \item \textbf{Điểm subgraph đếm số node, không đo mức nguy hiểm.} Vì mỗi node đóng góp xác suất $\le 1$, một cụm benign lớn có thể vượt một cụm tấn công nhỏ. Threshold node $\theta$ lại nằm sát điểm huấn luyện lớn nhất (contamination 0.001), nên bất kỳ benign node nào trong một ngữ cảnh mới đều dễ vượt threshold.
     \item \textbf{Cảnh báo có thể chỉ dựa vào một node.} Chưa có feature ``IP peer lạ'' cho node NET, nên một socket C2 lạ một mình có thể đỡ cả cảnh báo (xem Phụ lục~\ref{sec:appendix-dev}).
     \item \textbf{Window 5 phút cắt rời hành vi kéo dài.} Một tấn công trải các bước ra nhiều window có thể không đạt Moderate ở window nào; bước xoá log T1070 bắt được nhưng nằm trong phân phối nên không nâng mức cảnh báo.
-    \item \textbf{Chỉ một loại tấn công trên một host.} Đồ án không khẳng định gì về khả năng phát hiện APT, tấn công nhiều host, hay tấn công trải dài nhiều ngày.
+    \item \textbf{Tham số chạy trực tiếp được chỉnh in-sample.} Mốc 4.5 và việc tắt luật NET được chọn trên chính lần tấn công của R4; luật NET trước đó cũng được chọn trên chính lịch sử dùng để kiểm tra nó. Cần một lần tấn công mới sau khi cố định tham số để có bằng chứng độc lập (D8).
+    \item \textbf{Cùng window, điểm khác nhau.} Điểm node phụ thuộc toàn bộ ngữ cảnh của window (embedding RGCN 2 lớp), nên khi máy chủ đọc lại log từ giữa chừng sau khởi động lại, điểm của cùng một window có thể đổi (4.66 $\rightarrow$ 3.03 ở R4).
+    \item \textbf{Domain Controller khó hơn.} Từ 11-09 \texttt{ws-etw-0} là DC: lưu lượng xác thực AD hợp lệ rất nhiều, nên một bước tấn công vào DC có thể lẫn vào hành vi bình thường; mô hình \texttt{exp16-ws0} chưa được thử với tấn công thật.
+    \item \textbf{Hai tấn công trên hai host riêng rẽ.} Đồ án không khẳng định gì về khả năng phát hiện APT, lateral movement giữa các host, hay tấn công trải dài nhiều ngày.
 \end{itemize}
 
 % ----- Thách thức đã vượt và hướng tiếp theo -----
@@ -830,8 +910,10 @@ Mỗi thách thức dưới đây là một bài học thật đã gặp khi d�
     \item \textbf{SilkETW tự ghi file làm kfile đến trễ} $\rightarrow$ nhóm tự viết collector Python \texttt{etwcollect}, loại I/O của chính nó và đẩy thẳng từng dòng về Loki (D10).
     \item \textbf{Script sinh benign dạy mô hình chính công cụ tấn công} $\rightarrow$ đổi sang benign = idle, baseline 3 ngày kéo từ Loki (D2).
     \item \textbf{LLM đọc nhầm file nhãn của lab} $\rightarrow$ lọc các node \texttt{lab-labels} khỏi subgraph và tài liệu đưa cho LLM (D9).
+    \item \textbf{Kernel ETW không có dòng lệnh process} $\rightarrow$ thêm Sysmon (chỉ Event ID 1), ghép vào PROCESS node theo PID + thời điểm, chỉ để hiển thị và cho LLM (D14).
+    \item \textbf{Vai trò máy thay đổi sau khi huấn luyện} (\texttt{ws-etw-0} được nâng lên DC 16 phút sau khi exp10 kết thúc dữ liệu huấn luyện) $\rightarrow$ huấn luyện lại trên trạng thái hiện tại (\texttt{exp16-ws0}, D12).
 \end{itemize}
-Hướng tiếp theo: thêm feature ``IP peer lạ'' cho node NET để cảnh báo không còn tựa vào một node; mở rộng đa dạng dữ liệu benign và dùng sliding window cho tấn công vượt ranh giới; và (nice-to-have) host thứ hai \texttt{ws-etw-1} cùng lớp correlation cho lateral movement (D12, D13).
+Hướng tiếp theo: thêm feature ``IP peer lạ'' cho node NET để cảnh báo không còn tựa vào một node; mở rộng đa dạng dữ liệu benign và dùng sliding window cho tấn công vượt ranh giới; chạy một tấn công mới với tham số đã cố định để có bằng chứng ngoài mẫu; và kiểm chứng lớp correlation giữa hai host (D13, đã viết, chưa chạy trên tấn công thật) bằng một tấn công đi từ \texttt{ws-etw-1} sang Domain Controller \texttt{ws-etw-0}.
 
 \section{Kết luận}
 \label{sec:conclusion}
@@ -845,7 +927,7 @@ Hướng tiếp theo: thêm feature ``IP peer lạ'' cho node NET để cảnh b
 \end{itemize}
 
 \paragraph{Kết luận.}
-Trên exp08, đồ án trả lời được cả ba câu hỏi ở mức chứng minh khái niệm: (RQ1) phần lớn window idle giữ xanh, với một ít false alarm do nền idle mỏng; (RQ2) các window chứa tấn công DVWA$\rightarrow$RCE đều chuyển đỏ và subgraph giữ đúng thực thể tấn công; (RQ3) LLM phân loại đúng \texttt{attack}/\texttt{false\_positive} trên các window đỏ đã xét. Đây là kết quả trên một host, một kịch bản, với nhãn oracle, nên là bằng chứng khái niệm chứ không phải tỉ lệ phát hiện (các hạn chế đầy đủ ở Mục~\ref{sec:known-limits}). Hướng phát triển: mở rộng và đa dạng hoá dữ liệu benign, thêm feature ``IP peer lạ'' cho node NET, dùng sliding window cho tấn công vượt ranh giới, thêm kịch bản tấn công, và (nice-to-have) host thứ hai cùng lớp correlation cho lateral movement.
+Trên exp08, đồ án trả lời được cả ba câu hỏi ở mức chứng minh khái niệm: (RQ1) phần lớn window idle giữ xanh, với một ít false alarm do nền idle mỏng; (RQ2) các window chứa tấn công DVWA$\rightarrow$RCE đều chuyển đỏ và subgraph giữ đúng thực thể tấn công; (RQ3) LLM phân loại đúng \texttt{attack}/\texttt{false\_positive} trên các window đỏ đã xét. Trên máy thứ hai (\texttt{ws-etw-1}, exp15-ws1), một cuộc tấn công thật do thành viên nhóm tự thực hiện cũng làm hai window chuyển đỏ và được LLM phân loại \texttt{attack}, nhưng chỉ sau khi hạ mốc xuống 4.5 và tắt luật NET dựa trên chính lần chạy đó (in-sample). Đây là kết quả trên hai host, hai chuỗi tấn công, với nhãn oracle hoặc lời kể của người tấn công, nên là bằng chứng khái niệm chứ không phải tỉ lệ phát hiện (các hạn chế đầy đủ ở Mục~\ref{sec:known-limits}). Hướng phát triển: mở rộng và đa dạng hoá dữ liệu benign, thêm feature ``IP peer lạ'' cho node NET, dùng sliding window cho tấn công vượt ranh giới, kiểm tra lại với tham số đã cố định, và kiểm chứng lớp correlation giữa hai host cho lateral movement.
 
 % =====================================================
 % PHỤ LỤC
@@ -853,7 +935,7 @@ Trên exp08, đồ án trả lời được cả ba câu hỏi ở mức chứng
 \appendix
 \section{Chi tiết các điểm khác bài báo}
 \label{sec:appendix-dev}
-Mỗi mục nêu bài báo/mã gốc làm gì, nhóm làm gì, vì sao, và điều đó giới hạn khẳng định nào; tóm tắt ở Bảng~\ref{tab:deviations}. Danh sách đầy đủ trong \texttt{docs/DEVIATIONS.md} (D1--D13).
+Mỗi mục nêu bài báo/mã gốc làm gì, nhóm làm gì, vì sao, và điều đó giới hạn khẳng định nào; tóm tắt ở Bảng~\ref{tab:deviations}. Danh sách đầy đủ trong \texttt{docs/DEVIATIONS.md} (D1--D14).
 
 \subsection{Dữ liệu và benign idle}
 \label{sec:dev-data}
@@ -896,7 +978,11 @@ với $s^{train}_{\min,\tau}, s^{train}_{\max,\tau}$ là điểm nhỏ nhất/l�
 \end{itemize}
 
 \paragraph{Thang mức cảnh báo.}
-\tagpaper{} Window chỉ chuyển đỏ nếu có ít nhất một subgraph đạt Moderate. Trước đây nhóm nâng mốc Moderate lên 30 cho window 5 phút nhỏ, nhưng \textbf{từ 2026-11-03 đã bỏ mốc đó và dùng lại đúng thang của bài báo} (Moderate từ 10, §7.2.1; mã gốc dùng $> 10$), nên không còn một deviation phải bảo vệ (D8). Đổi lại, nhiều benign window đạt Moderate hơn: một process cập nhật chưa thấy lúc huấn luyện có thể nạp hàng chục DLL và vượt 10. Cách sửa thật là mở rộng dữ liệu huấn luyện benign, không phải nâng mốc. Đồ án cũng \emph{không} dùng cơ chế lấy top-$k$ của mã gốc khi không có subgraph nào đạt Moderate, vì khi chạy trực tiếp điều đó làm mọi window đều đỏ. \textbf{Giới hạn:} nền idle mỏng nên một số benign window vẫn đạt Moderate (đo được: 3 lần trong 24 giờ đầu của exp08); không chỉnh mốc dựa trên chính window tấn công (Mục~\ref{sec:res-attack}).
+\tagpaper{} Window chỉ chuyển đỏ nếu có ít nhất một subgraph đạt Moderate. Trước đây nhóm nâng mốc Moderate lên 30 cho window 5 phút nhỏ, nhưng \textbf{từ 2026-11-03 đã bỏ mốc đó và dùng lại đúng thang của bài báo} (Moderate từ 10, §7.2.1; mã gốc dùng $> 10$), nên không còn một deviation phải bảo vệ (D8). Đổi lại, nhiều benign window đạt Moderate hơn: một process cập nhật chưa thấy lúc huấn luyện có thể nạp hàng chục DLL và vượt 10. Cách sửa thật là mở rộng dữ liệu huấn luyện benign, không phải nâng mốc. Đồ án cũng \emph{không} dùng cơ chế lấy top-$k$ của mã gốc khi không có subgraph nào đạt Moderate, vì khi chạy trực tiếp điều đó làm mọi window đều đỏ. \textbf{Giới hạn:} nền idle mỏng nên một số benign window vẫn đạt Moderate (đo được: 3 lần trong 24 giờ đầu của exp08); R1--R3 không chỉnh mốc dựa trên chính window tấn công (Mục~\ref{sec:res-attack}).
+
+\tagours{} \textbf{Mốc chạy trực tiếp 4.5 (từ 2026-11-15).} Cuộc tấn công thật trên \texttt{ws-etw-1} (Mục~\ref{sec:res-ws1}) giữ xanh ở mốc 10: đỉnh qua được luật NET chỉ là 4.72. Nhóm hạ mốc trực tiếp trên cả hai máy xuống 4.5; mã nguồn vẫn mặc định thang bài báo (10). Vì $score(sg) \approx$ số anomalous node, mốc 4.5 nghĩa là khoảng 5 node bất thường liên thông đã đủ để cảnh báo. \textbf{Giới hạn:} mốc được chọn trên chính lần tấn công đó (in-sample), và thêm false alarm.
+
+\tagours{} \textbf{Luật NET (thêm 2026-11-09, tắt khi chạy trực tiếp từ 2026-11-15).} Một subgraph đạt mức chỉ được cảnh báo (và gửi cho LLM) nếu chứa ít nhất một NET node bất thường; bài báo và mã gốc chỉ xét mức. Lý do ban đầu: các false alarm của exp08 chỉ chạm file/process, còn chuỗi DVWA$\rightarrow$RCE chạm mạng ở mọi window; chấm lại offline, luật giảm false alarm 14 $\rightarrow$ 3 và giữ 5/5 window tấn công. Nhưng tấn công react2shell dùng lại socket HTTP đi vào (một NET node bình thường), nên các window 13.44 và 9.93 bị chặn; nhóm tắt luật và chấp nhận khoảng 5 false alarm/ngày/máy. \textbf{Giới hạn:} cả việc thêm và tắt luật đều chọn in-sample.
 
 \subsection{Bước LLM: phân loại trước, báo cáo sau}
 \label{sec:dev-llm}
@@ -904,10 +990,20 @@ với $s^{train}_{\min,\tau}, s^{train}_{\max,\tau}$ là điểm nhỏ nhất/l�
 \tagpaper{} Thuật toán 2 coi mọi subgraph là một phần của tấn công và không bao giờ phân loại. \tagours{} Với mỗi window đỏ, một prompt trung lập trước hết trả về kết luận dạng JSON (\emph{attack} / \emph{benign} / \emph{uncertain}, các tactic ATT\&CK, các dòng bằng chứng). Prompt này không giả định APT và dùng tactic ATT\&CK thay cho giai đoạn kill chain của APT, phù hợp với tấn công mục tiêu (Mục~\ref{sec:dev-attack}). Dòng bằng chứng phải xuất hiện nguyên văn trong tài liệu, nếu không kết luận bị hạ thành \emph{uncertain}. Chỉ khi kết luận là \emph{attack} thì mới chạy các prompt của bài báo (sao nguyên văn từ mã gốc): trích IOC $\rightarrow$ lọc hallucination $\rightarrow$ báo cáo từng subgraph $\rightarrow$ (nếu có $\ge 2$ subgraph tấn công) IOC theo giai đoạn $\rightarrow$ báo cáo tổng hợp, tức Thuật toán~2 dòng 3--15. Các prompt này vẫn giữ nguyên cách gọi ``APT'' của bài báo; báo cáo vì thế có thể dùng từ ngữ APT cho một tấn công không phải APT.
 \begin{itemize}
     \item Bỏ dòng 16--25 (làm giàu báo cáo). Tài liệu dài hơn 400 dòng bị cắt, ưu tiên các dòng chạm anomalous node.
-    \item Tuần tự hoá theo mã gốc, nhưng dùng thời gian UTC thật, đường dẫn đầy đủ, và giải mã địa chỉ mạng của SilkETW (lưu dưới dạng số nguyên có dấu) chỉ để hiển thị.
+    \item Tuần tự hoá theo mã gốc, nhưng dùng thời gian thật theo giờ lab (UTC+7), đường dẫn đầy đủ, và giải mã địa chỉ mạng của SilkETW (lưu dưới dạng số nguyên có dấu) chỉ để hiển thị.
     \item Nhà cung cấp LLM thay được (Anthropic, OpenAI, Ollama, hoặc một bộ giả lập theo từ khoá chỉ dùng để kiểm thử giao diện).
 \end{itemize}
 Kết luận của LLM là một lớp phủ: không bao giờ xoá cảnh báo của GNN (window vẫn đỏ, nhãn \emph{false positive} hiển thị gạch ngang), và không bao giờ được đưa ngược vào huấn luyện, vì nội dung log (đường dẫn, tên process) do kẻ tấn công kiểm soát được nên có thể bị prompt injection, và threat model giả định log huấn luyện sạch. \textbf{Giới hạn:} chưa khẳng định LLM phân biệt được tấn công với false positive cho tới khi chạy trên window có nhãn; không so sánh chất lượng báo cáo với Bảng~5 của bài báo.
+
+\subsection{Hai host, mỗi host một mô hình}
+\label{sec:dev-hosts}
+
+\tagpaper{} Bài báo đánh giá từng host riêng. \tagours{} \texttt{ws-etw-0} và \texttt{ws-etw-1} cùng đẩy log về một Loki, nhưng mỗi máy có mô hình, scaler và đồng hồ riêng; máy chủ demo chạy một engine cho mỗi máy (D12). \texttt{ws-etw-1} dùng \texttt{exp15-ws1}; \texttt{ws-etw-0} dùng exp08 cho demo chính và \texttt{exp16-ws0} khi chạy trực tiếp sau khi máy được nâng lên Domain Controller (exp10 trước đó được huấn luyện 16 phút trước khi nâng cấp nên không biết các dịch vụ AD). Nền của cả hai máy hiện gồm cả phiên quản trị/RDP, chỉ loại các lần tấn công. \textbf{Giới hạn:} hành vi của một kẻ tấn công trông giống quản trị viên cũng sẽ được coi là bình thường; lớp correlation giữa hai máy (D13) mới chỉ chạy trên window tổng hợp.
+
+\subsection{Dòng lệnh process từ Sysmon}
+\label{sec:dev-cmdline}
+
+\tagpaper{} Dòng lệnh là thuộc tính ngữ cảnh của node, không đưa vào OCRGCN (§5.1.1) nhưng giữ lại cho bước điều tra. Sự kiện ProcessStart của kernel ETW không có dòng lệnh. \tagours{} Sysmon chỉ bật Event ID 1 (ProcessCreate) được \texttt{etwcollect} đọc như provider thứ tư; mỗi PROCESS node được ghép với bản ghi Sysmon cùng PID và thời điểm khởi động gần nhất. Dòng lệnh chỉ hiện trên giao diện và trong tài liệu gửi LLM (lệnh \texttt{-enc} được giải mã, mật khẩu được che theo mẫu); không phải feature, nên mô hình không đổi (D14). \textbf{Giới hạn:} LLM thấy nhiều bằng chứng hơn, nên kết luận trước/sau 2026-11-13 không so sánh được; dòng lệnh được gửi tới nhà cung cấp LLM bên ngoài.
 
 \subsection{Nhãn từ tấn công được tiêm vào}
 \label{sec:dev-labels}
