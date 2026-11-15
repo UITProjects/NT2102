@@ -120,6 +120,26 @@ def utc_iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+TRAIN_KEYS = ("layers", "hidden", "lr", "beta", "epochs", "dropout", "contamination", "patience", "tnr_tolerance",
+              "seed", "val_split")
+
+
+def train_summary(run_dir: str) -> dict:
+    """The training hyperparameters of a run, from its train_meta.json (train_gnn_models.py writes `args`).
+    Keys a run does not record are left out (older runs); a missing / unreadable file gives {}."""
+    try:
+        meta = json.load(open(os.path.join(run_dir, "train_meta.json")))
+    except (OSError, ValueError):
+        return {}
+    args = meta.get("args") or {}
+    out = {k: args[k] for k in TRAIN_KEYS if k in args}
+    if "relations" in meta:
+        out["n_relations"] = len(meta["relations"])
+    if "label_source" in meta:
+        out["label_source"] = meta["label_source"]
+    return out
+
+
 # --------------------------------------------------------------------------- engine
 class Engine:
     def __init__(self, run_dir, scaler_path, sessions_dir, window_min=5, stride_min=None, lateness_s=20,
@@ -144,6 +164,7 @@ class Engine:
         self.scaler = sw.load_scaler(scaler_path)
         self.run = sw.load_run(run_dir, self.scaler, allow_collapsed)
         self.run_dir, self.scaler_path = os.path.abspath(run_dir), os.path.abspath(scaler_path)
+        self.train = train_summary(run_dir)            # display only (UI Parameters panel); scoring never reads it
         self.sessions_dir = sessions_dir
         self.w_ms = int(window_min * 60_000)
         self.s_ms = int((stride_min or window_min) * 60_000)
@@ -557,7 +578,8 @@ class Engine:
         with self.lock:
             base = {"host": self.host,
                     "model": {"run_dir": self.run_dir, "tau": self.run.tau, "scaler": self.scaler_path,
-                              "converter_sha256": self.conv_sha, "converter_check": self.conv_check},
+                              "converter_sha256": self.conv_sha, "converter_check": self.conv_check,
+                              "train": self.train, "score_range": self.run.score_range},
                     "params": {"window_min": self.w_ms / 60000, "stride_min": self.s_ms / 60000,
                                "lateness_s": self.lateness_ms / 1000, "origin_ms": self.origin_ms,
                                "alg1": self.sg, "llm": self.llm_cfg | ({"budget": {**self._budget(),
@@ -878,6 +900,10 @@ def selftest():
         assert eng2.windows() == [] and S2["by_id"]["w-a"]["llm"]["status"] == "false_positive"
         assert S2["by_id"]["w-b"]["llm"]["status"] == "skipped", S2["by_id"]["w-b"]
         assert eng2.status()["params"]["llm"]["budget"] == {"date": "2099-01-01", "used": 1, "limit": 1}
+        # UI Parameters panel: training hyperparameters come from the run's train_meta.json; no file -> {}
+        tr = eng2.status()["model"]["train"]
+        assert {"layers", "hidden", "lr", "beta", "n_relations"} <= set(tr), tr
+        assert train_summary(f"{d}/no-such-run") == {}
         eng3 = Engine(f"{d}/run", f"{d}/scaler.json", f"{d}/sessions", llm_client=alg2.MockLLM(alg2.rule_mock_responder),
                       llm_max_per_day=1, today=lambda: "2099-01-01")
         assert not eng3._take_budget()

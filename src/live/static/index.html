@@ -138,6 +138,16 @@ tr.flag td{color:var(--anom);font-weight:600}
 #cTable tr[data-c]:hover td{background:var(--win-soft)}
 #cTable tr.sel td{background:var(--win-soft)}
 .cwarn{color:var(--warn);font-size:.8rem;margin-bottom:6px}
+/* Parameters panel: one column per scored VM, what the running server actually uses */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:10px}
+.pcol{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.pcol h3{margin:0 0 4px;font-size:.95rem}
+.pcol table{width:100%;border-collapse:collapse;font-size:.82rem}
+.pcol td{padding:1px 4px;vertical-align:top;overflow-wrap:anywhere}
+.pcol td:first-child{color:var(--muted);white-space:nowrap;width:1%}
+.pcol tr.grp td{padding-top:6px;font-weight:600;color:var(--ink)}
+.pcol .v{font-family:var(--mono)}
+.ours{color:var(--warn);font-weight:600}
 </style>
 </head>
 <body>
@@ -149,6 +159,13 @@ tr.flag td{color:var(--anom);font-weight:600}
     <span class="mono muted" id="modelTxt"></span>
   </header>
   <div class="trained" id="trained"></div>
+
+  <section class="panel" id="paramsPanel">
+    <h2>Parameters (as running) <span class="muted" id="paramsSrv"></span></h2>
+    <div class="pgrid" id="params"><div class="muted">loading…</div></div>
+    <div class="note"><span class="ours">[OURS]</span> = differs from the paper's default (Alg. 1: [PAPER] §7.2.1; GNN: 3 layers, 32-d, lr 0.005, β 0.5); read
+      from /api/status of each VM's engine, so it is what scoring uses now, not what a config file says.</div>
+  </section>
 
   <section class="panel">
     <h2>Shipper and pipeline <span class="muted" id="tilesHost"></span></h2>
@@ -223,6 +240,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   const hm = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", timeZone:TZ});
   const hms = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit", timeZone:TZ});
   const num = (v, d=3) => v == null ? "–" : Number(v).toFixed(d);
+  const fmt = v => v == null ? "–" : String(Number(v));    // no forced rounding (a 4.5 cut-off must not show as 5)
   const base = p => String(p || "").split(/[\\/]/).pop() || p;
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   // NET attrs arrive decoded (engine.display_attrs); attr_raw = SilkETW's own value, to trace back to the raw line
@@ -252,7 +270,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     if (p) $("winParams").textContent = `w = ${p.window_min} min, s = ${p.stride_min} min, lateness ${p.lateness_s} s`;
     const a1 = p?.alg1;
     if (a1) $("cutTxt").textContent = a1.min_score != null ? `score > ${a1.min_score}`
-      : a1.min_level === "Moderate" ? `Moderate, score ≥ ${a1.moderate_from}` : `level ≥ ${a1.min_level}`;
+      : a1.min_level === "Moderate" ? `Moderate, score ≥ ${fmt(a1.moderate_from)}` : `level ≥ ${a1.min_level}`;
     if (a1 && a1.require_types?.length) $("cutTxt").textContent += `, with anomalous ${a1.require_types.join(" + ")} nodes`;
     if (status) $("tauTxt").textContent = "τ per type: " + Object.entries(status.model.tau).map(([k,v]) => `${k} ${num(v,5)}`).join(" · ");
     if (!s) { $("tiles").innerHTML = '<div class="muted">waiting for data (shipper or Loki)…</div>'; return; }
@@ -288,6 +306,61 @@ tr.flag td{color:var(--anom);font-weight:600}
                          bud.limit && bud.used >= bud.limit ? "warn" : ""]);
     $("tiles").innerHTML = tiles.map(([k,v,c]) => `<div class="tile ${c||""}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
     renderTimeline();
+  }
+
+  // ------------------------------------------------------------- Parameters panel (every VM side by side)
+  // [PAPER] defaults a running value is compared with: §7.2.1 (n_seed, max_e, Moderate from 10); GNN = the paper hyperparameters (CLAUDE.md §9)
+  const PAPER = {moderate_from: 10, n_seed: 15, max_edges: 5000, layers: 3, hidden: 32, lr: 0.005, beta: 0.5};
+  let paramsBy = {};                                       // VM -> its /api/status (params change only on restart)
+  async function loadParams() {
+    try {
+      const got = await Promise.all(hosts.map(async h => [h, await (await fetch("api/status" + hostQ(h))).json()]));
+      paramsBy = Object.fromEntries(got);
+    } catch (e) {}
+    renderParams();
+  }
+  function renderParams() {
+    const cols = hosts.filter(h => paramsBy[h]);
+    if (!cols.length) return;
+    const srv = paramsBy[cols[0]].server || {};
+    const c = srv.code;
+    $("paramsSrv").innerHTML = c ? `· code <span class="mono">${esc(c.sha)}</span> (${esc(c.branch)}${c.dirty ? ', <span class="ours">uncommitted changes</span>' : ""})`
+      + (srv.started_ms ? ` · server started ${esc(dhm(srv.started_ms))}` : "") : "";
+    const v = (x, key) => {                                 // value, tagged [OURS] when it differs from the paper
+      const diff = key in PAPER && x != null && Number(x) !== PAPER[key];
+      return `<span class="v">${esc(fmt(x))}</span>` + (diff ? ` <span class="ours">[OURS]</span> <span class="muted">(paper ${PAPER[key]})</span>` : "");
+    };
+    const txt = x => `<span class="v">${esc(x ?? "–")}</span>`;
+    $("params").innerHTML = cols.map(h => {
+      const st = paramsBy[h], m = st.model || {}, t = m.train || {}, p = st.params || {}, a = p.alg1 || {}, L = p.llm || {};
+      const tf = (st.trained_for || []).find(x => x.model === base(m.run_dir));
+      const cut = a.min_score != null ? `score > ${txt(fmt(a.min_score))} <span class="ours">[OURS]</span>`
+        : a.min_level === "Moderate" ? `Moderate from ${v(a.moderate_from, "moderate_from")}`
+        : `level ≥ ${txt(a.min_level)} <span class="ours">[OURS]</span>`;
+      const rule = a.require_types?.length ? `${txt(a.require_types.join(" + "))} <span class="ours">[OURS]</span> <span class="muted">(D8)</span>`
+        : `${txt("off")} <span class="muted">(paper)</span>`;
+      const rows = [
+        ["Model"],
+        ["run", txt(base(m.run_dir))], ["trained for", txt(tf ? tf.hosts.join(", ") || "not recorded" : "–")],
+        ["layers", v(t.layers, "layers")], ["hidden", v(t.hidden, "hidden")], ["lr", v(t.lr, "lr")], ["β", v(t.beta, "beta")],
+        ["epochs / patience", txt(`${t.epochs ?? "–"} / ${t.patience ?? "–"}`)], ["contamination", txt(t.contamination)],
+        ["seed", txt(t.seed)], ["relations", txt(t.n_relations)],
+        ["τ per type", txt(Object.entries(m.tau || {}).map(([k, x]) => `${k} ${num(x, 4)}`).join(" · "))],
+        ["converter", txt(m.converter_check)], ["benign labels", `<span class="muted">${esc(t.label_source ?? "–")}</span>`],
+        ["Windows"],
+        ["window / stride", txt(`${fmt(p.window_min)} / ${fmt(p.stride_min)} min`)], ["lateness", txt(`${fmt(p.lateness_s)} s`)],
+        ["SG-Det (Alg. 1)"],
+        ["alert cut-off", cut], ["NET rule", rule],
+        ["n_seed", v(a.n_seed, "n_seed")], ["max edges", v(a.max_edges, "max_edges")], ["min nodes", txt(a.min_nodes)],
+        ["LLM"],
+        ...(L.provider ? [["provider / model", txt(`${L.provider} / ${L.model}`)], ["max subgraphs", txt(L.max_subgraphs)],
+             ["reasoning effort", txt(L.reasoning_effort ?? "default")],
+             ["budget today", txt(L.budget ? `${L.budget.used} / ${L.budget.limit ?? "no limit"}` : `max ${L.max_per_day}/day`)]]
+           : [["status", txt("off")]]),
+      ];
+      return `<div class="pcol"><h3>${esc(h || "this VM")}</h3><table>${rows.map(r => r.length === 1
+        ? `<tr class="grp"><td colspan="2">${esc(r[0])}</td></tr>` : `<tr><td>${esc(r[0])}</td><td>${r[1]}</td></tr>`).join("")}</table></div>`;
+    }).join("");
   }
 
   // ------------------------------------------------------------- which VMs, and what each model was trained for
@@ -452,7 +525,7 @@ tr.flag td{color:var(--anom);font-weight:600}
         <td class="num">${dhm(w.start_ms)}–${hm(w.end_ms)}</td><td class="num">${utcHm(w.start_ms)}</td>
         <td class="mono">${esc(w.host || "–")}</td><td class="mono">${esc(w.sdir)}</td><td>${esc(w.status)}</td><td class="num">${w.edges ?? "–"}</td>
         <td class="num">${w.flagged ?? "–"}</td><td class="num">${w.status === "scored" ? `${num(w.max_sg_score,2)} ${esc(w.max_level || "")}` : "–"}</td>
-        <td class="num">${w.moderate_from == null ? "–" : "≥ " + num(w.moderate_from, 0)}</td><td>${w.alert ? "RED" : w.subgraphs_suppressed ? `<span class="muted" title="${esc(w.suppressed_reason)}">suppressed (${esc(shortReason(w.suppressed_reason))})</span>` : ""}</td>
+        <td class="num">${w.moderate_from == null ? "–" : "≥ " + fmt(w.moderate_from)}</td><td>${w.alert ? "RED" : w.subgraphs_suppressed ? `<span class="muted" title="${esc(w.suppressed_reason)}">suppressed (${esc(shortReason(w.suppressed_reason))})</span>` : ""}</td>
         <td>${esc(w.llm?.status ? (LLM_LABEL[w.llm.status] || w.llm.status) : "")}</td></tr>`;
       }).join("") : '<tr><td class="muted">no window in this range</td></tr>';
   }
@@ -655,6 +728,7 @@ tr.flag td{color:var(--anom);font-weight:600}
       if (st?.session?.id !== status?.session?.id && !histSel) { selected = null; pinned = false; $("detail").hidden = true; }
       status = st;
       renderHosts();
+      loadParams();                            // every VM's parameters, once per (re)connect
       for (const h of hosts) {
         const list = await (await fetch("api/windows" + hostQ(h))).json();
         winsBy[h] = new Map(list.map(w => [w.window, w]));

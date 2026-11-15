@@ -31,6 +31,7 @@ import asyncio
 import gzip
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -89,8 +90,25 @@ def trained_text(pairs: list) -> list:
     return out
 
 
-def create_app(engine: Engine, token: str | None, source=None, members=None, correlator=None, trained=None) -> FastAPI:
-    """members = [{"host", "engine", "source"}], one per scored VM; without it, one member from engine + source."""
+def code_version(repo: str | None = None) -> dict:
+    """The git commit this server runs from: {"sha", "branch", "dirty"}; "unknown" when git is missing or slow.
+    Read once at startup (UI Parameters panel), so a deploy that did not restart the server shows the OLD sha."""
+    repo = repo or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    def git(*args):
+        return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, timeout=5,
+                              check=True).stdout.strip()
+    try:
+        return {"sha": git("rev-parse", "--short", "HEAD"), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+                "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))}
+    except (OSError, subprocess.SubprocessError):
+        return {"sha": "unknown", "branch": "unknown", "dirty": None}
+
+
+def create_app(engine: Engine, token: str | None, source=None, members=None, correlator=None, trained=None,
+               server=None) -> FastAPI:
+    """members = [{"host", "engine", "source"}], one per scored VM; without it, one member from engine + source.
+    server = server-wide facts for the UI Parameters panel (code version, start time, flags not per engine)."""
     app = FastAPI(title="OCR-APT live")
     clients: set[tuple] = set()                  # (event loop, asyncio.Queue) per open SSE connection
     members = members or [{"host": None, "engine": engine, "source": source}]
@@ -125,7 +143,7 @@ def create_app(engine: Engine, token: str | None, source=None, members=None, cor
         if m["source"] is not None:
             st["source"] = m["source"].status()
         return {**st, "selected_host": m["host"], "hosts": [summary(x) for x in members], "trained_for": trained or [],
-                "correlation": correlator.status() if correlator is not None else None}
+                "correlation": correlator.status() if correlator is not None else None, "server": server or {}}
 
     @app.post("/ingest")
     async def ingest(request: Request):
@@ -385,7 +403,11 @@ def main():
     assigned = {} if explicit else cur.get("models") or {}
     trained = trained_text([(p["run"], [p["host"]] if assigned.get(p["host"]) == p["run"] else trained_hosts(p["run_dir"]))
                             for p in plans])
-    uvicorn.run(create_app(first, a.token, members[0]["source"], members, cor, trained), host=a.bind, port=a.port,
+    server = {"code": code_version(), "started_ms": int(time.time() * 1000), "watchdog_s": a.watchdog_s,
+              "loki_url": a.loki_url, "loki_split": a.loki_split if a.loki_url else None,
+              "correlation": cor is not None}
+    print(f"[live] code {server['code']}")
+    uvicorn.run(create_app(first, a.token, members[0]["source"], members, cor, trained, server), host=a.bind, port=a.port,
                 log_level="warning")
 
 
@@ -519,6 +541,13 @@ def selftest():
     assert [h["model"] for h in st["hosts"]] == ["exp08", "exp09-ws1"], st["hosts"]
     assert [t["text"] for t in st["trained_for"]] == ["exp08 is trained for ws-etw-0", "exp09-ws1 is trained for ws-etw-1"]
     assert st["correlation"]["baseline"] == 3
+    assert st["server"] == {}                                               # no server facts given -> empty, not missing
+    cv = code_version()                                                     # this checkout (or "unknown" without git)
+    assert set(cv) == {"sha", "branch", "dirty"} and cv["sha"], cv
+    assert code_version("/nonexistent-dir")["sha"] == "unknown"
+    srv = TestClient(create_app(e0, None, None, [{"host": "ws-etw-0", "engine": e0, "source": None}], None, trained,
+                                {"code": cv, "started_ms": 1}))
+    assert srv.get("/api/status").json()["server"]["code"] == cv
     assert two.get("/api/status").json()["selected_host"] == "ws-etw-0"
     assert two.get("/api/windows", params={"host": "ws-etw-1"}).json() == [{"window": "w-exp09-ws1"}]
     assert two.get("/api/windows", params={"host": "nope"}).status_code == 404

@@ -129,6 +129,10 @@ and compare `windows.csv` / `llm_verdicts.csv` of `replay-live-<UTC>` with the l
 - Catch-up is bounded: at most 20 000 lines per provider per poll, and the clock waits for the provider that
   is behind, so a 1-h backlog arrives in slices instead of one multi-GB read (UI: "catching up").
 - The UI tab re-syncs by itself after the server restarts or the session changes (no reload needed).
+- **Parameters panel** (top of the UI, 2026-11-15): every scored VM side by side, read from that engine's `/api/status`, so
+  it shows what scoring uses now. Rows: model run, training hyperparameters (`train_meta.json` args), τ, converter check,
+  window/stride/lateness, SG-Det cut-off + NET rule, n_seed/max_e/min nodes, LLM provider/model/budget, and the running
+  code (git sha, branch, uncommitted changes; read at server start). Values that differ from the paper are tagged [OURS].
 - `OOMScoreAdjust=500`: under memory pressure the kernel kills `ocr-live` (it restarts) before Loki/Docker.
 - Still open: a ws-etw-0 → Loki push stall longer than `--loki-idle-s` drops that backlog as late (PROGRESS).
 
