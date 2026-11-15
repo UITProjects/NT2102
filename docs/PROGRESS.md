@@ -2,7 +2,7 @@
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is
-**`test-train-with-two-window-vm` @ `67f3968`** + an uncommitted `src/live/static/index.html` (checked 2026-11-15), not `main`.
+**`test-train-with-two-window-vm` @ `6db7b2e`**, clean (2026-11-15 03:11Z, Ansible `--tags project -e repo_branch=…`), not `main`.
 
 ## 2026-11-15 Live SG-Det cut-off lowered 10 → 4.5 (both hosts, D8)
 
@@ -14,9 +14,11 @@ the NET-rule-eligible peak is 4.72. User chose **4.5 + NET rule kept**: ws-etw-1
   --start-at-task "Install the live-server systemd unit"` (skips git/uv, so the trainer checkout was not touched). Verified: unit flag
   4.5, `/healthz` 200, `/api/status` `params.alg1.moderate_from = 4.5` on both hosts, models unchanged (exp16-ws0 / exp15-ws1).
 - **Not verified yet:** a fresh attack run going red live at 4.5 (it was tuned on the same run; margin 4.72 vs 4.5). Caveats: D8.
-- **Trainer checkout correction:** it is on branch `test-train-with-two-window-vm` @ `67f3968` + an uncommitted
-  `src/live/static/index.html` (≈ `cf78c86`), **not** `main`. A plain `--tags project` would check out `main` and roll back the
-  two-VM code; use `-e repo_branch=…` or merge first.
+- **Trainer checkout:** branch `test-train-with-two-window-vm`, **not** `main`. A plain `--tags project` would check out `main` and
+  roll back the two-VM code; use `-e repo_branch=test-train-with-two-window-vm` or merge first.
+- **UI Parameters panel (`6db7b2e`, deployed 03:11Z):** both hosts side by side at the top of the UI: model + training
+  hyperparameters, τ, windows, SG-Det cut-off + NET rule, LLM, running git sha. Verified live: both show exp16-ws0 / exp15-ws1,
+  layers 2 [OURS], Moderate from 4.5 [OURS], code `6db7b2e` clean. History cut-off column no longer rounds 4.5 to 5.
 
 ## 2026-11-13 Process command lines (Sysmon EID 1, D14): LIVE + verified on `ws-etw-0` (`67f3968`)
 
