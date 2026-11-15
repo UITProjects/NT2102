@@ -63,6 +63,8 @@ header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12p
 .badge.pending,.badge.uncertain,.badge.error{color:var(--muted)}
 .win.alert.fp{border-color:var(--warn)}
 .win.alert.fp .s{text-decoration:line-through;color:var(--muted)}
+/* two-VM: an empty slot keeps the column so the same time lines up across hosts (same width as .win) */
+.win.slot-empty{border-color:transparent;background:transparent;cursor:default;box-shadow:none;pointer-events:none}
 .llmcard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
 .llmcard.attack{border-color:var(--anom)} .llmcard.false_positive{border-color:var(--warn)}
 .llmcard h3{font-size:.95rem;margin:0 0 6px}
@@ -91,7 +93,7 @@ header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12p
 .sgnav button.on{border-color:var(--anom);color:var(--anom)}
 .sgnav button.dim{opacity:.55;border-style:dashed}
 .alertcard{font:400 .82rem/1.55 var(--mono);border:1px solid var(--anom);border-radius:8px;padding:10px 12px;
-           max-height:440px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+           max-height:440px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 .alertcard b{font-family:var(--sans);color:var(--anom)}
 .tables{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 @media (max-width:1100px){.tables{grid-template-columns:1fr}}
@@ -100,6 +102,8 @@ table{border-collapse:collapse;width:100%;font-size:.8rem}
 th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
 td.attr{font-family:var(--mono);word-break:break-all}
+/* process command line (Sysmon EID 1, D14): a muted second line under the image path */
+.cmd{display:block;color:var(--muted);font-weight:400;font-size:.72rem;margin-top:2px}
 tr.flag td{color:var(--anom);font-weight:600}
 .legend span{margin-right:12px}
 .note{font-size:.8rem;color:var(--muted);margin-top:6px}
@@ -127,13 +131,71 @@ tr.flag td{color:var(--anom);font-weight:600}
 .hosttabs .red{color:var(--anom)}
 .hrow{margin-bottom:8px}
 .hrow .hlabel{font:600 .8rem var(--mono);color:var(--muted);margin-bottom:3px}
-/* cross-host links and campaigns */
+/* cross-host follow-ups of red windows */
 .lvl{display:inline-block;font:600 .72rem var(--sans);border-radius:4px;padding:0 6px;border:1px solid currentColor;color:var(--muted)}
-.lvl.suspected{color:var(--warn)} .lvl.confirmed{color:var(--anom)}
+.lvl.one-sided{color:var(--warn)} .lvl.corroborated{color:var(--anom)}
+.pnodes{font:.78rem var(--mono);margin:4px 0 8px}
+.pnodes .fl{color:var(--anom);font-weight:600}
 #cTable tr[data-c]{cursor:pointer}
 #cTable tr[data-c]:hover td{background:var(--win-soft)}
 #cTable tr.sel td{background:var(--win-soft)}
-.cwarn{color:var(--warn);font-size:.8rem;margin-bottom:6px}
+/* Parameters panel: one column per scored VM, what the running server actually uses */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:10px}
+.pcol{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.pcol h3{margin:0 0 4px;font-size:.95rem}
+.pcol table{width:100%;border-collapse:collapse;font-size:.82rem}
+.pcol td{padding:1px 4px;vertical-align:top;overflow-wrap:anywhere}
+.pcol td:first-child{color:var(--muted);white-space:nowrap;width:1%}
+.pcol tr.grp td{padding-top:6px;font-weight:600;color:var(--ink)}
+.pcol .v{font-family:var(--mono)}
+.ours{color:var(--warn);font-weight:600}
+/* LLM card: verdict pill, tactic chips, collapsible evidence with a hover popover (readable on a projector) */
+.pill{display:inline-block;font:700 .8rem var(--sans);letter-spacing:.03em;border-radius:5px;padding:2px 8px;
+      color:var(--surface);background:var(--muted);vertical-align:middle}
+.pill.attack{background:var(--anom)} .pill.false_positive{background:var(--warn)}
+.pill.big{font-size:1rem;padding:3px 12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{display:inline-flex;gap:6px;align-items:baseline;border:1px solid var(--line);border-radius:999px;padding:1px 10px;
+      font:500 .82rem var(--sans);background:var(--paper)}
+.chip .id{font:400 .74rem var(--mono);color:var(--muted)}
+.chip.ioc{font:400 .78rem var(--mono);border-radius:5px;overflow-wrap:anywhere}
+.llmcard .meta{font-size:.78rem;color:var(--muted);margin:4px 0 8px}
+.llmcard details{margin:6px 0}
+.llmcard details>summary{cursor:pointer;list-style:none}
+.llmcard details>summary::-webkit-details-marker{display:none}
+.llmcard details>summary::before{content:"▸";display:inline-block;width:1.1em;color:var(--muted);transition:transform .15s}
+.llmcard details[open]>summary::before{transform:rotate(90deg)}
+.sgblock{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.sgblock>summary .sghead{font:600 .95rem var(--sans)}
+.sgblock .why{font:400 1.02rem/1.5 var(--sans);margin:4px 0 2px 1.1em}
+.sgblock .body{margin-left:1.1em}
+.sub>summary{font:600 .85rem var(--sans);color:var(--muted)}
+.evrow{position:relative;display:flex;gap:8px;align-items:baseline;padding:3px 6px;border-radius:5px;
+       font:400 .86rem var(--sans);outline:none;min-width:0}
+.evrow:hover,.evrow:focus{background:var(--win-soft)}
+.evrow .who{font:600 .84rem var(--mono);white-space:nowrap}
+.evrow .what{font:400 .8rem var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.evrow .verb{font:700 .72rem var(--sans);color:var(--win);white-space:nowrap}
+.evrow .host{font:600 .7rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 4px;white-space:nowrap}
+.evrow .pop{display:none;position:absolute;left:0;top:100%;z-index:20;width:min(90ch,92vw);max-height:60vh;overflow:auto;
+            background:var(--surface);color:var(--ink);border:1px solid var(--win);border-radius:8px;
+            box-shadow:0 6px 24px rgba(0,0,0,.25);padding:10px 12px;font:400 .95rem/1.5 var(--mono);
+            white-space:pre-wrap;word-break:break-all}
+.evrow:hover .pop,.evrow:focus .pop,.evrow:focus-within .pop{display:block}
+.pop .k{font:600 .78rem var(--sans);color:var(--muted);display:block;margin-top:6px}
+.pop .k:first-child{margin-top:0}
+/* Present mode: bigger text for a projector, diagnostics hidden (toggle in the header) */
+#presentBtn{font:600 .8rem var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);
+            border-radius:6px;padding:4px 10px;cursor:pointer;margin-left:auto}
+html.present #presentBtn{border-color:var(--win);color:var(--win);background:var(--win-soft)}
+html.present{font-size:21px}
+html.present body{font-size:18px}
+html.present .wrap{max-width:1800px}
+html.present #pipelinePanel,html.present #tauTxt{display:none}
+html.present .win{flex-basis:150px}
+html.present #cy{height:560px}
+html.present .hwrap{max-height:260px}
+html.present .alertcard{max-height:560px}
 </style>
 </head>
 <body>
@@ -143,10 +205,17 @@ tr.flag td{color:var(--anom);font-weight:600}
     <span><span class="dot" id="conn"></span> <span id="connTxt" class="muted">connecting…</span></span>
     <span class="mono muted" id="sessionTxt"></span>
     <span class="mono muted" id="modelTxt"></span>
+    <button id="presentBtn" title="Bigger text for a projector; hides the pipeline diagnostics (?present=1 in the URL turns it on)">Present</button>
   </header>
   <div class="trained" id="trained"></div>
 
-  <section class="panel">
+  <section class="panel" id="paramsPanel">
+    <h2>Parameters (as running) <span class="muted" id="paramsSrv"></span></h2>
+    <div class="pgrid" id="params"><div class="muted">loading…</div></div>
+    <div class="note"><span class="ours">highlighted</span> = this project's choice, not the paper's</div>
+  </section>
+
+  <section class="panel" id="pipelinePanel">
     <h2>Shipper and pipeline <span class="muted" id="tilesHost"></span></h2>
     <div class="hosttabs" id="hostTabs" hidden></div>
     <div class="tiles" id="tiles"></div>
@@ -166,13 +235,13 @@ tr.flag td{color:var(--anom);font-weight:600}
   </section>
 
   <section class="panel" id="cross" hidden>
-    <h2>Cross-host activity <span class="muted">(connections between the monitored VMs, found by code; the LLM only explains them)</span></h2>
-    <div class="cwarn" id="cWarn" hidden></div>
+    <h2>Cross-host follow-up <span class="muted">(starts from a red window on one VM, follows the network nodes in its anomalous subgraph to the other VM; the LLM aggregates both sides)</span></h2>
     <div class="hwrap"><table id="cTable"></table></div>
     <div id="cDetail"></div>
-    <div class="note"><span class="lvl">link</span> a new connection between two VMs, not in the known-traffic list; it turns nothing red ·
-      <span class="lvl suspected">suspected</span> one end had a red window at or before it ·
-      <span class="lvl confirmed">confirmed</span> both ends had red windows · a campaign never changes a VM's own windows</div>
+    <div class="note"><span class="lvl">pending</span> a red window's kept subgraph holds a socket on the other VM; waiting for that VM's windows ·
+      <span class="lvl one-sided">one-sided</span> the other VM's model scored the nodes around that connection as normal ·
+      <span class="lvl corroborated">corroborated</span> the other VM's model flagged ≥ 1 of them, or they sit in one of its kept subgraphs ·
+      a connection with no red window is never shown · a finding never changes a VM's own windows</div>
   </section>
 
   <section class="panel">
@@ -216,13 +285,18 @@ tr.flag td{color:var(--anom);font-weight:600}
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   // All displayed times in the lab zone (UTC+7), whatever the viewing browser's zone is.
   const TZ = "Asia/Ho_Chi_Minh";
-  const hm = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", timeZone:TZ});
-  const hms = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit", timeZone:TZ});
+  const hm = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", hour12:false, timeZone:TZ});
+  const hms = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false, timeZone:TZ});
   const num = (v, d=3) => v == null ? "–" : Number(v).toFixed(d);
+  const fmt = v => v == null ? "–" : String(Number(v));    // no forced rounding (a 4.5 cut-off must not show as 5)
   const base = p => String(p || "").split(/[\\/]/).pop() || p;
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   // NET attrs arrive decoded (engine.display_attrs); attr_raw = SilkETW's own value, to trace back to the raw line
   const full = n => n.attr_raw ? `${n.attr} (raw ${n.attr_raw})` : (n.attr ?? "");
+  // process command line (Sysmon EID 1, D14): plain-text lines for tooltips / the alert card, HTML for the tables
+  const cmdText = n => (n.cmdline ? `\n    $ ${n.cmdline}` : "") + (n.decoded ? `\n    ↳ decoded: ${n.decoded}` : "");
+  const cmdHtml = n => (n.cmdline ? `<span class="cmd">$ ${esc(n.cmdline)}</span>` : "")
+                     + (n.decoded ? `<span class="cmd">↳ decoded: ${esc(n.decoded)}</span>` : "");
 
   const LLM_LABEL = {pending: "LLM: …", attack: "LLM: attack", false_positive: "LLM: FP",
                      uncertain: "LLM: ?", error: "LLM: error", skipped: "LLM: budget"};
@@ -231,7 +305,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   let winsBy = {"": new Map()};  // VM -> (wid -> summary)
   const curWins = () => (winsBy[curHost] ??= new Map());
   const hostQ = (h = curHost) => h ? "?host=" + encodeURIComponent(h) : "";
-  let es = null, campaigns = new Map(), campSel = null;
+  let es = null, findings = new Map(), findSel = null;
   let status = null, selected = null, pinned = false, cy = null, detail = null, sgIdx = 0;
   let histSel = null;            // {sdir, wid} when the detail panel shows a window picked from History
 
@@ -244,7 +318,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     if (p) $("winParams").textContent = `w = ${p.window_min} min, s = ${p.stride_min} min, lateness ${p.lateness_s} s`;
     const a1 = p?.alg1;
     if (a1) $("cutTxt").textContent = a1.min_score != null ? `score > ${a1.min_score}`
-      : a1.min_level === "Moderate" ? `Moderate, score ≥ ${a1.moderate_from}` : `level ≥ ${a1.min_level}`;
+      : a1.min_level === "Moderate" ? `Moderate, score ≥ ${fmt(a1.moderate_from)}` : `level ≥ ${a1.min_level}`;
     if (a1 && a1.require_types?.length) $("cutTxt").textContent += `, with anomalous ${a1.require_types.join(" + ")} nodes`;
     if (status) $("tauTxt").textContent = "τ per type: " + Object.entries(status.model.tau).map(([k,v]) => `${k} ${num(v,5)}`).join(" · ");
     if (!s) { $("tiles").innerHTML = '<div class="muted">waiting for data (shipper or Loki)…</div>'; return; }
@@ -282,6 +356,52 @@ tr.flag td{color:var(--anom);font-weight:600}
     renderTimeline();
   }
 
+  // ------------------------------------------------------------- Parameters panel (every VM side by side)
+  // [PAPER] defaults a running value is compared with: §7.2.1 (n_seed, max_e, Moderate from 10); GNN = the paper hyperparameters (CLAUDE.md §9)
+  const PAPER = {moderate_from: 10, n_seed: 15, max_edges: 5000, layers: 3, hidden: 32, lr: 0.005, beta: 0.5};
+  let paramsBy = {};                                       // VM -> its /api/status (params change only on restart)
+  async function loadParams() {
+    try {
+      const got = await Promise.all(hosts.map(async h => [h, await (await fetch("api/status" + hostQ(h))).json()]));
+      paramsBy = Object.fromEntries(got);
+    } catch (e) {}
+    renderParams();
+  }
+  function renderParams() {
+    const cols = hosts.filter(h => paramsBy[h]);
+    if (!cols.length) return;
+    const srv = paramsBy[cols[0]].server || {};
+    const c = srv.code;
+    $("paramsSrv").innerHTML = c ? `· code <span class="mono">${esc(c.sha)}</span> (${esc(c.branch)}${c.dirty ? ', <span class="ours">uncommitted changes</span>' : ""})`
+      + (srv.started_ms ? ` · server started ${esc(dhm(srv.started_ms))}` : "") : "";
+    // Only what is ours: values that differ from the paper, plus the rows that are ours by design. Paper defaults are not
+    // listed (the presenter explains them when asked).
+    const our = x => `<span class="v ours">${esc(x ?? "–")}</span>`;   // this project's choice: highlighted value, no tag
+    const txt = x => `<span class="v">${esc(x ?? "–")}</span>`;
+    const diffRow = (label, x, key) => x != null && key in PAPER && Number(x) !== PAPER[key]
+      ? [[label, `${our(fmt(x))} <span class="muted">(paper ${PAPER[key]})</span>`]] : [];
+    $("params").innerHTML = cols.map(h => {
+      const st = paramsBy[h], m = st.model || {}, t = m.train || {}, p = st.params || {}, a = p.alg1 || {}, L = p.llm || {};
+      const tf = (st.trained_for || []).find(x => x.model === base(m.run_dir));
+      const cut = a.min_score != null ? [["alert cut-off", `score > ${our(fmt(a.min_score))}`]]
+        : a.min_level !== "Moderate" ? [["alert cut-off", `level ≥ ${our(a.min_level)}`]]
+        : diffRow("Moderate from", a.moderate_from, "moderate_from");
+      const rows = [
+        ["model", txt(base(m.run_dir)) + (tf?.hosts?.length ? ` <span class="muted">(trained for ${esc(tf.hosts.join(", "))})</span>` : "")],
+        ["τ per type", txt(Object.entries(m.tau || {}).map(([k, x]) => `${k} ${num(x, 4)}`).join(" · "))],
+        ...diffRow("layers", t.layers, "layers"), ...diffRow("hidden", t.hidden, "hidden"),
+        ...diffRow("lr", t.lr, "lr"), ...diffRow("β", t.beta, "beta"),
+        ["window / stride", `${our(`${fmt(p.window_min)} / ${fmt(p.stride_min)} min`)} <span class="muted">(live windows)</span>`],
+        ...cut,
+        ...(a.require_types?.length ? [["NET rule", `${our(a.require_types.join(" + "))}`]] : []),
+        ...diffRow("n_seed", a.n_seed, "n_seed"), ...diffRow("max edges", a.max_edges, "max_edges"),
+        ...(L.provider ? [["LLM triage", `${our(`${L.provider} / ${L.model}`)}`]] : []),
+      ];
+      return `<div class="pcol"><h3>${esc(h || "this VM")}</h3><table>${rows.map(r => r.length === 1
+        ? `<tr class="grp"><td colspan="2">${esc(r[0])}</td></tr>` : `<tr><td>${esc(r[0])}</td><td>${r[1]}</td></tr>`).join("")}</table></div>`;
+    }).join("");
+  }
+
   // ------------------------------------------------------------- which VMs, and what each model was trained for
   function renderHosts() {
     const tf = status?.trained_for || [];
@@ -299,9 +419,6 @@ tr.flag td{color:var(--anom);font-weight:600}
     if (many && $("hHost").options.length !== hosts.length + 1)
       $("hHost").innerHTML = '<option value="">all</option>' + hosts.map(h => `<option>${esc(h)}</option>`).join("");
     $("cross").hidden = !status?.correlation;
-    const noBase = status?.correlation && status.correlation.baseline == null;
-    $("cWarn").hidden = !noBase;
-    if (noBase) $("cWarn").textContent = "No known-traffic list yet, so every connection between the VMs shows as new. Run: lab flows --start … --end …";
   }
   function switchHost(h) {
     if (h === curHost) return;
@@ -314,70 +431,109 @@ tr.flag td{color:var(--anom);font-weight:600}
     if (b) switchHost(b.dataset.host);
   });
 
-  // ------------------------------------------------------------- cross-host (api/campaigns, src/live/correlate.py)
-  function renderCampaigns() {
-    const rows = [...campaigns.values()].sort((a,b) => b.last_ms - a.last_ms);
-    $("cTable").innerHTML = rows.length ? `<tr><th>level</th><th>first seen (lab)</th><th>connection</th><th>events</th><th>seen by</th><th>red order</th><th>LLM</th></tr>`
-      + rows.map(c => `<tr class="${c.id === campSel ? "sel" : ""}" data-c="${esc(c.id)}">
-        <td><span class="lvl ${esc(c.level)}">${esc(c.level)}</span></td><td class="num">${dhm(c.first_ms)}</td>
-        <td class="mono">${esc(c.client)} → ${esc(c.server)} ${esc(c.proto)}/${esc(c.port)}</td><td class="num">${c.count}</td>
-        <td class="mono">${esc((c.seen_by || []).join(", "))}</td><td class="mono">${c.origin ? esc(c.origin) + " → " + esc(c.target) : "–"}</td>
-        <td>${esc(c.llm?.status ? (LLM_LABEL[c.llm.status] || c.llm.status) : "")}</td></tr>`).join("")
-      : '<tr><td class="muted">no connection between the VMs that is outside the known traffic</td></tr>';
-    const c = campaigns.get(campSel), L = c?.llm;
-    if (!c) { $("cDetail").innerHTML = ""; return; }
-    const ev = Object.entries(c.evidence || {}).map(([h, ws]) => `<div><b class="mono">${esc(h)}</b>: ${ws.length
-      ? ws.map(w => `${hm(w.start_ms)} ${w.alert ? "RED" : "green"} (score ${num(w.score, 2)}, ${w.flagged} above τ)`).join(" · ")
-      : "no window with nodes above τ in range"}</div>`).join("");
-    const llm = !L ? '<div class="muted">No LLM step: it runs on suspected and confirmed campaigns when a provider is set.</div>'
+  // ------------------------------------------------------------- cross-host (api/crosshost, src/live/correlate.py)
+  function renderFindings() {
+    const rows = [...findings.values()].sort((a,b) => b.start_ms - a.start_ms);
+    const procs = f => [...new Set((f.peer_windows || []).flatMap(pw => pw.nodes.filter(n => n.type === "process" && n.why !== "neighbour")
+      .map(n => String(n.attr).split(/[\\/]/).pop())))].join(", ") || "–";
+    $("cTable").innerHTML = rows.length ? `<tr><th>level</th><th>red window (lab)</th><th>origin → peer</th><th>seed sockets</th><th>peer processes</th><th>peer flagged</th><th>LLM</th></tr>`
+      + rows.map(f => `<tr class="${f.id === findSel ? "sel" : ""}" data-c="${esc(f.id)}">
+        <td><span class="lvl ${esc(f.level)}">${esc(f.level)}</span></td><td class="num">${dhm(f.start_ms)}</td>
+        <td class="mono">${esc(f.origin)} → ${esc(f.peer)}</td>
+        <td class="mono">${(f.seeds || []).map(s => esc(s.attr) + (s.role === "anomalous" ? " ●" : "")).join("<br>")}</td>
+        <td class="mono">${esc(procs(f))}</td>
+        <td class="num">${(f.peer_windows || []).reduce((a, pw) => a + pw.n_flagged, 0)}</td>
+        <td>${esc(f.llm?.status ? (LLM_LABEL[f.llm.status] || f.llm.status) : "")}</td></tr>`).join("")
+      : '<tr><td class="muted">no red window has talked to another monitored VM</td></tr>';
+    const f = findings.get(findSel), L = f?.llm;
+    if (!f) { $("cDetail").innerHTML = ""; return; }
+    const seeds = `<div><b class="mono">${esc(f.origin)}</b> ${esc(f.window)} RED (score ${num(f.score, 2)}): kept subgraph holds `
+      + (f.seeds || []).map(s => `<span class="mono">${esc(s.attr)}</span> (${esc(s.role)}, subgraph #${s.sg})`).join(", ") + "</div>";
+    const conns = (f.connections || []).length
+      ? (f.connections).map(c => `<div class="mono">${esc(c.proto)} ${esc(f.origin)}:${c.origin_port} ↔ ${esc(f.peer)}:${c.peer_port} · ${c.count} events · pids ${esc(JSON.stringify(c.pids))}</div>`).join("")
+      : `<div class="muted">join: ${esc(f.join || "not yet")}${f.join === "ip-only" ? " (no raw network event matched; every socket on the peer that talks to the origin's IP)" : ""}</div>`;
+    const peer = (f.peer_windows || []).map(pw => `<div><b class="mono">${esc(f.peer)}</b> ${esc(pw.window)} ${pw.alert ? "RED" : "green"} · ${pw.n_flagged} flagged`
+      + `${pw.kept_subgraphs.length ? " · in kept subgraph #" + pw.kept_subgraphs.join(", #") : ""}${pw.cut ? ` · ${pw.cut} more nodes cut` : ""}</div>`
+      + `<div class="pnodes">${pw.nodes.map(n => `<div class="${n.flagged ? "fl" : ""}">${esc(n.type)} ${esc(n.attr)} <span class="muted">(${esc(n.why)}${n.margin != null ? ", margin " + num(n.margin, 3) : ""})</span></div>`).join("")}</div>`).join("")
+      || `<div class="muted">${f.level === "pending" ? "waiting for the peer's windows…" : "no node on the peer matched this connection"}</div>`;
+    const llm = !L ? '<div class="muted">No LLM step: it runs on every resolved finding when a provider is set.</div>'
       : L.status === "pending" ? '<h3>LLM: waiting for the model…</h3>'
-      : L.error ? `<h3>LLM: ${esc(L.status)}</h3><div class="ev">${esc(L.error)}</div>`
-      : `<h3>LLM verdict on the full flow: ${esc(L.status)}${L.confidence != null ? " · confidence " + num(L.confidence, 2) : ""}</h3>
-         <div class="muted">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · not ground truth; the campaign stands either way</div>
-         <div>${esc(L.rationale)}</div>${L.note ? `<div class="muted">${esc(L.note)}</div>` : ""}
-         ${(L.tactics || []).length ? `<div class="muted">${L.tactics.map(t => esc(t.id || "") + " " + esc(t.name || "")).join(", ")}</div>` : ""}
-         <div class="ev">${(L.evidence || []).map(esc).join("\n")}</div>
-         ${L.report ? `<div class="report">${md(L.report)}</div>` : ""}
-         ${L.report_error ? `<div class="muted">report failed: ${esc(L.report_error)}</div>` : ""}`;
-    $("cDetail").innerHTML = `<div class="llmcard ${esc(L?.status || "")}"><h3>${esc(c.client)} → ${esc(c.server)} ${esc(c.proto)}/${esc(c.port)}</h3>${ev}${llm}</div>`;
+      : L.error ? `<h3>LLM ${pill(L.status, null, true)}</h3><div class="meta">${esc(L.error)}</div>`
+      : `<h3>LLM verdict on both sides ${pill(L.status, L.confidence, true)}</h3>
+         <div class="meta">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · not ground truth; the finding stands either way</div>
+         ${tacticChips(L.tactics)}
+         <div class="sgblock" style="border:0"><div class="why" style="margin-left:0">${esc(L.rationale)}</div></div>
+         ${L.note ? `<div class="meta">${esc(L.note)}</div>` : ""}
+         ${(L.evidence || []).length ? `<details class="sub" data-k="x|${esc(f.id)}|ev"><summary>Evidence (${L.evidence.length} lines)</summary>${evList(L.evidence)}</details>` : ""}
+         ${reportBox(`x|${f.id}|rep`, "Attack report (Alg. 2)", L.report)}
+         ${L.report_error ? `<div class="meta">report failed: ${esc(L.report_error)}</div>` : ""}`;
+    $("cDetail").innerHTML = `<div class="llmcard ${esc(L?.status || "")}"><h3>${esc(f.origin)} → ${esc(f.peer)} · ${esc(f.level)}</h3>`
+      + `${seeds}${conns}${peer}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ""}${llm}</div>`;
+    restoreOpen($("cDetail"));
   }
   $("cTable").addEventListener("click", e => {
     const tr = e.target.closest("tr[data-c]");
     if (!tr) return;
-    campSel = campSel === tr.dataset.c ? null : tr.dataset.c;
-    renderCampaigns();
+    findSel = findSel === tr.dataset.c ? null : tr.dataset.c;
+    renderFindings();
   });
 
   // ------------------------------------------------------------- timeline: one row per VM
+  let _syncScroll = false;
   function renderTimeline() {
-    $("timeline").innerHTML = hosts.map(timelineRow).join("");
-    document.querySelectorAll("#timeline .timeline").forEach(t => { t.scrollLeft = t.scrollWidth; });
+    // Shared 5-min time grid across hosts: one column per slot (union of every host's scored + open windows),
+    // so the same wall-clock window lines up vertically. Missing slots become invisible placeholders.
+    const slotSet = new Set();
+    const openOf = {};
+    hosts.forEach(h => {
+      winsBy[h]?.forEach(w => slotSet.add(w.start_ms));
+      const hs = (status?.hosts || []).find(x => (x.host || "") === h);
+      if (hs?.open_window) { slotSet.add(hs.open_window.start_ms); openOf[h] = {ow: hs.open_window, wm: hs.watermark_ms}; }
+    });
+    const slots = [...slotSet].sort((a,b) => a - b).slice(-24);
+    $("timeline").innerHTML = hosts.map(h => timelineRow(h, slots, openOf[h])).join("");
+    // Identical columns + widths, so scroll-to-end aligns every row; mirror manual scroll to keep them locked.
+    const strips = [...document.querySelectorAll("#timeline .timeline")];
+    strips.forEach(t => { t.scrollLeft = t.scrollWidth; });
+    strips.forEach(t => t.addEventListener("scroll", () => {
+      if (_syncScroll) return;
+      _syncScroll = true;
+      strips.forEach(o => { if (o !== t) o.scrollLeft = t.scrollLeft; });
+      requestAnimationFrame(() => { _syncScroll = false; });
+    }));
   }
   // [OURS] type rule (alg1.REQUIRE_TYPES): "missing anomalous node type(s): net" -> "missing net"
   const shortReason = r => (r || "").replace("missing anomalous node type(s): ", "missing ");
-  function timelineRow(h) {
-    const list = [...(winsBy[h]?.values() || [])].sort((a,b) => a.start_ms - b.start_ms).slice(-24);
-    let html = list.map(w => {
-      const cls = w.status === "scored" ? (w.alert ? "alert" : "scored") : w.status;
-      const sub = w.status === "scored"
-                ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs_kept}/${w.subgraphs} sg kept`
-                   : w.subgraphs_suppressed ? `suppressed: ${esc(shortReason(w.suppressed_reason))}`
-                   : w.flagged ? `${w.flagged} above τ · filtered` : `${w.nodes} nodes`)
-                : w.status === "scoring" ? "scoring…" : w.status;
-      const llm = w.llm?.status;
-      const badge = llm ? `<div class="badge ${esc(llm)}">${esc(LLM_LABEL[llm] || llm)}</div>` : "";
-      return `<div class="win ${cls} ${llm === "false_positive" ? "fp" : ""} ${h === curHost && w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
-        <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div>${badge}</div>`;
+  function winCell(w, h) {
+    const cls = w.status === "scored" ? (w.alert ? "alert" : "scored") : w.status;
+    const sub = w.status === "scored"
+              ? (w.alert ? `${w.flagged} above τ · ${w.subgraphs_kept}/${w.subgraphs} sg kept`
+                 : w.subgraphs_suppressed ? `suppressed: ${esc(shortReason(w.suppressed_reason))}`
+                 : w.flagged ? `${w.flagged} above τ · filtered` : `${w.nodes} nodes`)
+              : w.status === "scoring" ? "scoring…" : w.status;
+    const llm = w.llm?.status;
+    const badge = llm ? `<div class="badge ${esc(llm)}">${esc(LLM_LABEL[llm] || llm)}</div>` : "";
+    return `<div class="win ${cls} ${llm === "false_positive" ? "fp" : ""} ${h === curHost && w.window === selected ? "sel" : ""}" data-w="${esc(w.window)}">
+      <div class="t">${hm(w.start_ms)}–${hm(w.end_ms)}</div><div class="s">${esc(sub)}</div>${badge}</div>`;
+  }
+  function openCell(ow, wm) {
+    const pct = wm ? Math.max(0, Math.min(100, (wm - ow.start_ms) / (ow.end_ms - ow.start_ms) * 100)) : 0;
+    return `<div class="win open"><div class="fill" style="width:${pct}%"></div>
+      <div class="t">${hm(ow.start_ms)}–${hm(ow.end_ms)}</div><div class="s">open · ${pct.toFixed(0)}%</div></div>`;
+  }
+  function timelineRow(h, slots, openInfo) {
+    const byStart = new Map([...(winsBy[h]?.values() || [])].map(w => [w.start_ms, w]));
+    const ow = openInfo?.ow;
+    const any = byStart.size || ow;
+    const cells = slots.map(ms => {
+      const w = byStart.get(ms);
+      if (w) return winCell(w, h);
+      if (ow && ow.start_ms === ms) return openCell(ow, openInfo.wm);
+      return `<div class="win slot-empty" aria-hidden="true"></div>`;   // keep the column aligned
     }).join("");
     const hs = (status?.hosts || []).find(x => (x.host || "") === h);
-    const ow = hs?.open_window, wm = hs?.watermark_ms;
-    if (ow) {
-      const pct = wm ? Math.max(0, Math.min(100, (wm - ow.start_ms) / (ow.end_ms - ow.start_ms) * 100)) : 0;
-      html += `<div class="win open"><div class="fill" style="width:${pct}%"></div>
-        <div class="t">${hm(ow.start_ms)}–${hm(ow.end_ms)}</div><div class="s">open · ${pct.toFixed(0)}%</div></div>`;
-    }
     return `<div class="hrow">${hosts.length > 1 ? `<div class="hlabel">${esc(h)}${hs?.model ? " · " + esc(hs.model) : ""}</div>` : ""}
-      <div class="timeline" data-host="${esc(h)}">${html || '<div class="muted">no window closed yet</div>'}</div></div>`;
+      <div class="timeline" data-host="${esc(h)}">${any ? cells : '<div class="muted">no window closed yet</div>'}</div></div>`;
   }
   $("timeline").addEventListener("click", e => {
     const el = e.target.closest("[data-w]");
@@ -390,7 +546,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   const OFF = 7 * 3600e3;                                     // lab zone UTC+7 (no DST)
   const toInput = ms => new Date(ms + OFF).toISOString().slice(0, 16);
   const fromInput = v => v ? v + ":00+07:00" : "";
-  const dhm = ms => new Date(ms).toLocaleString([], {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZone:TZ});
+  const dhm = ms => new Date(ms).toLocaleString([], {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false, timeZone:TZ});
   const utcHm = ms => new Date(ms).toISOString().slice(11, 16) + "Z";
   let hRows = [];
 
@@ -418,7 +574,7 @@ tr.flag td{color:var(--anom);font-weight:600}
         <td class="num">${dhm(w.start_ms)}–${hm(w.end_ms)}</td><td class="num">${utcHm(w.start_ms)}</td>
         <td class="mono">${esc(w.host || "–")}</td><td class="mono">${esc(w.sdir)}</td><td>${esc(w.status)}</td><td class="num">${w.edges ?? "–"}</td>
         <td class="num">${w.flagged ?? "–"}</td><td class="num">${w.status === "scored" ? `${num(w.max_sg_score,2)} ${esc(w.max_level || "")}` : "–"}</td>
-        <td class="num">${w.moderate_from == null ? "–" : "≥ " + num(w.moderate_from, 0)}</td><td>${w.alert ? "RED" : w.subgraphs_suppressed ? `<span class="muted" title="${esc(w.suppressed_reason)}">suppressed (${esc(shortReason(w.suppressed_reason))})</span>` : ""}</td>
+        <td class="num">${w.moderate_from == null ? "–" : "≥ " + fmt(w.moderate_from)}</td><td>${w.alert ? "RED" : w.subgraphs_suppressed ? `<span class="muted" title="${esc(w.suppressed_reason)}">suppressed (${esc(shortReason(w.suppressed_reason))})</span>` : ""}</td>
         <td>${esc(w.llm?.status ? (LLM_LABEL[w.llm.status] || w.llm.status) : "")}</td></tr>`;
       }).join("") : '<tr><td class="muted">no window in this range</td></tr>';
   }
@@ -528,30 +684,93 @@ tr.flag td{color:var(--anom);font-weight:600}
     return out.join("");
   }
 
+  // ---- LLM card pieces (shared by the window card and the cross-host card)
+  const PILL = {attack: "ATTACK", false_positive: "FALSE POSITIVE", benign: "BENIGN", uncertain: "UNCERTAIN",
+                error: "ERROR", pending: "WAITING…", skipped: "BUDGET"};
+  const pill = (v, conf, big) => `<span class="pill ${v === "benign" ? "false_positive" : esc(v)}${big ? " big" : ""}">${esc(PILL[v] || v)}`
+    + `${conf != null ? " " + num(conf, 2) : ""}</span>`;
+  // ATT&CK tactics grouped by tactic: one chip "Discovery T1033 T1082" instead of a long list
+  function tacticChips(list) {
+    const by = new Map();
+    for (const t of list || []) {
+      const k = t.name || t.id || "?";
+      if (!by.has(k)) by.set(k, new Set());
+      if (t.technique_id) by.get(k).add(t.technique_id);
+    }
+    return by.size ? `<div class="chips">${[...by].map(([n, ids]) =>
+      `<span class="chip">${esc(n)}${ids.size ? `<span class="id">${[...ids].map(esc).join(" ")}</span>` : ""}</span>`).join("")}</div>` : "";
+  }
+  // One evidence line (verbatim from the alg2.serialize document) -> one short row; the full line is in a hover
+  // popover (bigger and wrapped, unlike a native title tooltip). Formats (src/pipeline/alg2.py serialize):
+  //   "process <image> (pid N) command line: <cmd> | decoded: <payload> | parent command line: <cmd>"
+  //   "<subject> <ACTION> the <object type> : <object> (N times) on YYYY-MM-DD HH:MM."
+  // An optional "[host] " prefix comes from the cross-host document. Anything else is shown as is.
+  const DEC = " | decoded: ", PAR = " | parent command line: ";
+  function evRow(line) {
+    let s = String(line ?? ""), host = "";
+    const hp = s.match(/^\[([^\]]+)\]\s+/);
+    if (hp) { host = hp[1]; s = s.slice(hp[0].length); }
+    let who = "", verb = "", what = s, pop = [["line", s]];
+    const p = s.match(/^process (.+?)(?: \(pid (\d+)\))? command line: ([\s\S]*)$/);
+    const e = !p && s.match(/^(.+?) ([A-Z]+) the (\w+) : (.+?)(?: \((\d+) times\))? on \d{4}-\d{2}-\d{2} (\d{2}:\d{2})\.?$/);
+    if (p) {
+      let cmd = p[3], dec = "", par = "";
+      const ip = cmd.indexOf(PAR); if (ip >= 0) { par = cmd.slice(ip + PAR.length); cmd = cmd.slice(0, ip); }
+      const id = cmd.indexOf(DEC); if (id >= 0) { dec = cmd.slice(id + DEC.length); cmd = cmd.slice(0, id); }
+      // the row shows the decoded payload when there is one (base64 tells the audience nothing); all of it is in the popover
+      who = base(p[1]) + (p[2] ? ` (pid ${p[2]})` : ""); verb = dec ? "decoded" : "$"; what = dec || cmd;
+      pop = [["process", p[1] + (p[2] ? ` (pid ${p[2]})` : "")], ["command line", cmd]];
+      if (dec) pop.push(["decoded", dec]);
+      if (par) pop.push(["parent command line", par]);
+    } else if (e) {
+      who = base(e[1]); verb = e[2];
+      what = (e[3] === "socket" ? e[4] : base(e[4])) + (e[5] ? ` ×${e[5]}` : "") + ` · ${e[6]}`;
+      pop = [["event", s]];
+    }
+    if (host) pop.unshift(["host", host]);
+    return `<div class="evrow" tabindex="0">${host ? `<span class="host">${esc(host)}</span>` : ""}`
+      + `${who ? `<span class="who">${esc(who)}</span>` : ""}${verb ? `<span class="verb">${esc(verb)}</span>` : ""}`
+      + `<span class="what">${esc(what)}</span>`
+      + `<div class="pop">${pop.map(([k, v]) => `<span class="k">${esc(k)}</span>${esc(v)}`).join("\n")}</div></div>`;
+  }
+  const evList = ev => ev?.length ? `<div class="note">Evidence (${ev.length} lines, hover a line for the full text)</div>${ev.map(evRow).join("")}` : "";
+  const reportBox = (k, title, rep) => rep ? `<details class="sub" data-k="${esc(k)}"><summary>${esc(title)}</summary><div class="report">${md(rep)}</div></details>` : "";
+  // open/closed state of the collapsible parts survives re-renders (SSE updates, subgraph clicks)
+  const openState = new Map();
+  const restoreOpen = root => root.querySelectorAll("details[data-k]").forEach(d => {
+    if (openState.has(d.dataset.k)) d.open = openState.get(d.dataset.k);
+  });
+  ["llm", "cDetail"].forEach(id => $(id).addEventListener("toggle", e => {   // toggle does not bubble: capture it
+    if (e.target.dataset?.k) openState.set(e.target.dataset.k, e.target.open);
+  }, true));
+
   function renderLLM(w) {
     const st = w.llm?.status, L = detail.llm;
     if (!st) { $("llm").innerHTML = ""; return; }
     if (!L) {
-      $("llm").innerHTML = `<div class="llmcard"><h3>LLM verdict: ${esc(st === "pending" ? "waiting for the model…" : st)}</h3>
-        ${w.llm.error ? `<div class="ev">${esc(w.llm.error)}</div>` : ""}</div>`;
+      $("llm").innerHTML = `<div class="llmcard"><h3>LLM verdict ${pill(st, null, true)}</h3>
+        ${w.llm.error ? `<div class="meta">${esc(w.llm.error)}</div>` : ""}</div>`;
       return;
     }
-    const head = {attack: "attack (report below)", false_positive: "false positive (GNN alert kept)",
-                  uncertain: "uncertain (stays an alert)"}[L.verdict] || L.verdict;
-    const tac = t => `${esc(t.id || "")} ${esc(t.name || "")}${t.technique_id ? " / " + esc(t.technique_id) : ""}`;
-    const per = L.subgraphs.map(g => `<div><b>subgraph #${g.id + 1}</b>: ${esc(g.verdict)}${g.confidence != null ? " (" + num(g.confidence, 2) + ")" : ""}
-        ${g.attack_tactics?.length ? " · " + g.attack_tactics.map(tac).join(", ") : ""}
-        ${g.note ? `<div class="muted">${esc(g.note)}</div>` : ""}
-        <div>${esc(g.rationale)}</div>
-        <div class="ev">${g.evidence.map(esc).join("\n")}</div>
-        ${g.iocs ? `<div class="muted">IOCs kept after the hallucination filter: ${g.iocs.map(esc).join(", ") || "none"}</div>` : ""}
-        ${g.report ? `<div class="report">${md(g.report)}</div>` : ""}
-        ${g.report_error ? `<div class="muted">report failed: ${esc(g.report_error)}</div>` : ""}</div>`).join("<hr>");
-    $("llm").innerHTML = `<div class="llmcard ${esc(L.verdict)}"><h3>LLM verdict: ${esc(head)}${L.confidence != null ? " · confidence " + num(L.confidence, 2) : ""}</h3>
-      <div class="muted">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · triage is ours (neutral prompt, ATT&CK);
-        the report uses the paper's Alg. 2 prompts. Not ground truth.</div>
-      ${per}
-      ${L.comprehensive ? `<h3 style="margin-top:10px">Comprehensive report</h3><div class="report">${md(L.comprehensive)}</div>` : ""}</div>`;
+    const key = `${w.host || ""}|${w.window}`;
+    // Summary (always visible) = verdict + tactics + rationale; evidence, IOCs and the report are collapsed.
+    const sg = g => `<details class="sgblock" data-k="${esc(key)}|sg${g.id}">
+      <summary><span class="sghead">Subgraph #${g.id + 1}</span> ${pill(g.verdict, g.confidence)}
+        ${tacticChips(g.attack_tactics)}
+        ${g.rationale ? `<div class="why">${esc(g.rationale)}</div>` : ""}
+        ${g.note ? `<div class="why muted" style="font-size:.85rem">${esc(g.note)}</div>` : ""}</summary>
+      <div class="body">
+        ${evList(g.evidence)}
+        ${g.iocs?.length ? `<div class="note">IOCs (hallucination-filtered)</div><div class="chips">${g.iocs.map(x => `<span class="chip ioc">${esc(x)}</span>`).join("")}</div>` : ""}
+        ${reportBox(`${key}|rep${g.id}`, "Attack report (Alg. 2)", g.report)}
+        ${g.report_error ? `<div class="meta">report failed: ${esc(g.report_error)}</div>` : ""}
+      </div></details>`;
+    $("llm").innerHTML = `<div class="llmcard ${esc(L.verdict)}"><h3>LLM verdict ${pill(L.verdict, L.confidence, true)}</h3>
+      <div class="meta">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · triage is ours (ATT&CK), report = paper Alg. 2
+        ${L.verdict === "false_positive" ? " · the GNN alert stays red" : ""} · not ground truth</div>
+      ${[...L.subgraphs].sort((a, b) => a.id - b.id).map(sg).join("")}
+      ${reportBox(`${key}|comp`, "Comprehensive report (Alg. 2, all subgraphs)", L.comprehensive)}</div>`;
+    restoreOpen($("llm"));
   }
   $("sgnav").addEventListener("click", e => {
     const b = e.target.closest("button[data-i]");
@@ -566,9 +785,11 @@ tr.flag td{color:var(--anom);font-weight:600}
       return;
     }
     $("cy").innerHTML = "";
+    const big = document.documentElement.classList.contains("present");   // Present mode: bigger labels and nodes
+    const fs = big ? 15 : 10, ns = big ? 36 : 26;
     const shape = {process: "ellipse", file: "round-rectangle", net: "diamond"};
     const els = g.nodes.map(n => ({data: {id: n.id, label: base(n.attr) || n.id, shape: shape[n.type] || "ellipse",
-                                          role: n.role, tip: `${n.type} ${full(n)}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}  prob ${num(n.prob,3)}`}}))
+                                          role: n.role, tip: `${n.type} ${full(n)}${cmdText(n)}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}  prob ${num(n.prob,3)}`}}))
       .concat(g.edges.map((e,i) => ({data: {id: "e"+i, source: e.src, target: e.dst,
                                             label: e.type + (e.count > 1 ? " ×" + e.count : "")}})));
     cy = cytoscape({
@@ -576,12 +797,12 @@ tr.flag td{color:var(--anom);font-weight:600}
       layout: {name: g.nodes.length > 2 ? "cose" : "grid", animate: false, padding: 30},
       style: [
         {selector: "node", style: {"shape": "data(shape)", "background-color": css("--surface"), "border-width": 1.5,
-          "border-color": css("--ink"), "label": "data(label)", "color": css("--ink"), "font-size": 10,
-          "text-valign": "bottom", "text-margin-y": 4, "width": 26, "height": 26}},
+          "border-color": css("--ink"), "label": "data(label)", "color": css("--ink"), "font-size": fs,
+          "text-valign": "bottom", "text-margin-y": 4, "width": ns, "height": ns}},
         {selector: "node[role = 'anomalous']", style: {"border-width": 4, "border-color": css("--anom")}},
         {selector: "node[role = 'connector']", style: {"border-width": 2.5, "border-style": "dashed", "border-color": css("--win")}},
         {selector: "edge", style: {"width": 1.4, "line-color": css("--muted"), "target-arrow-color": css("--muted"),
-          "target-arrow-shape": "triangle", "curve-style": "bezier", "label": "data(label)", "font-size": 9,
+          "target-arrow-shape": "triangle", "curve-style": "bezier", "label": "data(label)", "font-size": fs - 1,
           "color": css("--muted"), "text-rotation": "autorotate", "text-background-color": css("--paper"),
           "text-background-opacity": 1}},
       ],
@@ -598,7 +819,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     const score = `subgraph score ${num(g.sg_score,3)} = Σ prob of ${g.n_anomalous} anomalous nodes → ${esc(g.level)}${g.oversize ? " · oversize" : ""}`;
     const lab = Object.fromEntries(g.nodes.map(n => [n.id, base(n.attr) || n.id]));
     const lines = g.edges.map(e => `${hms(e.first_ms)}${e.last_ms !== e.first_ms ? "–" + hms(e.last_ms) : ""}  ${esc(lab[e.src])} → ${esc(lab[e.dst])} (${esc(e.type)}${e.count > 1 ? " ×" + e.count : ""})`);
-    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(full(n))}  score ${num(n.score,4)} τ ${num(n.tau,4)}${n.role === "anomalous" ? " prob " + num(n.prob,3) : ""}`);
+    const nodes = g.nodes.map(n => `${n.role === "anomalous" ? "!" : "·"} ${esc(n.type)} ${esc(full(n))}  score ${num(n.score,4)} τ ${num(n.tau,4)}${n.role === "anomalous" ? " prob " + num(n.prob,3) : ""}${esc(cmdText(n))}`);
     $("alertcard").innerHTML = head + "\n" + score + "\n\n"
       + (lines.length ? lines.join("\n") : "(single anomalous node, no edge to another anomaly)") + "\n\n" + nodes.join("\n");
   }
@@ -607,7 +828,7 @@ tr.flag td{color:var(--anom);font-weight:600}
     const top = detail.top || {};
     $("tables").innerHTML = Object.keys(top).sort().map(t => `<div class="tbl"><h2>${esc(t)}</h2><table>
       <tr><th>attr</th><th>score</th><th>margin</th></tr>
-      ${top[t].map(r => `<tr class="${r.flagged ? "flag" : ""}"><td class="attr" title="${esc(r.id)}${r.attr_raw ? "\nraw " + esc(r.attr_raw) : ""}">${esc(r.attr)}</td>
+      ${top[t].map(r => `<tr class="${r.flagged ? "flag" : ""}"><td class="attr" title="${esc(r.id)}${r.attr_raw ? "\nraw " + esc(r.attr_raw) : ""}${esc(cmdText(r))}">${esc(r.attr)}${cmdHtml(r)}</td>
         <td class="num">${num(r.score,4)}</td><td class="num">${num(r.margin,4)}</td></tr>`).join("")}
     </table></div>`).join("") || '<span class="muted">window not scored</span>';
   }
@@ -621,14 +842,15 @@ tr.flag td{color:var(--anom);font-weight:600}
       if (st?.session?.id !== status?.session?.id && !histSel) { selected = null; pinned = false; $("detail").hidden = true; }
       status = st;
       renderHosts();
+      loadParams();                            // every VM's parameters, once per (re)connect
       for (const h of hosts) {
         const list = await (await fetch("api/windows" + hostQ(h))).json();
         winsBy[h] = new Map(list.map(w => [w.window, w]));
       }
       if (status.correlation) {
-        const list = await (await fetch("api/campaigns")).json();
-        campaigns = new Map(list.map(c => [c.id, c]));
-        renderCampaigns();
+        const list = await (await fetch("api/crosshost")).json();
+        findings = new Map(list.map(f => [f.id, f]));
+        renderFindings();
       }
     } catch (e) {}
     renderStatus();
@@ -662,13 +884,25 @@ tr.flag td{color:var(--anom);font-weight:600}
       if (w.window === selected && (w.status === "scored" || w.status === "error")) loadDetail();
       else renderTimeline();
     });
-    es.addEventListener("campaign", e => {
-      const c = JSON.parse(e.data).campaign;
-      campaigns.set(c.id, c);
-      renderCampaigns();
+    es.addEventListener("crosshost", e => {
+      const f = JSON.parse(e.data).finding;
+      findings.set(f.id, f);
+      renderFindings();
     });
     es.onerror = () => { $("conn").className = "dot off"; $("connTxt").textContent = "UI lost the server, retrying…"; };
   }
+  // ------------------------------------------------------------- Present mode (projector): bigger text, diagnostics hidden
+  function setPresent(on) {
+    document.documentElement.classList.toggle("present", on);
+    try { localStorage.setItem("ocr-live-present", on ? "1" : "0"); } catch (e) {}
+    if (detail && !$("detail").hidden) drawSubgraph((detail.subgraphs || [])[sgIdx]);   // node labels are sized at draw time
+  }
+  let present = false;
+  try { present = localStorage.getItem("ocr-live-present") === "1"; } catch (e) {}
+  if (/(^|[?&#])present=1(&|$)/.test(location.search) || /(^|[#&])present=1(&|$)/.test(location.hash)) present = true;
+  setPresent(present);
+  $("presentBtn").addEventListener("click", () => setPresent(!document.documentElement.classList.contains("present")));
+
   connect();
   initHistory();
 })();

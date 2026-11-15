@@ -27,9 +27,11 @@ from . import decode as dc
 from . import record
 from .filters import Excluder, image_base
 from .loki import LokiClient, Shipper, push_ledger, ts_ns
+from .providers import GUIDS
 from .writer import LineWriter
 
 KP, KF, KN = ("Microsoft-Windows-Kernel-" + x for x in ("Process", "File", "Network"))
+SM = "Microsoft-Windows-Sysmon"
 
 
 def check(cond, what: str) -> None:
@@ -77,8 +79,7 @@ class FakeLoki:
 
 class _Plan:                                                  # stands in for schema.EventPlan
     def __init__(self, prov, name, opcode=0, opname="Info"):
-        self.provider_guid = {KP: "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716", KF: "edd08927-9cc4-4e65-b970-c2560fb5c289",
-                              KN: "7dd42a49-5329-4832-8dfd-43d979153a88"}[prov]
+        self.provider_guid = str(GUIDS[prov])
         self.provider_name, self.event_name, self.opcode, self.opcode_name = prov, name, opcode, opname
 
 
@@ -263,13 +264,17 @@ def t_converter(tmp):
                        _line(KF, "Write", 4321, "cmd", 1.5, {"FileObject": "0xaa", "FileKey": "0xbb", "IOSize": "4096"})],
         "knet.json": [_line(KN, "KERNEL_NETWORK_TASK_TCPIP/Datasent.", 0, "Idle", 3, {"PID": "4321",
                              "daddr": "93.184.216.34", "dport": "443", "size": "100"}, 10, "Datasent.")],
+        # Sysmon EID 1 (D14): command line only; the converter must ignore it (no edge, same graph)
+        "sysmon.json": [_line(SM, "ProcessCreate(rule:ProcessCreate)", 3000, "Sysmon64", 0, {
+                              "ProcessId": "4321", "UtcTime": "1970-01-01 00:00:00.000", "Image": r"C:\Windows\System32\cmd.exe",
+                              "CommandLine": "cmd.exe /c whoami", "ParentCommandLine": "explorer.exe"})],
     }
     for fn, ls in lines.items():
         with open(os.path.join(run, fn), "wb") as fh:
             fh.write(b"".join(ls))
     s = conv.convert(os.path.join(tmp, "conv", "raw"), "train", "SelfTest", os.path.join(tmp, "conv", "out"),
                      {"\\device\\harddiskvolume2": "c:"})
-    check(s["edges"] == {"Start": 1, "Load": 1, "Write": 1, "Send": 1}, f"converter edges {s['edges']}")
+    check(s["edges"] == {"Start": 1, "Load": 1, "Write": 1, "Send": 1}, f"converter edges {s['edges']} (a Sysmon line adds none)")
     with open(os.path.join(tmp, "conv", "out", "SelfTest_train_edges.csv"), encoding="utf-8") as fh:
         send = [r for r in fh if ",Send," in r][0]
     check(send.startswith("p4321_"), "Send edge hangs off the payload PID's process (not Idle)")

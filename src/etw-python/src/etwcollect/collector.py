@@ -8,12 +8,14 @@
                      final flush, shipper drains what is left (bounded), status "stopped", exit
 
 _on_event() per event (cheap first, so excluded events cost little):
-    1. which provider? (header GUID)            unknown -> count, return
+    1. which provider? (header GUID)            unknown -> count, return; Sysmon: Event ID 1 only
     2. kproc from an excluded PID?              drop before decoding (rule a; ProcessStart is decoded first)
     3. schema (cached) + decode the payload
     4. kfile rules (a)+(b) / knet rule (c)      drop our own I/O
     5. ProcessStart -> remember the child's name (and exclude it if its image matches --exclude-image)
     6. build the SilkETW-format line, hand it to the writer
+    Sysmon EID 1 lines skip steps 2-5: the header PID is Sysmon's service, the payload ProcessId is the new
+    process. They carry the command line only; the converter ignores them (DEVIATIONS D14).
 """
 from __future__ import annotations
 
@@ -30,7 +32,7 @@ from .decode import DecodeError, FILETIME_UNIX
 from .filters import Excluder
 from .loki import LokiClient, Shipper, utc_now_iso
 from .procnames import ProcNames, query_image
-from .providers import Provider
+from .providers import SYSMON_PROCESS_CREATE, SYSMON_STEM, Provider
 from .writer import LineWriter
 
 SESSION = "etwlab-collector"
@@ -117,6 +119,9 @@ class Collector:
             self.other += 1
             return
         stem, pid = prov.stem, h.ProcessId
+        if stem == SYSMON_STEM and h.EventDescriptor.Id != SYSMON_PROCESS_CREATE:
+            self.other += 1                          # Sysmon's own state events (4 service state, 16 config)
+            return
         st = self.stats[stem]
         st["events"] += 1
         plan = self.schemas.get(rp)                  # cached: a dict lookup after the first event of a type
@@ -206,7 +211,13 @@ class Collector:
         if self.session.start():
             self.log(f"[collector] stopped a stale session {self.cfg.session!r} first")
         for p in self.cfg.providers:
-            self.session.enable(p.guid, p.keywords)
+            try:
+                self.session.enable(p.guid, p.keywords)
+            except OSError as e:                     # an optional provider (Sysmon not installed) must not stop capture
+                if p.required:
+                    raise
+                self.last_error = f"optional provider {p.stem} not enabled: {e}"
+                self.log(f"[collector] {self.last_error}")
         if self.shipper:
             for p in self.cfg.providers:
                 self.shipper.track(self.writer.paths[p.stem])

@@ -67,7 +67,7 @@ const H = 32 * CELL
     <div class="cap">
       <b>Hidden layer</b> = vectơ trung gian của node: không có trong log, do mô hình tự tính qua từng lớp RGCN.
       Chỉ <b>lớp cuối (Z)</b> được dùng tiếp, làm đầu vào cho One-class learning.
-      <span class="tag paper">PAPER §7.2.1</span>
+
     </div>
     <div class="foot">Mọi node (PROCESS, FILE, NET) đi qua cùng các lớp; mỗi loại node có hypersphere riêng.</div>
   </div>

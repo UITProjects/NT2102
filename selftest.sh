@@ -17,6 +17,7 @@ steps=(
   "src/live/etwship.py --selftest"
   "src/pipeline/etw2nodlink.py --selftest"
   "src/pipeline/lab_filters.py --selftest"
+  "src/pipeline/cmdlines.py --selftest"
   "src/pipeline/etwwindow.py --selftest"
   "src/pipeline/lokiclient.py --selftest"
   "src/pipeline/loki_pull.py --selftest"

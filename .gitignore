@@ -39,3 +39,6 @@ __pycache__/
 
 # Real Windows tool binaries staged onto Kali at provision time (T1105 executed tools); never committed.
 /src/atomic-attack-pack/tools/win/
+
+# Course submission bundle (form uploads), built locally
+/submit/

@@ -176,6 +176,10 @@ ansible -i proxmox.ini windows -m ansible.windows.win_ping  # use win_ping on Wi
 ansible-playbook -i proxmox.ini ubuntu.yml                                    # Loki + Grafana + repo + ocr-live
 ansible-playbook -i proxmox.ini windows.yml -e vulnlab_enabled=true
                                               # etwcollect (uv) + start-live.ps1 + DVWA vulnlab
+ansible-playbook -i proxmox.ini proxmox-firewall.yml --diff  # pve-master (root key passphrase): DNAT 2102 -> VPN,
+                                              # 10.8.0.0/24 return route (not persistent) + nt2102: FORWARD accepts
+ansible-playbook -i proxmox.ini vpn.yml --diff  # nt2102-vpn: push lab + Kali routes, no SNAT to the lab
+                                              # (run AFTER proxmox-firewall.yml; a route change restarts OpenVPN)
 
 # any other cloud (the vault supplies the Windows + Grafana creds):
 ansible-playbook -i inventory.cloud.ini site.yml -e @group_vars/vault.yml --ask-vault-pass
@@ -289,6 +293,8 @@ proxmox.ini  inventory.cloud.ini.example
 group_vars/   all.yml  windows.yml  ubuntu.yml  vault.yml.example
 roles/
   win_base        OS config: net profile, UTC+7, no-sleep, RDP, folders, Defender
+  win_sysmon      Sysmon, Event ID 1 (ProcessCreate) only: process command lines for the UI + LLM, never a feature
+                  (DEVIATIONS D14; sysmon_enabled, default true; the collector reads it as optional provider `sysmon`)
   win_collector   uv + etw-python venv + SYSTEM task etwlab-collector + embeddable Python + etw2nodlink.py/
                   etwwindow.py/etwship.py/etwctl; removes the old SilkService + Grafana Alloy
   win_shipper     start-live.ps1 watchdog + SYSTEM task etwlab-live (always-on live test capture)

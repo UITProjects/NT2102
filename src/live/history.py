@@ -60,13 +60,17 @@ def display_attrs(attr, ntype: str) -> dict:
 def make_detail(nodes, subgraphs: list, sg_stats: dict, truncated: bool, top_k: int = 20) -> dict:
     """The UI detail of one scored window (engine._score and the history fallback build it the same way).
 
-    nodes: pd.DataFrame [N rows: node_uuid, node_type, score, tau, margin, flagged, attr] (score_window + attrs)
+    nodes: pd.DataFrame [N rows: node_uuid, node_type, score, tau, margin, flagged, attr] (score_window + attrs),
+           optionally cmdline / decoded (str, "" when no Sysmon match; D14). Windows scored before D14 have neither.
     -> {"top": {node_type: [<= top_k rows by margin]}, "subgraphs": first 25 with display attrs, ...}"""
     top = {}
+    has_cmd = "cmdline" in nodes.columns
     for t, g in nodes.groupby("node_type"):
         g = g.sort_values("margin", ascending=False).head(top_k)
         top[t] = [{"id": r.node_uuid, **display_attrs(r.attr, t), "score": _f(r.score), "tau": _f(r.tau),
-                   "margin": _f(r.margin), "flagged": bool(r.flagged)} for r in g.itertuples()]
+                   "margin": _f(r.margin), "flagged": bool(r.flagged),
+                   **({k: v for k in ("cmdline", "decoded") if isinstance(v := getattr(r, k), str) and v}
+                      if has_cmd else {})} for r in g.itertuples()]
     # display copy: subgraphs.json and the LLM job keep the raw attrs
     shown = [{**g, "nodes": [{**n, **display_attrs(n.get("attr"), n["type"])} for n in g["nodes"]]}
              for g in subgraphs[:25]]

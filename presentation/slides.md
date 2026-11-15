@@ -3,7 +3,7 @@ theme: default
 title: Phát hiện bất thường trên endpoint device log dựa trên OCR-APT
 info: |
   NT2102 – Đồ án phát hiện bất thường trên log thiết bị đầu cuối.
-  Demo trực tiếp OCR-APT trên một Windows host (ws-etw-0, exp08).
+  Demo trực tiếp OCR-APT: demo chính trên ws-etw-0 (exp08), kết quả thứ hai trên ws-etw-1 (exp15-ws1).
 colorSchema: light
 aspectRatio: 16/9
 canvasWidth: 980
@@ -48,7 +48,7 @@ Trần Quang Kiệt – 26848108@grad.uit.edu.vn
 <!--
 Chào thầy/cô và các bạn. Nhóm trình bày một demo trực tiếp của OCR-APT (CCS 2025): phát hiện tấn công
 trên log nhân (kernel log) của Windows bằng subgraph anomaly detection. Bốn phần: bài toán → ý tưởng cốt
-lõi (5 bước) → demo trên một máy Windows → cảm ơn. Chi tiết đầy đủ nằm trong báo cáo (latex/).
+lõi (5 bước) → demo (video chính trên ws-etw-0 + tấn công thật của thành viên trên ws-etw-1) → cảm ơn. Chi tiết đầy đủ nằm trong báo cáo (latex/).
 -->
 
 ---
@@ -57,26 +57,18 @@ clicks: 2
 
 # 1 · Bài toán & OCR-APT
 
-<div class="cmp small" style="grid-template-columns: 1fr 1fr 1.25fr; gap:0.8rem">
-<div class="card neutral">
-
-**Vì sao khó**
-- Audit log **khổng lồ**
-- Tấn công **hiếm**, **không nhãn**
-
-</div>
+<div class="cmp small" style="grid-template-columns: 1fr 1.25fr; gap:0.8rem">
 <div v-click="1" class="card atk">
 
 **Cách cũ**
 - Rule → **bỏ sót** kỹ thuật mới
-- Node **vụn** · graph **thô** · không có **câu chuyện**
 
 </div>
 <div v-click="2" class="card det">
 
 **OCR-APT** (CCS 2025)
 - **Subgraph** · **behavior** · **LLM**
-- Mục tiêu: **1 host**, tấn công **đỏ**, benign **xanh**, live
+- Mục tiêu: tấn công **đỏ**, benign **xanh**, live · **mỗi host một mô hình**
 
 </div>
 </div>
@@ -99,7 +91,7 @@ clicks: 2
 Tấn công ẩn trong audit log khổng lồ, cực hiếm, không nhãn. Cách cũ: luật thì bỏ sót kỹ thuật mới;
 anomaly detection thì hoặc quá vụn (từng node) hoặc quá thô (cả đồ thị); và chỉ cho cảnh báo rời, không
 dựng được câu chuyện. OCR-APT trả lời bằng subgraph + học hành vi (không dùng tên/IP) + LLM.
-Mục tiêu đồ án rất hẹp: demo phần lõi chạy sống trên một Windows host, không đua số liệu với bài báo.
+Mục tiêu đồ án rất hẹp: demo phần lõi chạy sống trên Windows host (mỗi host một mô hình), không đua số liệu với bài báo.
 Năm bước dưới hình là bản đồ cho phần 2. Chi tiết hạn chế cách cũ: note.txt Q8; báo cáo §1.
 -->
 
@@ -151,38 +143,16 @@ khi gửi ra ngoài → max nghỉ 0.99. Bảng đầy đủ: báo cáo Bảng f
 -->
 
 ---
-clicks: 4
----
-
-# 2 · ③ GNN: message passing
-
-<div class="grid gap-6 mt-1" style="grid-template-columns: 0.6fr 1.6fr">
-<div class="small">
-
-- Node = **vectơ** $h$
-- Cập nhật từ **chính nó + neighbor**
-- **L lớp** = nhìn xa **L bước**
-
-</div>
-<div class="small">
-
-<MessagePassing />
-
-</div>
-</div>
-
-<!--
-Chuyển sang mô hình. ML thường coi mỗi hàng độc lập; đồ thị thì mỗi node có số neighbor khác nhau. GNN
-giải quyết bằng message passing: mỗi lớp, mọi node gộp thông tin từ chính nó và các neighbor rồi cập nhật
-vectơ. Xếp L lớp thì nhìn xa L bước; vectơ sau mỗi lớp là hidden layer, lớp cuối là embedding.
-OCR-APT dùng 3 lớp, exp08 dùng 2 lớp. Ví dụ số: note.txt Q5; vì sao không 10 lớp: Q6; báo cáo §2.3.
--->
-
----
 clicks: 5
 ---
 
 # 2 · ③ RGCN: một trọng số cho mỗi loại edge
+
+<div class="small -mt-2 mb-1">
+
+**R**elational **G**raph **C**onvolutional **N**etwork · GNN cho đồ thị có **nhiều loại edge**
+
+</div>
 
 <RgcnLayer />
 
@@ -193,10 +163,28 @@ clicks: 5
 </div>
 
 <!--
-RGCN = Relational GCN. Mỗi loại edge (Write/Read/Send/Recv/Start/Load) có ma trận trọng số riêng W_r, nên
+RGCN = Relational Graph Convolutional Network: một GNN. Ý tưởng GNN (message passing): mỗi lớp, mọi node gộp
+thông tin từ chính nó và các neighbor rồi cập nhật vectơ; xếp L lớp thì nhìn xa L bước (OCR-APT 3 lớp, exp08 2 lớp).
+"Relational" = đồ thị có nhiều loại edge. Mỗi loại edge (Write/Read/Send/Recv/Start/Load) có ma trận trọng số riêng W_r, nên
 mô hình học mỗi loại "kéo" bao nhiêu. Animation: rundll32 gộp chính nó + 2 file + 1 flow, mỗi loại qua
 trọng số riêng → 0.1. Sau 2–3 lớp, 15 feature thô thành embedding 32 chiều mang cả chuỗi tài liệu →
 powershell → DLL → rundll32 → mạng. Vì sao RGCN chứ không GCN: note.txt Q1; 12 quan hệ: Q3; công thức: báo cáo §2.3.
+-->
+
+---
+clicks: 3
+---
+
+# 2 · ③ Nhiều lớp: nhìn xa L bước
+
+<StackedLayers />
+
+<!--
+Mỗi lớp, mọi node cập nhật vectơ từ chính nó và các neighbor (message passing — RGCN làm đúng việc này, chỉ thêm
+trọng số riêng theo loại edge). Mỗi lớp nhìn xa thêm một bước: A chỉ nhận được màu của E ở lớp 3. Vectơ sau mỗi
+lớp là hidden layer (mô hình tự tính, không có trong log); lớp cuối là embedding, đem vào quả cầu one-class.
+Bài báo dùng 3 lớp; nhóm dùng 2 trên exp08 (nông hơn, bớt nhạy với nhiễu ngữ cảnh). Quá nhiều lớp thì mọi node
+trộn thành một màu xám (over-smoothing): note.txt Q6. Ví dụ số: note.txt Q5.
 -->
 
 ---
@@ -205,32 +193,75 @@ clicks: 2
 
 # 2 · ③ OCRGCN: học "bình thường", gắn cờ cái ở xa
 
-<div class="grid gap-4" style="grid-template-columns: 1.15fr 1fr">
-<div>
+<div class="small -mt-2 mb-1">
+
+**O**ne-**C**lass **R**elational **G**raph **C**onvolutional **N**etwork
+
+</div>
+
 <Hypersphere />
-</div>
-<div class="small">
 
-- Không nhãn → chỉ học **benign**
-- Trong cầu = **quen** · ngoài cầu = **gắn cờ**
-- $s_i = \lVert \mathbf z_i - \mathbf c \rVert^2 - R^2 > \theta$
+<div class="grid gap-4 small mt-1" style="grid-template-columns: 1fr 1fr 1.2fr; text-align:center">
+<div>Không nhãn → chỉ học <b>benign</b></div>
+<div>Trong cầu = <b>quen</b> · ngoài cầu = <b>gắn cờ</b></div>
+<div>
 
-<div v-click="2" class="card det mt-3">
-
-**3 loại node → 3 quả cầu, 3 threshold**<br/>
-process · file · mạng: "bình thường" khác nhau
-
-</div>
+$s_i = \lVert \mathbf z_i - \mathbf c \rVert^2 - R^2 > \theta$
 
 </div>
 </div>
 
 <!--
 Không có nhãn nên chỉ học "bình thường": nhốt benign embedding vào một quả cầu (tâm c, bán kính R), cái
-gì ra ngoài thì nghi ngờ — tinh thần One-Class SVM. OCRGCN = encoder RGCN + loss kiểu Deep SVDD. sᵢ là
+gì ra ngoài thì nghi ngờ — tinh thần One-Class SVM. OCRGCN = One-Class RGCN: bài báo mô tả là "RGCN kết hợp one-class SVM" (§1, §5.1.1) nhưng không viết rõ tên đầy đủ, nên "One-Class RGCN" là cách đọc của nhóm từ mô tả đó. Bản của nhóm = encoder RGCN + loss kiểu Deep SVDD. sᵢ là
 khoảng cách tới tâm trừ bán kính; vượt threshold θ thì gắn cờ. Điểm then chốt: một mô hình cho MỖI loại
 node, vì "bình thường" của process/file/mạng khác nhau. Encoder vẫn nhìn toàn đồ thị; chỉ loss/threshold
 theo loại. β, threshold, Hình 2 bài báo: báo cáo §2.4–2.5.
+-->
+
+---
+
+# 2 · ③ OCRGCN: huấn luyện (Training)
+
+<img src="./images/paper-fig2-train.png" class="fig" style="max-height:300px;object-fit:contain" />
+<div class="src">Hình 2 (trái) của Aly et al., CCS 2025: pha Training</div>
+
+<div class="small mt-2">
+
+- Chỉ **benign** · **mỗi loại node một mô hình** (Process · File · Network Flow)
+- **Estimate Contamination** γ → đặt threshold θ
+- **RGCN** → embedding → **hypersphere** (One-Class SVM)
+
+</div>
+
+<!--
+Pha huấn luyện (Hình 2 trái). Đồ thị chỉ gồm benign node → mã hoá + 15 feature → tách theo loại node.
+Mỗi loại một OCRGCN: ước lượng contamination γ (tỉ lệ điểm huấn luyện được phép vượt threshold; θ = quantile
+1 − γ của điểm huấn luyện; bài báo kẹp γ trong [0.001, 0.05], không nhãn thì 0.001 — nhóm dùng 0.001), qua nhiều
+lớp RGCN ra embedding, rồi học hypersphere (tâm c, bán kính R). Kết quả: 3 mô hình. Encoder vẫn chạy trên toàn
+đồ thị; chỉ loss/hypersphere/threshold tính riêng theo loại. Báo cáo §2.4–2.5 (Hình tsmod).
+-->
+
+---
+
+# 2 · ③ OCRGCN: suy luận (Inference)
+
+<img src="./images/paper-fig2-infer.png" class="fig" style="max-height:300px;object-fit:contain" />
+<div class="src">Hình 2 (phải) của Aly et al., CCS 2025: pha Inference</div>
+
+<div class="small mt-2">
+
+- Đồ thị mới (có thể có tấn công) → **cùng** feature + scaler
+- Mỗi node → mô hình **đúng loại** → khoảng cách tới tâm
+- Ngoài cầu = **anomalous node + score** → bước ④
+
+</div>
+
+<!--
+Pha suy luận (Hình 2 phải). Đồ thị cần kiểm tra đi qua đúng các bước mã hoá + feature (dùng lại scaler của
+lúc train); mỗi node được chấm bởi mô hình của loại mình, sᵢ > θ của loại đó thì là anomalous node. Đầu ra:
+danh sách anomalous node kèm điểm → đưa vào bước ④ dựng subgraph. Khác bài báo: bài báo chấm cả log một lần
+(offline); bản live của nhóm chấm từng window 5 phút (DEVIATIONS: windowed detection).
 -->
 
 ---
@@ -244,13 +275,14 @@ theo loại. β, threshold, Hình 2 bài báo: báo cáo §2.4–2.5.
 - Nối node bị cờ → **subgraph**
 - Điểm = **Σ xác suất** node bị cờ
 - **≥ 10 → Moderate → đỏ** (thang bài báo)
+- Live hai máy: **≥ 4.5**
 
 </div>
 <div class="card inv">
 
 ### ⑤ LLM
 - Subgraph → **IOC** → lọc hallucination → **báo cáo**
-- [OURS] **triage** trước: `attack` / `benign` / `uncertain`
+- **triage** trước: `attack` / `benign` / `uncertain`
 - **Overlay**: không xoá cảnh báo, không vào training
 
 </div>
@@ -260,6 +292,7 @@ theo loại. β, threshold, Hình 2 bài báo: báo cáo §2.4–2.5.
 Node rời rạc → subgraph có điểm → báo cáo. Điểm subgraph là TỔNG xác suất (min-max, kẹp [0,1]) của node
 bị cờ, nên ≥10 ≈ ít nhất ~10 node bất thường nối thành một câu chuyện. Thang Minor <10, Moderate 10–100,
 Significant 100–1000, Critical >1000 (§7.2.1); không dùng top-k fallback vì sẽ làm mọi window đỏ.
+Video demo chính (exp08) dùng đúng mốc 10; live trên hai máy dùng mốc 4.5 (≈ 5 node bất thường liên thông).
 LLM đọc subgraph, trích IOC, lọc phần bịa, viết báo cáo; nhóm thêm bước phân loại trước (bài báo luôn giả
 định tấn công). LLM chỉ là lớp phủ (rủi ro prompt injection). Công thức: báo cáo Phụ lục.
 -->
@@ -270,13 +303,15 @@ LLM đọc subgraph, trích IOC, lọc phần bịa, viết báo cáo; nhóm th�
 
 <div style="max-width:84%;margin:0 auto"><LabInfra /></div>
 
-<div class="tiny muted mt-1 text-center">Terraform + Ansible · <b>một</b> Windows host được chấm điểm</div>
+<div class="tiny muted mt-1 text-center">Terraform + Ansible · <b>hai</b> Windows host, mỗi host một mô hình</div>
 
 <!--
-Lab trên một hypervisor Proxmox. ws-etw-0 chạy DVWA (web có lỗ hổng) và etwcollect (collector ETW nhóm tự viết).
-ubuntu-trainer chạy Loki, Grafana, huấn luyện và ocr-live (máy chủ demo). Kali ở VNet riêng là máy tấn
-công. Ba mũi tên: ① Kali khai thác DVWA, ② log ETW đẩy về Loki, ③ ocr-live phục vụ giao diện cảnh báo.
-Đồ án cam kết một host; host thứ hai + correlation là nice-to-have.
+Lab trên một hypervisor Proxmox. ws-etw-0 chạy DVWA (web có lỗ hổng) và etwcollect (collector ETW nhóm tự viết);
+từ 09-11 nó còn là Domain Controller (video demo chính quay trước đó, mô hình exp08). ws-etw-1 là máy thứ hai:
+ứng dụng Next.js có lỗ hổng RCE (react2shell) do một thành viên dựng, mô hình riêng exp15-ws1.
+ubuntu-trainer chạy Loki, Grafana, huấn luyện và ocr-live (máy chủ demo, một engine cho mỗi host).
+① Kali khai thác DVWA, ② log ETW của cả hai host đẩy về Loki, ③ ocr-live phục vụ giao diện cảnh báo,
+④ thành viên tấn công thật ws-etw-1 từ máy mình qua VPN. Correlation giữa hai host: đã viết, chưa kiểm chứng.
 -->
 
 ---
@@ -354,8 +389,42 @@ class: text-center
 <!--
 Video demo đã quay sẵn (YouTube: https://www.youtube.com/watch?v=Jzv03v82bNo). Cần mạng để phát;
 nếu mất mạng, mô tả bằng lời theo bốn bước dưới khung.
-Kết quả đo được (exp08: window tấn công 70.17 / LLM attack 0.85; 24 h: 288 window, 7 alert, 3 false alarm)
-và giới hạn nằm trong báo cáo §3–4; nếu được hỏi: note.txt Q7. Slide sau là lời cảm ơn.
+Kết quả đo được (exp08: window tấn công 05-11 17:10Z 70.17 / LLM attack 0.85; 24 h: 288 window, 7 alert, 3 false alarm)
+và giới hạn nằm trong báo cáo §3–4; nếu được hỏi: note.txt Q7. Slide sau: video 2 (tấn công thật trên ws-etw-1).
+-->
+
+---
+layout: center
+class: text-center
+---
+
+# 3 · Video demo 2: tấn công thật trên ws-etw-1
+
+<div class="video-ph" v-motion :initial="{ scale: 0.95, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 500 } }">
+  <!-- TODO (thành viên): thay khối placeholder này bằng iframe YouTube, giống slide "3 · Video demo":
+  <iframe src="https://www.youtube-nocookie.com/embed/<VIDEO_ID>?rel=0" title="Video demo 2" frameborder="0" allowfullscreen
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" /> -->
+  <div class="ph">
+    <div class="ph-i"><span class="tri"></span></div>
+    <div>Video demo 2 · đang cập nhật</div>
+  </div>
+</div>
+
+<style scoped>
+.video-ph { width: 76%; margin: 0.5rem auto 0; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden;
+  background: #0f172a; box-shadow: 0 6px 24px rgba(15,23,42,0.25); }
+.video-ph iframe { width: 100%; height: 100%; display: block; }
+.ph { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.6rem; color: #cbd5e1; font-size: 1rem; }
+.ph-i { width: 64px; height: 64px; border-radius: 50%; border: 2px solid #cbd5e1; display: flex; align-items: center;
+  justify-content: center; }
+.tri { width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent;
+  border-left: 20px solid #cbd5e1; margin-left: 5px; }
+</style>
+
+<!--
+Placeholder: video do thành viên quay lần tấn công react2shell vào ws-etw-1 (15-11, 03:35–04:40Z), sẽ thay bằng
+link YouTube. Kết quả (04:15Z 7.24 · 04:20Z 19.86 đỏ, LLM attack 0.85/0.95, mốc Moderate 4.5) nằm trong báo cáo §R4.
 -->
 
 ---
@@ -378,5 +447,5 @@ Kết quả, giới hạn, công thức, bảng sai khác: báo cáo <code>latex
 
 <!--
 Cảm ơn. Câu hỏi thường gặp đã chuẩn bị trong note.txt (RGCN vs GCN, 12 quan hệ, vì sao benign idle, kết
-quả demo, công thức điểm subgraph...). Công thức RGCN, điểm subgraph và bảng sai khác đầy đủ nằm trong báo cáo.
+quả demo, công thức điểm subgraph, mốc Moderate 4.5...). Công thức RGCN, điểm subgraph và bảng sai khác đầy đủ nằm trong báo cáo.
 -->

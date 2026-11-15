@@ -50,7 +50,7 @@ làm khác. Dùng AUTHOR CODE khi bài báo không nói rõ chi tiết (ví dụ
 tính điểm subgraph) và nhóm đã đọc trực tiếp file của tác giả.
 
 
-Q5. Cho ví dụ có số của message passing (slide "③ GNN: message passing")
+Q5. Cho ví dụ có số của message passing (slide "③ RGCN", phần message passing)
 -------------------------------------------------------------
 Mỗi node 1 số cho dễ tính; w_self = 0.5, w_nb = 1.
 A có h_A = 2, neighbor B, C, D = 4, 0, 1 -> mean = 5/3 ≈ 1.67
@@ -71,10 +71,16 @@ process -> file -> process -> mạng.
 Q7. Demo đã chạy thật chưa? Kết quả thế nào?
 ---------------------------------------------
 Rồi, trên ws-etw-0 với mô hình exp08 (baseline idle 3 ngày, RGCN 2 lớp). Lần chạy DVWA→RCE live ngày
-06-11, window 17:10Z: ĐỎ, điểm subgraph 70.17 (Moderate), 89 node bị gắn cờ (47 process / 36 file /
+05-11, window 17:10Z: ĐỎ, điểm subgraph 70.17 (Moderate), 89 node bị gắn cờ (47 process / 36 file /
 6 net), LLM phân loại "attack" (conf 0.85), tactic Execution/Discovery/C2/Lateral/Exfiltration; subgraph
 giữ đúng C2 10.21.4.30:8080, tool đã chạy và dump DB. Idle window quanh đó XANH. rejudge.sh tái hiện offline.
 Một lần chạy khác (15:35Z, có thêm T1070 xoá log): ĐỎ, sg 54.42, LLM "attack" 0.9.
+
+Kết quả thứ hai (máy khác, tấn công không do nhóm viết kịch bản): thành viên tấn công ws-etw-1 (Next.js
+react2shell, mô hình riêng exp15-ws1) từ máy mình qua VPN ngày 15-11: node.exe → cmd → powershell -enc
+(reverse shell tới 20.210.106.182:4444) → recon.bat (sc, schtasks, driverquery, whoami /all, netstat) →
+winPEAS. Window 04:15Z ĐỎ (sg 7.24, LLM attack 0.85), 04:20Z ĐỎ (sg 19.86, LLM attack 0.95, trích đúng
+winPEAS + lệnh -enc đã giải mã nhờ dòng lệnh Sysmon). Lưu ý in-sample: xem Q13.
 
 Trung thực về false positive: trong 24h đầu của exp08 có 288 window, 7 alert — 4 là 3 lần tấn công thật,
 3 là false alarm benign (đều bị LLM gắn false_positive, xảy ra khi có hoạt động Ansible/git/choco trên VM).
@@ -148,13 +154,32 @@ Ví dụ FILE có điểm train trong [0.10, 0.23]:
 Vì p <= 1: điểm >= 10 ⇔ ít nhất ~10 anomalous node trong một câu chuyện liên thông.
 Thang: Minor < 10, Moderate 10–100, Significant 100–1000, Critical > 1000 [PAPER §7.2.1].
 [AUTHOR CODE] dùng > 10 và top-k khi không có gì đạt; đồ án bỏ top-k (live thì mọi window sẽ đỏ).
-Mốc [OURS] 30 cũ đã bỏ 2026-11-03 (D8). Báo cáo: Phụ lục, mục Thuật toán 1.
+Mốc [OURS] 30 cũ đã bỏ 2026-11-03 (D8). Live từ 2026-11-15: [OURS] 4.5 trên cả hai host (xem Q13).
+Báo cáo: Phụ lục, mục Thuật toán 1.
 
 
 Q12. Đồ án làm khác bài báo ở đâu?
 -----------------------------------
 Tấn công: CVE web -> RCE -> ATT&CK (không phải APT nhiều giai đoạn) · Dữ liệu: ETW tự thu, lược đồ NODLINK W10 ·
 Benign: idle một máy · Chế độ: gần real-time, window 5 phút · Feature: giữ đủ 15 cột, scaler fit train ·
-Mô hình: OCRGCN tự viết (RGCNConv), 2 lớp · Mức cảnh báo: Moderate từ 10, không top-k ·
-LLM: phân loại trước rồi Alg. 2 dòng 3–15 · Host: một (ws-etw-0).
-Bảng đầy đủ: báo cáo Bảng sai khác (§3) và Phụ lục; docs/DEVIATIONS.md D1–D13.
+Mô hình: OCRGCN tự viết (RGCNConv), 2 lớp · Mức cảnh báo: Moderate từ 10 (exp08), live từ 15-11 là 4.5, không top-k ·
+Luật NET: thêm 09-11, tắt live từ 15-11 · Dòng lệnh: Sysmon EID 1, chỉ cho UI + LLM (D14) ·
+LLM: phân loại trước rồi Alg. 2 dòng 3–15 · Host: hai (ws-etw-0, ws-etw-1), mỗi host một mô hình (D12).
+Bảng đầy đủ: báo cáo Bảng sai khác (§3) và Phụ lục; docs/DEVIATIONS.md D1–D14.
+
+
+Q13. Vì sao hạ mốc xuống 4.5 và tắt luật NET? Có phải chỉnh cho vừa tấn công không?
+------------------------------------------------------------------------------------
+Trả lời thẳng: CÓ, và nhóm ghi rõ điều đó. Lần tấn công thật đầu tiên trên ws-etw-1 (14-11 18:10–19:00Z)
+giữ XANH ở mốc 10 của bài báo: đỉnh cao nhất chỉ 4.72. Nhóm hạ mốc live xuống 4.5 (15-11 02:55Z).
+Lần thứ hai (15-11 03:35–04:40Z) có window 13.44 và 9.93 đạt Moderate nhưng bị luật NET chặn: RCE dùng
+lại chính socket HTTP đi vào, nên không có NET node "lạ". Nhóm tắt luật NET (05:03Z).
+→ Hai thay đổi đều chọn sau khi nhìn chính tấn công này: kết quả là in-sample, chỉ cho thấy cấu hình
+hiện tại CÓ THỂ bắt được chuỗi này, chưa phải bằng chứng độc lập. Muốn chứng minh: chạy một tấn công
+mới sau khi đã cố định tham số.
+Giá phải trả: chấm lại offline ~5 benign window đỏ/ngày/máy (LLM thường đánh false_positive; ngân sách
+LLM nâng 15 → 30 lần/ngày). Video demo chính (exp08) vẫn dùng đúng mốc 10 của bài báo.
+Vì sao mốc nhỏ hợp lý về trực giác: điểm subgraph ≈ số anomalous node liên thông (mỗi node ≤ 1), và
+một window 5 phút nhỏ hơn rất nhiều so với log nhiều ngày mà bài báo đặt thang 10/100/1000 [INFERENCE].
+Một điểm yếu khác lộ ra: cùng window 04:40Z được 4.66 trước và 3.03 sau khi máy chủ khởi động lại (đọc
+lại log từ giữa chừng, node mất event trước đó). (Báo cáo R4; DEVIATIONS D8.)

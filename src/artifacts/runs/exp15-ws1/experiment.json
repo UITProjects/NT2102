@@ -1,0 +1,788 @@
+{
+ "id": "range-20261106T203000Z-20261112T1215Z-ws-etw-1",
+ "graph": "SimulatedW10",
+ "split": "test",
+ "event_source": "etw",
+ "source": "loki",
+ "label_source": "unlabelled",
+ "dos_map": {
+  "\\device\\harddiskvolume3": "c:",
+  "\\device\\cdrom0": "d:"
+ },
+ "windowing": {
+  "window_min": 5,
+  "stride_min": 2,
+  "max_gap_s": 120
+ },
+ "results": {
+  "windows": 4070,
+  "edges_in": 2412363,
+  "edges_out": 6037156,
+  "edges_in_no_window": 562,
+  "nodes_unique": 45637,
+  "node_window_copies": 624559,
+  "contract_ok": true
+ },
+ "tools": {
+  "converter": "cbbf6dcfa6581d6e4fd34d81408292b9cb1b9fc4efa6bfedcf14d1798766f35d",
+  "etwwindow": "1b82fba8a70675fb6e7cea022803097dda378bc5424985756fe777577dc28787",
+  "checker": "490e5ca74e04960c31ef53a4f3ee922b13eb51d35b5e255764c1f636886bda49",
+  "builder": "d76d764baeb5e7cfe720f13afb22710805d9f7376a124bc98a214ab1a7271e28"
+ },
+ "own_tooling_filter": {
+  "watchdog_pids": 1742,
+  "edges_dropped": 526218,
+  "nodes_dropped": 3724
+ },
+ "pull": {
+  "source": "loki",
+  "loki": "http://127.0.0.1:3100",
+  "pulled_utc": "2026-11-12T13:05:07.949673+00:00",
+  "selection": {
+   "mode": "range",
+   "split": "test",
+   "providers": [
+    "kproc",
+    "kfile",
+    "knet"
+   ],
+   "host": "ws-etw-1"
+  },
+  "range_ns": [
+   1793997000000000000,
+   1794485700000000000
+  ],
+  "range_utc": [
+   "2026-11-06 20:30:00+0000",
+   "2026-11-12 12:15:00+0000"
+  ],
+  "queries": [
+   "{job=\"silketw\", host=\"ws-etw-1\", split=\"test\", provider=\"kproc\"}",
+   "{job=\"silketw\", host=\"ws-etw-1\", split=\"test\", provider=\"kfile\"}",
+   "{job=\"silketw\", host=\"ws-etw-1\", split=\"test\", provider=\"knet\"}"
+  ],
+  "streams": [
+   {
+    "split": "test",
+    "run": "live-20261106T202527Z",
+    "provider": "kfile",
+    "lines": 312368,
+    "duplicates_dropped": 0,
+    "sha256": "09535c7573eb44507542699fc3ee5ac9a0b1bb52cd6881e3c8fc8a6600b58965"
+   },
+   {
+    "split": "test",
+    "run": "live-20261106T202527Z",
+    "provider": "knet",
+    "lines": 533,
+    "duplicates_dropped": 0,
+    "sha256": "35902d3d8295ada359e63510f7a6e0265b7b0c6e7ad4eb4061f6650856f22407"
+   },
+   {
+    "split": "test",
+    "run": "live-20261106T202527Z",
+    "provider": "kproc",
+    "lines": 30851,
+    "duplicates_dropped": 0,
+    "sha256": "74eb9815bd9abf879cb4db37054559d0b7d16b30c38b4fc75fa4b02f2c813f9e"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T023027Z",
+    "provider": "kfile",
+    "lines": 335768,
+    "duplicates_dropped": 0,
+    "sha256": "d087800cc8b183de655cdb3b61075dec0be14abf669aca53515a7ff52545b51e"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T023027Z",
+    "provider": "knet",
+    "lines": 8495,
+    "duplicates_dropped": 0,
+    "sha256": "ff3c0751b54acc88b7e48fcb22d69b2f6c5b0a4109437b80c5a3115f3e27065b"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T023027Z",
+    "provider": "kproc",
+    "lines": 35054,
+    "duplicates_dropped": 0,
+    "sha256": "3ea7a3e482e79cf12e99c72bf7e42cbac711ec5c7d0237b671f772be6d3760bb"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T083527Z",
+    "provider": "kfile",
+    "lines": 388452,
+    "duplicates_dropped": 0,
+    "sha256": "4aac6adf39037c5660e39064beb4c0511ed6bd425ed5485be6aa7daba0f820a6"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T083527Z",
+    "provider": "knet",
+    "lines": 1280,
+    "duplicates_dropped": 0,
+    "sha256": "43c1bc5425b111d6bd7a7b084256e6dadcf136c34ada7623ac4865fdf3994911"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T083527Z",
+    "provider": "kproc",
+    "lines": 37764,
+    "duplicates_dropped": 0,
+    "sha256": "2607c87b3400997dc4fa0eef70d8acdba311acc1adaf6361ff23d52a57cb3cf3"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T144028Z",
+    "provider": "kfile",
+    "lines": 337340,
+    "duplicates_dropped": 0,
+    "sha256": "a1971c441087c39b61309176734a4a02c6ad40f07fb6924a96f95dcf540dbbc5"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T144028Z",
+    "provider": "knet",
+    "lines": 1338,
+    "duplicates_dropped": 0,
+    "sha256": "bafe544e3162728e8e0291a245fbaaa60dbbdc29de599b756d916d7627f7bf4d"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T144028Z",
+    "provider": "kproc",
+    "lines": 35164,
+    "duplicates_dropped": 0,
+    "sha256": "389a182567a00a313a41373ea42d377aa982b52c0e914c32536c86b03a4c6149"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T204527Z",
+    "provider": "kfile",
+    "lines": 520955,
+    "duplicates_dropped": 0,
+    "sha256": "1b69f1e75f876a4f622bde27e04d30bf7172ecb6809fdb87f3be444d43452e2f"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T204527Z",
+    "provider": "knet",
+    "lines": 1147,
+    "duplicates_dropped": 0,
+    "sha256": "16b81a091e74cb442959debf08112ada792413c969a65c74ac1fc5364aacb8b3"
+   },
+   {
+    "split": "test",
+    "run": "live-20261107T204527Z",
+    "provider": "kproc",
+    "lines": 32365,
+    "duplicates_dropped": 0,
+    "sha256": "888a657d83ed75fb893b081da79172ece50bc4aae930840eab3d06d7560fd1da"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T025027Z",
+    "provider": "kfile",
+    "lines": 411346,
+    "duplicates_dropped": 0,
+    "sha256": "838bf3c9c5b5b6dbd034c8a7e35b249fa831b937838ffe7f100e82cf2481e834"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T025027Z",
+    "provider": "knet",
+    "lines": 1196,
+    "duplicates_dropped": 0,
+    "sha256": "f642f6dc89223408a7e59c267ba8e810a5f97d6e07ca1551d9fedc645db8bd29"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T025027Z",
+    "provider": "kproc",
+    "lines": 37761,
+    "duplicates_dropped": 0,
+    "sha256": "17caff576e080bdb49136198b72e96cef121fd2e6bdfa7aaa77a285484f6c77b"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T085528Z",
+    "provider": "kfile",
+    "lines": 357440,
+    "duplicates_dropped": 0,
+    "sha256": "3e8d8b4bb579d0f3b6988374eb58701d33651d861a922f7664c92cb281adcb82"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T085528Z",
+    "provider": "knet",
+    "lines": 1412,
+    "duplicates_dropped": 0,
+    "sha256": "310666b4a74351ac77545123ae21479f270b3d3e20449d219bf0c1d630ddc74b"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T085528Z",
+    "provider": "kproc",
+    "lines": 32655,
+    "duplicates_dropped": 0,
+    "sha256": "f8c5b9cc172d16f1a7e17b2a5bf01f5738201b2ceed25bc82f49e6e900160639"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T150027Z",
+    "provider": "kfile",
+    "lines": 469475,
+    "duplicates_dropped": 0,
+    "sha256": "05921f5b89a50f10042559a76a10315504e67f69f806bba743eb6333803b832c"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T150027Z",
+    "provider": "knet",
+    "lines": 29663,
+    "duplicates_dropped": 0,
+    "sha256": "88b93b180ba0e5d36e70eddd47421aa8eea5877c9723e463bd4323543bce1e17"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T150027Z",
+    "provider": "kproc",
+    "lines": 46123,
+    "duplicates_dropped": 0,
+    "sha256": "dc4acc501a9431bb887234523d79d7f54b867f8194471ade7ed19081163ef0b6"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T210527Z",
+    "provider": "kfile",
+    "lines": 522235,
+    "duplicates_dropped": 0,
+    "sha256": "9bc3ea286814091e231335ac76d038073b3fa82e30dbbc093c646deea084d1ae"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T210527Z",
+    "provider": "knet",
+    "lines": 1055,
+    "duplicates_dropped": 0,
+    "sha256": "0ee5e284ba6b72d2bf50b8adad4eb5d91c862e866abe06b9625c502739a516cd"
+   },
+   {
+    "split": "test",
+    "run": "live-20261108T210527Z",
+    "provider": "kproc",
+    "lines": 32269,
+    "duplicates_dropped": 0,
+    "sha256": "e6f8fd7ffc0c7795e743044e5e7398b9f4e519e373a7c34636c1eb5d87672f63"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T031027Z",
+    "provider": "kfile",
+    "lines": 425072,
+    "duplicates_dropped": 0,
+    "sha256": "a340191730098092423128d717bca621db3b7b1cb671d247ecd7529dd635b22d"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T031027Z",
+    "provider": "knet",
+    "lines": 1245,
+    "duplicates_dropped": 0,
+    "sha256": "6b00400a3122e2ca51172e7445a610d2aba43c1c8aae74daf03369638ea869c2"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T031027Z",
+    "provider": "kproc",
+    "lines": 38177,
+    "duplicates_dropped": 0,
+    "sha256": "861f2a4b724b2eacae219a5a5b5c19dbc5f323f210622ab6e32fda829b0ec816"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T091527Z",
+    "provider": "kfile",
+    "lines": 1032878,
+    "duplicates_dropped": 0,
+    "sha256": "2b5421874bd26f381639c4e7e6c13669e6043529df4a8392f9e5751cfa2852cd"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T091527Z",
+    "provider": "knet",
+    "lines": 73367,
+    "duplicates_dropped": 0,
+    "sha256": "f1841f0255299557e92b7212d8a54b2620c1c8b3352b5dea93248be38d4ba576"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T091527Z",
+    "provider": "kproc",
+    "lines": 31921,
+    "duplicates_dropped": 0,
+    "sha256": "9e3e2b24ad5aa97c92b9263397f2f4039284ebb18f13566d263c729f01b5e257"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T113032Z",
+    "provider": "kfile",
+    "lines": 675154,
+    "duplicates_dropped": 0,
+    "sha256": "1a4e1d16c8d00a90c6d49a58844105890bea812840e64ae70b01b00a52b0e59f"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T113032Z",
+    "provider": "knet",
+    "lines": 123789,
+    "duplicates_dropped": 0,
+    "sha256": "7b890571e5e60dd33692f3142fa388975670f29a2f6c35b98e22154e382d73a3"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T113032Z",
+    "provider": "kproc",
+    "lines": 56446,
+    "duplicates_dropped": 0,
+    "sha256": "ce65e40d3f615c76841613819e946c28b2839662e3ed5e1cb9f21acc1fae9e59"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T173536Z",
+    "provider": "kfile",
+    "lines": 556208,
+    "duplicates_dropped": 0,
+    "sha256": "a0e614a6d68afa78f1c392079ad4ee1eb46b33a0d728b44cd3dff34209a4d3c5"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T173536Z",
+    "provider": "knet",
+    "lines": 2091,
+    "duplicates_dropped": 0,
+    "sha256": "71dc94e084fbf3ddf09d54c0b601173b08a5669f5188b95a89a6aea9f82d15eb"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T173536Z",
+    "provider": "kproc",
+    "lines": 35572,
+    "duplicates_dropped": 0,
+    "sha256": "347765d317fd6fd563af0d7593afd5b68b0fb33f6fff09534acb983463e19c76"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T234036Z",
+    "provider": "kfile",
+    "lines": 457808,
+    "duplicates_dropped": 0,
+    "sha256": "34dcbd2353edd0788e56e5d2275cabe30974efefe70cbd0bd34cbf30f8fe3429"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T234036Z",
+    "provider": "knet",
+    "lines": 3024,
+    "duplicates_dropped": 0,
+    "sha256": "a9f50ba7f6816081d51ee03e5ad26f11fc1c2dbbbb5e21e33821a6192ccab487"
+   },
+   {
+    "split": "test",
+    "run": "live-20261109T234036Z",
+    "provider": "kproc",
+    "lines": 39456,
+    "duplicates_dropped": 0,
+    "sha256": "3e46503d13f6a7b13d41e4b82d9ee5eb22a8d0ca7eafcb0b196fee665f045e2d"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T054536Z",
+    "provider": "kfile",
+    "lines": 381502,
+    "duplicates_dropped": 0,
+    "sha256": "0d8dd281337b1f8ccd2e2783c79a92577f6d2a620566bddc8ac639a4018f6243"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T054536Z",
+    "provider": "knet",
+    "lines": 3914,
+    "duplicates_dropped": 0,
+    "sha256": "f8fd5e42b5dd364a655ef76a9c7edc1a8ba6ac993c7de0b52d88d6036bcb6577"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T054536Z",
+    "provider": "kproc",
+    "lines": 34444,
+    "duplicates_dropped": 0,
+    "sha256": "362d42855c9c2a97d165282b17c743b1190962e6230e01c455dcd68e0261e06a"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T115036Z",
+    "provider": "kfile",
+    "lines": 884787,
+    "duplicates_dropped": 0,
+    "sha256": "a08b6572e694909c13ee0f1a1e4e8a6975f6a1ad632758f3e5d2756a69ebbb36"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T115036Z",
+    "provider": "knet",
+    "lines": 130943,
+    "duplicates_dropped": 0,
+    "sha256": "35730c10b75f37f7037003e1064d2038b33ebb0f1b397d4a2edfa3a739d51075"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T115036Z",
+    "provider": "kproc",
+    "lines": 89210,
+    "duplicates_dropped": 0,
+    "sha256": "05d03c7d81d3908ba4a4cc6dc0f149643e5d898f83548900054561ebbd4829a7"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T175535Z",
+    "provider": "kfile",
+    "lines": 698381,
+    "duplicates_dropped": 0,
+    "sha256": "62c908790ddef64f6da6b5efc15f483dacf76e31656ce0d0110a55227784b684"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T175535Z",
+    "provider": "knet",
+    "lines": 2475,
+    "duplicates_dropped": 0,
+    "sha256": "9e5c87ebb7056e1927476301b21ea050447f850f54aeaf3bac71bb05d95c7355"
+   },
+   {
+    "split": "test",
+    "run": "live-20261110T175535Z",
+    "provider": "kproc",
+    "lines": 127311,
+    "duplicates_dropped": 0,
+    "sha256": "a4ed653b2d57d4eb6a0f2da8644c5a279ea8db1ed54e89d534a6f0630db35cc1"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T000035Z",
+    "provider": "kfile",
+    "lines": 697479,
+    "duplicates_dropped": 0,
+    "sha256": "b5c0e52b8e884d586098f61a5271daddf6f6bfff74f669f1392d522edb08dffc"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T000035Z",
+    "provider": "knet",
+    "lines": 1885,
+    "duplicates_dropped": 0,
+    "sha256": "d5cee7d9658312abc595805688f9b21e35751366839430ed68043ca33077f4a1"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T000035Z",
+    "provider": "kproc",
+    "lines": 126376,
+    "duplicates_dropped": 0,
+    "sha256": "be2d212aef6f97d02adc6ed039f57854ae4138880b6d5a225522600b81d18dcb"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T060535Z",
+    "provider": "kfile",
+    "lines": 754028,
+    "duplicates_dropped": 0,
+    "sha256": "10008a218f7c9488c1f7615ef2b636dc1df236911c89b3ced392fbd1459bc700"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T060535Z",
+    "provider": "knet",
+    "lines": 6165,
+    "duplicates_dropped": 0,
+    "sha256": "ce94dd34f64d70c9e895c662885a585a41d86dd76b59bf07b9615708967f98d4"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T060535Z",
+    "provider": "kproc",
+    "lines": 128274,
+    "duplicates_dropped": 0,
+    "sha256": "0ce61ec84d30a69917ec17de05831e0765eabd972de1f693da06483a49da7fb3"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T121035Z",
+    "provider": "kfile",
+    "lines": 707828,
+    "duplicates_dropped": 0,
+    "sha256": "02d7501ea9b810a62ed18b57688e4a6ca8edf8637f4a80f13d168ce78beab9c9"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T121035Z",
+    "provider": "knet",
+    "lines": 5139,
+    "duplicates_dropped": 0,
+    "sha256": "094cbbfa9a8b29ea746e8491a53a9d8a19d8e578ab482e4dc16308d6cb5a83ca"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T121035Z",
+    "provider": "kproc",
+    "lines": 127046,
+    "duplicates_dropped": 0,
+    "sha256": "2f4fd89e764e2c1a87ef4c58ca8f70068bd24d561a2ca013432c0102b6b72634"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T181536Z",
+    "provider": "kfile",
+    "lines": 699637,
+    "duplicates_dropped": 0,
+    "sha256": "7a71b077ab7f7b0364c136e11ae86ce5362f2e1fc21b48e516897a4e24dae840"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T181536Z",
+    "provider": "knet",
+    "lines": 2384,
+    "duplicates_dropped": 0,
+    "sha256": "f2e97bdabbae9934f454517109c628a82db405d8e6859a555de02da6ed85387c"
+   },
+   {
+    "split": "test",
+    "run": "live-20261111T181536Z",
+    "provider": "kproc",
+    "lines": 127619,
+    "duplicates_dropped": 0,
+    "sha256": "40a6ba6311f87fa32968fdc7ab102bfe7aca45b3ec9e4bf530cd14911049b8c6"
+   },
+   {
+    "split": "test",
+    "run": "live-20261112T002035Z",
+    "provider": "kfile",
+    "lines": 747008,
+    "duplicates_dropped": 0,
+    "sha256": "b6f7d0898224299f274b85f9ddd8a744d13719cf0eff5f93f3543f8917751946"
+   },
+   {
+    "split": "test",
+    "run": "live-20261112T002035Z",
+    "provider": "knet",
+    "lines": 307125,
+    "duplicates_dropped": 0,
+    "sha256": "ddca19d94e276071bc9fd5a7af94f84d9fd642794f2d18a552929211a6165d2e"
+   },
+   {
+    "split": "test",
+    "run": "live-20261112T002035Z",
+    "provider": "kproc",
+    "lines": 130518,
+    "duplicates_dropped": 0,
+    "sha256": "e273c658eb9eab97be7a9724c9866f0126d072ef69d9facfa49d33c2d99cbcdf"
+   },
+   {
+    "split": "test",
+    "run": "live-20261112T062536Z",
+    "provider": "kfile",
+    "lines": 692724,
+    "duplicates_dropped": 0,
+    "sha256": "ddf7905a79b426848e2475a3477f179654561a4af3f925fdc188b1dbb16d277f"
+   },
+   {
+    "split": "test",
+    "run": "live-20261112T062536Z",
+    "provider": "knet",
+    "lines": 2302,
+    "duplicates_dropped": 0,
+    "sha256": "48bbbd45663085cafbb81046a211f07867f7c34b724a8fca9a332664d2a21ef9"
+   },
+   {
+    "split": "test",
+    "run": "live-20261112T062536Z",
+    "provider": "kproc",
+    "lines": 119684,
+    "duplicates_dropped": 0,
+    "sha256": "dcce8b9217af61677aac3f805cff3c4051ad213d4f5e8059547e56a1585d449d"
+   }
+  ],
+  "runs": {
+   "live-20261106T202527Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261107T023027Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261107T083527Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261107T144028Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261107T204527Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261108T025027Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261108T085528Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261108T150027Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261108T210527Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261109T031027Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261109T091527Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261109T113032Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261109T173536Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261109T234036Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261110T054536Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261110T115036Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261110T175535Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261111T000035Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261111T060535Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261111T121035Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261111T181536Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261112T002035Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   },
+   "live-20261112T062536Z": {
+    "dos_map": {
+     "\\device\\harddiskvolume3": "c:",
+     "\\device\\cdrom0": "d:"
+    },
+    "dos_map_source": "loki etw-meta line (etwctl start on the VM, or loki_push.py)"
+   }
+  },
+  "ledger_lines": 0,
+  "tools": {
+   "loki_pull": "59f90db13977fb99f215c89675871f96dfb5ad6aa9f0a49397951ec5297fc8eb",
+   "lokiclient": "020b85cea95ce2faeb34059c9812cdd6101fc07ae9add4b6436fcaa87f1bab55"
+  }
+ },
+ "postprocessed_utc": "2026-11-12T13:14:23.313346+00:00"
+}

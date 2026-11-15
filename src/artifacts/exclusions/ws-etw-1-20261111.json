@@ -1,0 +1,17 @@
+{
+ "comment": "ws-etw-1 idle range 2026-11-06T20:30Z -> 2026-11-09T10:10Z. Label source: operator assertion + a tally of all 3,456 process starts from 11-06 16:30Z to the end (Loki kproc). Kept as OS work: Defender updates (MsMpEng -> wevtutil x26 on 11-07 14:30Z), servicing, the 04:19Z maintenance jobs. The range starts at the second live-* run: the first run (live-20261106T142029Z) has no etw-meta line in Loki, so its inferred dos map lacks the cdrom0 entry and the build refuses mixed maps (as exp10's first try). It ends before the RDP session of 11-09 10:17Z (git, msiexec, node).",
+ "ranges": [
+  {"start": "2026-11-07T02:29:00Z", "end": "2026-11-07T02:32:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-07T03:38:00Z", "end": "2026-11-07T03:58:00Z", "reason": "RDP connect 03:40:13Z -> disconnect 03:56:21Z (rdpclip, logonui, taskmgr from explorer): human session, not idle"},
+  {"start": "2026-11-07T08:34:00Z", "end": "2026-11-07T08:37:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-07T14:39:00Z", "end": "2026-11-07T14:42:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-07T20:44:00Z", "end": "2026-11-07T20:47:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-08T02:49:00Z", "end": "2026-11-08T02:52:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-08T08:54:00Z", "end": "2026-11-08T08:57:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-08T14:59:00Z", "end": "2026-11-08T15:02:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-08T16:40:00Z", "end": "2026-11-08T21:00:00Z", "reason": "RDP connect 16:41:02Z -> disconnect 20:56:00Z (rdpclip, logonui, cmd from explorer): human session, not idle"},
+  {"start": "2026-11-08T21:04:00Z", "end": "2026-11-08T21:07:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-09T03:09:00Z", "end": "2026-11-09T03:12:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"},
+  {"start": "2026-11-09T09:14:00Z", "end": "2026-11-09T09:17:00Z", "reason": "etwctl rotation canary: cmd /c whoami + python at a new live-* run, not idle"}
+ ]
+}

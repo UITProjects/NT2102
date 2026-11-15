@@ -129,6 +129,10 @@ and compare `windows.csv` / `llm_verdicts.csv` of `replay-live-<UTC>` with the l
 - Catch-up is bounded: at most 20 000 lines per provider per poll, and the clock waits for the provider that
   is behind, so a 1-h backlog arrives in slices instead of one multi-GB read (UI: "catching up").
 - The UI tab re-syncs by itself after the server restarts or the session changes (no reload needed).
+- **Parameters panel** (top of the UI, 2026-11-15): every scored VM side by side, read from that engine's `/api/status`, so
+  it shows what scoring uses now. Rows: model run, training hyperparameters (`train_meta.json` args), τ, converter check,
+  window/stride/lateness, SG-Det cut-off + NET rule, n_seed/max_e/min nodes, LLM provider/model/budget, and the running
+  code (git sha, branch, uncommitted changes; read at server start). Values that differ from the paper are tagged [OURS].
 - `OOMScoreAdjust=500`: under memory pressure the kernel kills `ocr-live` (it restarts) before Loki/Docker.
 - Still open: a ws-etw-0 → Loki push stall longer than `--loki-idle-s` drops that backlog as late (PROGRESS).
 
@@ -195,8 +199,12 @@ A red window is an observation, not a detection result, until the window has lab
 - `raw/<stream>.json`: verbatim; can be replayed or converted into a labelled test split.
 - `windows.csv`: one row per window, incl. `subgraphs_kept, max_sg_score, max_level, alert, llm`
   (`llm` = pending when written; final verdicts in `llm_verdicts.csv`).
-- `windows/<wid>/`: `edges.csv, node_attrs.csv, features_model.csv, scores.csv, subgraphs.json`, and
+- `windows/<wid>/`: `edges.csv, node_attrs.csv, node_cmdlines.csv, features_model.csv, scores.csv, subgraphs.json`, and
   `llm/` (`sg<id>_doc.txt` = exact LLM input, `triage.json`, `sg<id>_report.md`, `iocs.json`, `calls.jsonl`).
+- `node_cmdlines.csv` (DEVIATIONS D14): PROCESS nodes joined to a Sysmon EID 1 record (stream `sysmon`) by PID + start time:
+  `node, pid, start_utc, image, cmdline, decoded, parent_cmdline, delta_ms` (display copy: `-enc` decoded, secrets redacted,
+  400 chars). Investigation-only: shown in the UI and the LLM document, never scored. Empty when the VM has no Sysmon.
+  Offline for any saved window: `python src/pipeline/cmdlines.py --sysmon raw/sysmon.json --node-attrs windows/<wid>/node_attrs.csv --out x.csv`.
 
 ## Several Windows hosts
 
@@ -220,22 +228,20 @@ VM: a selftest checks that a VM's windows are identical either way. Until `lab h
 `--host` twice still builds a pooled experiment (`merge_experiments()`, D12), but live scoring uses one model per host.
 A range that holds several hosts and no `--host` is refused. Lines from before the rename are `--host ws-etw`.
 
-### Cross-host correlation (`src/live/correlate.py`, DEVIATIONS D13)
+### Cross-host follow-up (`src/live/correlate.py`, DEVIATIONS D13)
 
-With two or more VMs scored and `/etc/nt2102-hosts.json` present (Ansible writes it from the inventory), plain code links
-the hosts; the LLM only explains the result. Each VM's model cannot do this, because it only sees that VM's graph.
+With two or more VMs scored and `/etc/nt2102-hosts.json` present (Ansible writes it from the inventory), a **red window** on
+one VM is followed to the other: every NET node in its kept subgraphs whose IP is another monitored VM is a seed. The raw
+network lines give the exact connection (5-tuple), so the other end is found on the peer VM: its socket node, the process
+that owns it, and what that process touched, scored by the **peer's own model**. The LLM gets both sides in one document.
+Each VM's model cannot do this, because it only sees that VM's graph.
 
 | Level | Meaning | Effect |
 |---|---|---|
-| `link` | unicast flow between monitored VMs, not in the known-traffic list | shown only, no LLM |
-| `suspected` | one end had a red window at or before the flow | LLM report of the full flow |
-| `confirmed` | the other end also had a red window in range | LLM report again |
+| `pending` | a red window's kept subgraph holds a socket on another VM; the peer's windows in [t − 5 min, t + 5 min] are not closed yet | shown |
+| `one-sided` | the peer's model scored the nodes around that connection as normal | LLM report of both sides |
+| `corroborated` | the peer's model flagged ≥ 1 of them, or one of its kept subgraphs holds them | LLM report again |
 
-Nothing here changes a VM's own windows. Lookback is 3 windows. First record normal traffic, from a range with no attack:
-
-```bash
-lab flows --start 2026-11-06T17:00:00Z --end 2026-11-07T03:00:00Z && sudo systemctl restart ocr-live
-```
-
-Without that file every flow counts as new, and the UI says so. Results: `sessions/campaigns.jsonl`, LLM files in
-`sessions/campaigns/<id>/`, API `/api/campaigns`, UI panel **Cross-host activity**. Validated on synthetic flows only.
+A connection between the VMs with no red window is never shown, and there is no known-traffic list. Nothing here changes a
+VM's own windows. Results: `sessions/crosshost.jsonl`, LLM files in `sessions/crosshost/<id>/`, API `/api/crosshost`, UI
+panel **Cross-host follow-up**. Validated on synthetic windows only.

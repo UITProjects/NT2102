@@ -1,0 +1,30 @@
+---
+# One `push "route ..."` line per subnet. Clients pick up a new route only on reconnect.
+- name: Push lab routes to VPN clients
+  ansible.builtin.lineinfile:
+    path: "{{ vpn_server_conf }}"
+    line: 'push "route {{ item.network }} {{ item.netmask }}"'
+    insertafter: '^push "route '
+    state: present
+  loop: "{{ vpn_push_routes }}"
+  loop_control:
+    label: "{{ item.network }}/{{ item.netmask }}"
+  notify: Restart OpenVPN
+  tags: [push_routes]
+
+# RETURN ends POSTROUTING for these packets before the hand-made MASQUERADE rule
+# (-s 10.8.0.0/24 -o eth0 -j MASQUERADE, left untouched), so their source stays 10.8.0.x.
+- name: Skip SNAT for VPN clients going to lab subnets
+  ansible.builtin.iptables:
+    table: nat
+    chain: POSTROUTING
+    source: "{{ vpn_client_cidr }}"
+    destination: "{{ item }}"
+    jump: RETURN
+    action: insert
+    rule_num: "1"
+    state: present
+    comment: "nt2102: VPN clients -> {{ item }} keep real source (no SNAT)"
+  loop: "{{ vpn_no_snat_cidrs }}"
+  notify: Save iptables
+  tags: [nat]

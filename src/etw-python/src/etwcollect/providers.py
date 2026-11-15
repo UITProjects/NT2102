@@ -1,4 +1,4 @@
-"""providers.py - the three kernel ETW providers the lab records, by name.
+"""providers.py - the ETW providers the lab records, by name: three kernel providers + Sysmon (optional).
 
 etwlab.json (written by Ansible, src/ansible/roles/win_collector/templates/etwlab.json.j2) names providers
 and keywords; ETW needs the provider GUID. The GUIDs are the ones SilkETW wrote into every line's
@@ -10,16 +10,22 @@ GUIDS: dict[str, uuid.UUID] = {
     "Microsoft-Windows-Kernel-Process": uuid.UUID("22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716"),
     "Microsoft-Windows-Kernel-File":    uuid.UUID("edd08927-9cc4-4e65-b970-c2560fb5c289"),
     "Microsoft-Windows-Kernel-Network": uuid.UUID("7dd42a49-5329-4832-8dfd-43d979153a88"),
+    # Sysmon's manifest provider (installed by Ansible role win_sysmon, Event ID 1 only): the process command
+    # line, which Kernel-Process ProcessStart does not carry. Read by a real-time session like the others
+    # (checked on ws-etw-0 2026-11-13 with a logman trace). Investigation-only, never a feature (DEVIATIONS D14).
+    "Microsoft-Windows-Sysmon":         uuid.UUID("5770385f-c22a-43e0-bf4c-06f5698ffbd9"),
 }
 
 NETWORK = "Microsoft-Windows-Kernel-Network"
+SYSMON_STEM = "sysmon"
+SYSMON_PROCESS_CREATE = 1   # Sysmon Event ID 1; the only one kept (its own 4/16 state events are dropped)
 
 
 class Provider:
     """One collector entry of etwlab.json: {"Stem": "kfile", "Provider": "...Kernel-File", "Keywords": "0x380"}."""
 
     def __init__(self, stem: str, name: str, keywords: int | str, required: bool = True):
-        self.stem = stem                      # file stem and Loki `provider` label: kproc | kfile | knet
+        self.stem = stem                      # file stem and Loki `provider` label: kproc | kfile | knet | sysmon
         self.name = name
         self.keywords = int(keywords, 16) if isinstance(keywords, str) else int(keywords)
         self.required = required

@@ -125,6 +125,8 @@ repo_dest: "/home/{{ ansible_user }}/NT2102"
 # the inventory's [ubuntu:vars], not here.
 # live_sg_moderate_from: SG-Det cut-off for ocr-live (Moderate from this subgraph score). Same rule, not defined
 # here; the unit template defaults it to 10 = [PAPER] §7.2.1 (user, 2026-11-03); 30 = the old [OURS] live scale.
+# live_sg_require_types: ocr-live --sg-require-types (the [OURS] NET rule, D8). Same rule, not defined here; the unit
+# template defaults it to net; none = off (paper behaviour, level alone).
 # Live sessions keep their window results (windows/, windows.csv, sessions/history.jsonl) forever: that is the
 # queryable history. Only the bulky raw copy (<session>/raw/, ~2 GB/h measured under load) is deleted hourly once
 # nothing in it changed for this many hours (replay-* folders and any session holding a .keep file are skipped).
