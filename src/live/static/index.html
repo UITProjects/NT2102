@@ -212,7 +212,7 @@ html.present .alertcard{max-height:560px}
   <section class="panel" id="paramsPanel">
     <h2>Parameters (as running) <span class="muted" id="paramsSrv"></span></h2>
     <div class="pgrid" id="params"><div class="muted">loading…</div></div>
-    <div class="note"><span class="ours">[OURS]</span> = this project's choice, not the paper's</div>
+    <div class="note"><span class="ours">highlighted</span> = this project's choice, not the paper's</div>
   </section>
 
   <section class="panel" id="pipelinePanel">
@@ -374,28 +374,28 @@ html.present .alertcard{max-height:560px}
     const c = srv.code;
     $("paramsSrv").innerHTML = c ? `· code <span class="mono">${esc(c.sha)}</span> (${esc(c.branch)}${c.dirty ? ', <span class="ours">uncommitted changes</span>' : ""})`
       + (srv.started_ms ? ` · server started ${esc(dhm(srv.started_ms))}` : "") : "";
-    // Only what is ours: values that differ from the paper, plus the [OURS]-by-design rows. Paper defaults are not
+    // Only what is ours: values that differ from the paper, plus the rows that are ours by design. Paper defaults are not
     // listed (the presenter explains them when asked).
-    const OURS = ' <span class="ours">[OURS]</span>';
+    const our = x => `<span class="v ours">${esc(x ?? "–")}</span>`;   // this project's choice: highlighted value, no tag
     const txt = x => `<span class="v">${esc(x ?? "–")}</span>`;
     const diffRow = (label, x, key) => x != null && key in PAPER && Number(x) !== PAPER[key]
-      ? [[label, `${txt(fmt(x))}${OURS} <span class="muted">(paper ${PAPER[key]})</span>`]] : [];
+      ? [[label, `${our(fmt(x))} <span class="muted">(paper ${PAPER[key]})</span>`]] : [];
     $("params").innerHTML = cols.map(h => {
       const st = paramsBy[h], m = st.model || {}, t = m.train || {}, p = st.params || {}, a = p.alg1 || {}, L = p.llm || {};
       const tf = (st.trained_for || []).find(x => x.model === base(m.run_dir));
-      const cut = a.min_score != null ? [["alert cut-off", `score > ${txt(fmt(a.min_score))}${OURS}`]]
-        : a.min_level !== "Moderate" ? [["alert cut-off", `level ≥ ${txt(a.min_level)}${OURS}`]]
+      const cut = a.min_score != null ? [["alert cut-off", `score > ${our(fmt(a.min_score))}`]]
+        : a.min_level !== "Moderate" ? [["alert cut-off", `level ≥ ${our(a.min_level)}`]]
         : diffRow("Moderate from", a.moderate_from, "moderate_from");
       const rows = [
         ["model", txt(base(m.run_dir)) + (tf?.hosts?.length ? ` <span class="muted">(trained for ${esc(tf.hosts.join(", "))})</span>` : "")],
         ["τ per type", txt(Object.entries(m.tau || {}).map(([k, x]) => `${k} ${num(x, 4)}`).join(" · "))],
         ...diffRow("layers", t.layers, "layers"), ...diffRow("hidden", t.hidden, "hidden"),
         ...diffRow("lr", t.lr, "lr"), ...diffRow("β", t.beta, "beta"),
-        ["window / stride", `${txt(`${fmt(p.window_min)} / ${fmt(p.stride_min)} min`)}${OURS} <span class="muted">(live windows)</span>`],
+        ["window / stride", `${our(`${fmt(p.window_min)} / ${fmt(p.stride_min)} min`)} <span class="muted">(live windows)</span>`],
         ...cut,
-        ...(a.require_types?.length ? [["NET rule", `${txt(a.require_types.join(" + "))}${OURS}`]] : []),
+        ...(a.require_types?.length ? [["NET rule", `${our(a.require_types.join(" + "))}`]] : []),
         ...diffRow("n_seed", a.n_seed, "n_seed"), ...diffRow("max edges", a.max_edges, "max_edges"),
-        ...(L.provider ? [["LLM triage", `${txt(`${L.provider} / ${L.model}`)}${OURS}`]] : []),
+        ...(L.provider ? [["LLM triage", `${our(`${L.provider} / ${L.model}`)}`]] : []),
       ];
       return `<div class="pcol"><h3>${esc(h || "this VM")}</h3><table>${rows.map(r => r.length === 1
         ? `<tr class="grp"><td colspan="2">${esc(r[0])}</td></tr>` : `<tr><td>${esc(r[0])}</td><td>${r[1]}</td></tr>`).join("")}</table></div>`;
