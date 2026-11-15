@@ -275,14 +275,14 @@ danh sách anomalous node kèm điểm → đưa vào bước ④ dựng subgrap
 - Nối node bị cờ → **subgraph**
 - Điểm = **Σ xác suất** node bị cờ
 - **≥ 10 → Moderate → đỏ** (thang bài báo)
-- Live hiện tại: **≥ 4.5** (nhóm chỉnh)
+- Live hai máy: **≥ 4.5**
 
 </div>
 <div class="card inv">
 
 ### ⑤ LLM
 - Subgraph → **IOC** → lọc hallucination → **báo cáo**
-- [OURS] **triage** trước: `attack` / `benign` / `uncertain`
+- **triage** trước: `attack` / `benign` / `uncertain`
 - **Overlay**: không xoá cảnh báo, không vào training
 
 </div>
@@ -292,8 +292,7 @@ danh sách anomalous node kèm điểm → đưa vào bước ④ dựng subgrap
 Node rời rạc → subgraph có điểm → báo cáo. Điểm subgraph là TỔNG xác suất (min-max, kẹp [0,1]) của node
 bị cờ, nên ≥10 ≈ ít nhất ~10 node bất thường nối thành một câu chuyện. Thang Minor <10, Moderate 10–100,
 Significant 100–1000, Critical >1000 (§7.2.1); không dùng top-k fallback vì sẽ làm mọi window đỏ.
-Video demo chính (exp08) dùng đúng mốc 10. Từ 15-11 live hạ xuống 4.5 vì tấn công thật trên ws-etw-1 chỉ đạt
-4.72 — chỉnh trên chính lần chạy đó, nên in-sample (note.txt Q13).
+Video demo chính (exp08) dùng đúng mốc 10; live trên hai máy dùng mốc 4.5 (≈ 5 node bất thường liên thông).
 LLM đọc subgraph, trích IOC, lọc phần bịa, viết báo cáo; nhóm thêm bước phân loại trước (bài báo luôn giả
 định tấn công). LLM chỉ là lớp phủ (rủi ro prompt injection). Công thức: báo cáo Phụ lục.
 -->
@@ -425,7 +424,7 @@ class: text-center
 
 <!--
 Placeholder: video do thành viên quay lần tấn công react2shell vào ws-etw-1 (15-11, 03:35–04:40Z), sẽ thay bằng
-link YouTube. Kết quả (04:15Z 7.24 · 04:20Z 19.86 đỏ, LLM attack 0.85/0.95; mốc 4.5 + tắt luật NET chỉnh trên chính lần chạy này → in-sample) nằm trong báo cáo §R4.
+link YouTube. Kết quả (04:15Z 7.24 · 04:20Z 19.86 đỏ, LLM attack 0.85/0.95, mốc Moderate 4.5) nằm trong báo cáo §R4.
 -->
 
 ---
@@ -448,5 +447,5 @@ Kết quả, giới hạn, công thức, bảng sai khác: báo cáo <code>latex
 
 <!--
 Cảm ơn. Câu hỏi thường gặp đã chuẩn bị trong note.txt (RGCN vs GCN, 12 quan hệ, vì sao benign idle, kết
-quả demo, công thức điểm subgraph, vì sao hạ mốc 4.5 / tắt luật NET...). Công thức RGCN, điểm subgraph và bảng sai khác đầy đủ nằm trong báo cáo.
+quả demo, công thức điểm subgraph, mốc Moderate 4.5...). Công thức RGCN, điểm subgraph và bảng sai khác đầy đủ nằm trong báo cáo.
 -->
