@@ -25,7 +25,7 @@ OUT = ROOT / "submit" / "NT2102-report.docx"
 
 
 def run(cmd, cwd):
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, errors="replace")
     if r.returncode != 0:
         sys.exit(f"FAILED: {' '.join(map(str, cmd))}\n{r.stdout[-3000:]}\n{r.stderr[-3000:]}")
 
@@ -154,10 +154,6 @@ Mã nguồn: \url{https://github.com/UITProjects/NT2102} · Video demo: \url{htt
 
 # custom macros of main.tex, as plain text for pandoc
 MACROS = r"""
-\newcommand{\tagpaper}{[PAPER]}
-\newcommand{\tagrepo}{[AUTHOR CODE]}
-\newcommand{\tagours}{[OURS]}
-\newcommand{\taginf}{[INFERENCE]}
 \newcommand{\stepnum}[1]{(#1)}
 \newcommand{\swatch}[2]{■ #2}
 \newcommand{\arrowkey}[2]{→ #2}
@@ -216,8 +212,10 @@ def main():
     # 3. cross-references and citations -> literal numbers
     lab, cit = labels(), bibnums()
     s = re.sub(r"\\(?:eq)?ref\{([^}]+)\}", lambda m: lab.get(m.group(1), "??"), s)
-    s = re.sub(r"\\cite[pt]?\{([^}]+)\}",
-               lambda m: "[" + ", ".join(cit.get(k.strip(), "?") for k in m.group(1).split(",")) + "]", s)
+    # \cite{a,b} -> [n, m];  \cite[§5.1.1]{a} -> [n, §5.1.1]  (the note may hold one level of {...}, e.g. \texttt)
+    s = re.sub(r"\\cite[pt]?(?:\[((?:[^\[\]{}]|\{[^{}]*\})*)\])?\{([^}]+)\}",
+               lambda m: "[" + ", ".join([cit.get(k.strip(), "?") for k in m.group(2).split(",")]
+                                         + ([m.group(1)] if m.group(1) else [])) + "]", s)
     missing = sorted(set(re.findall(r"\?\?", s)))
     if missing:
         print("WARNING: unresolved refs remain")

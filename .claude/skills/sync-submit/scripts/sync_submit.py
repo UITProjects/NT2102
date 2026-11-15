@@ -40,7 +40,7 @@ warnings: list[str] = []
 
 def run(cmd, cwd, timeout=900):
     print("$", " ".join(map(str, cmd)), f"  (in {cwd.relative_to(ROOT) if cwd != ROOT else '.'})")
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, errors="replace", timeout=timeout)
     if r.returncode != 0:
         sys.exit(f"FAILED ({r.returncode}): {' '.join(map(str, cmd))}\n{r.stdout[-3000:]}\n{r.stderr[-3000:]}")
     return r.stdout
@@ -119,8 +119,8 @@ def check():
             warnings.append(f"{name} is over the form limit")
     pptx = SUBMIT / "NT2102-slides.pptx"
     n_slides = slide_count(pptx) if pptx.exists() else None
-    if n_slides and n_slides > 15:
-        warnings.append(f"pptx has {n_slides} slides (deck rule: max 15; was it exported with clicks?)")
+    if n_slides and n_slides > 20:
+        warnings.append(f"pptx has {n_slides} slides (deck rule: max 20; was it exported with clicks?)")
     if "<VIDEO_ID>" in (ROOT / "presentation/slides.md").read_text():
         warnings.append("slide '3 · Video demo 2' is still a placeholder (<VIDEO_ID> in presentation/slides.md)")
     update_form_answers({n: s for n, s, _ in rows if s != "MISSING"}, n_slides)

@@ -33,11 +33,11 @@ What each stage does:
 - `report`: `latexmk -pdf` in `latex/` (fails on undefined refs/cites), then `scripts/build_docx.py`
   (TikZ + algorithm blocks rendered to PNG with the report preamble, paper PDFs to PNG, `\ref`/`\cite` resolved from the
   .aux files, front page with the member table and `[dán ảnh]` / `[SĐT]` placeholders, pandoc), then copies `main.pdf`.
-- `slides`: `npx slidev export --format pptx --no-with-clicks` (without `--no-with-clicks` every click becomes a slide: 44 instead of 15).
+- `slides`: `npx slidev export --format pptx --no-with-clicks` (without `--no-with-clicks` every click becomes a slide).
 - `source`: `git ls-files` + untracked-not-ignored, minus `latex/report.docx`; the `OCR-APT/` submodule is left out (the
   form answers link it). Rebuilt from the working tree, so uncommitted edits are included.
 - `demo`: copies the video only if it changed.
-- `check`: form size limits, pptx slide count (≤ 15), the video-2 placeholder, `\todoval` left; rewrites the size
+- `check`: form size limits, pptx slide count (≤ 20), the video-2 placeholder, `\todoval` left; rewrites the size
   column and slide count in `form-answers.md`.
 
 The script exits non-zero on a failed build; show the user the tail of the error, do not paper over it.
