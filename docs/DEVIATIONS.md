@@ -180,6 +180,31 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     11-03T15:25Z): **6 red at ≥ 10 vs 1 red at ≥ 30** (16, 25, 13, 12, 15 + the 129.0 Significant window that is
     red on both). The exp06 attack windows of 2026-11-02 (max 9.0 / 2.0) stay **Minor (green) at 10 as well**.
     More red windows also use more of the daily LLM budget (`--llm-max-per-day`, D9).
+  - **[OURS] live cut-off 4.5 since 2026-11-15 ~02:55Z** (user decision; inventory `live_sg_moderate_from=4.5` in
+    `src/ansible/proxmox.ini`; the code default stays 10). Why: the teammate's real react2shell run on `ws-etw-1`
+    (11-14 18:10–19:00Z: `node server.js` → `cmd /d /s /c powershell -EncodedCommand` reverse shell → `tar evil.zip`,
+    `winPEASx64.exe`, `recon.bat` → `RanSim.ps1` encrypt; Sysmon command lines, D14) stayed green at 10: its best
+    subgraph **with an anomalous NET node** is 4.72 (window 18:45Z); the 5.24 subgraph there is file+process, so the
+    NET rule drops it even at 5. Re-judge of the saved live subgraphs (11-14 00:00Z → 11-15 03:00Z, ws-etw-1 287 /
+    ws-etw-0 309 windows; construction does not depend on the cut-off, so the saved `subgraphs.json` gives the exact
+    answer; the 10/net row reproduces live):
+    | cut-off, NET rule | ws-etw-1 attack windows red | ws-etw-1 other red | ws-etw-0 red |
+    |---|---|---|---|
+    | 10, on (paper scale) | 0 | 0 | 2 |
+    | 5, on | 0 | 0 | 2 |
+    | **4.5, on (deployed)** | **1 (18:45)** | **0** | **3** (+17:30Z) |
+    | 5, off | 1 | 6 | 7 |
+    | 4, off | 2 | 7 | 9 |
+    Longer sample (every window since both current models went live, 11-12 16:30Z → 11-15 03:00Z, ~57 h, incl. the
+    `.rN` restart sessions; NET rule on): ws-etw-1 686 windows, red 0 → **2** (the attack at 18:45Z + 11-13 17:50Z,
+    not inspected); ws-etw-0 690 windows, red 5 → **10** (new: 11-13 00:20, 12:15, 12:30, 21:45Z, 11-14 17:30Z; 12:15
+    and 12:30 sit just before our own DVWA test at 11-13 12:45Z, the others are unexplained). So about +0.4 red/day
+    on ws-etw-1 and about +2 red/day on the DC; the DC's red count doubles.
+    The cut-off and the NET rule are one setting for both hosts (`ocr-live.service.j2`), so the DC moves too.
+    Limits: the cut-off was **tuned on the very attack it now catches**, so that alert is not independent evidence of
+    detection; the margin is thin (4.72 vs 4.5) and a rerun may score under it; only 1 of ~10 attack windows is red
+    (the winPEAS/recon window 18:15Z scored 1.44); one day of benign is the whole false-alarm sample; no label oracle
+    (D6), so no P/R/F1. History rows keep their own `moderate_from` (10 before, 4.5 after).
   - [OURS] no top-k fallback when nothing reaches Moderate ([AUTHOR CODE] l.433–461); live, it would make every
     window red.
   - [OURS] a partition still above max_e is kept whole (`oversize`), not sampled per edge type.

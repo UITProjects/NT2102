@@ -144,7 +144,9 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   scores red on each host before any claim (D6 risk: DC auth blends into legit AD traffic). Network-flow note for the teammate (the
   user's imagined path): `docs/notes/cross-host-attack-flow.md`. Also owed: `ws-etw-1` D14 rollout, merge the branch to `main`, 24 h
   two-VM soak. Details: PROGRESS top. Then concepts 2–4.
-- SG-Det uses the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1 (D8). `ocr-live` keeps a persistent, range-queryable
+- SG-Det: code default = the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1. **Live `ocr-live` runs [OURS]
+  Moderate from 4.5 on both hosts since 2026-11-15** (user; `live_sg_moderate_from` in `proxmox.ini`), NET rule kept, so the teammate's
+  react2shell run (peak 4.72) goes red; tuned on that run, so not independent evidence (D8). `ocr-live` keeps a persistent, range-queryable
   window history (`src/live/history.py`).
 - Attack target (single-host demo): DVWA on XAMPP on `ws-etw-0` (user, 2026-10-19), its OS-command-injection page
   (`/vulnerabilities/exec/`) as the RCE sink, on :3000, login admin/password, security low. (For the cross-host demo the RCE *entry* is
