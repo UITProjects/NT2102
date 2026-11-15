@@ -18,7 +18,6 @@ Commands (`lab <command> -h` shows every option with examples):
   lab promote MODEL                   make MODEL the one the live server loads
   lab promote MODEL --host VM         give one VM its own model (one model per host)
   lab hosts [VM ...]                  show or set which VMs are scored live: one VM or both
-  lab flows --start T --end T         record the normal traffic between VMs (baseline for cross-host correlation)
   lab compare                         two models on the same replayed windows: red counts per label
   lab current                         print the current model's paths
   lab selftest                        prove the plumbing runs (fake Loki, tiny model)
@@ -566,40 +565,6 @@ def set_hosts(names):
     return c
 
 
-# --------------------------------------------------------------------------- flows
-def flows(start, end, hosts_file=None, out=None, loki=None):
-    """Baseline for cross-host correlation (src/live/correlate.py, D13): every flow between monitored VMs in a range you
-    assert is clean. Pick a range without attacks: a flow recorded here is never reported as a link."""
-    sys.path[:0] = [PIPE, os.path.join(SRC, "live")]
-    import correlate
-    from lokiclient import Loki, parse_time, iso, selector
-    ips = correlate.load_hosts(hosts_file or correlate.HOSTS_FILE)
-    if len(ips) < 2:
-        sys.exit(f"[lab] need >= 2 hosts in {hosts_file or correlate.HOSTS_FILE} (Ansible writes it on the trainer)")
-    lk = Loki(loki or os.environ.get("LOKI_URL", "http://127.0.0.1:3100"))
-    now = time.time_ns()
-    a, b = parse_time(start, now), parse_time(end or "now", now)
-    seen, lines = {}, 0
-    for host in ips:
-        for _, _, line in lk.query_all(selector(job="silketw", host=host, provider="knet"), a, b):
-            lines += 1
-            try:
-                f = correlate.parse_flow(json.loads(line), host, ips)
-            except ValueError:
-                continue
-            if f:
-                seen[f["key"]] = seen.get(f["key"], 0) + 1
-    dest = out or correlate.BASELINE_FILE
-    with open(dest, "w") as fh:
-        json.dump({"created_utc": datetime.now(timezone.utc).isoformat(), "range_utc": [iso(a), iso(b)], "hosts": ips,
-                   "flows": sorted(seen), "events": seen}, fh, indent=1)
-    print(f"[lab] {lines:,} network lines -> {len(seen)} known flows -> {rel(dest)}")
-    for k, n in sorted(seen.items(), key=lambda x: -x[1]):
-        print(f"  {n:>8}  {k}")
-    print("[lab] restart the live server to load it:  sudo systemctl restart ocr-live")
-    return seen
-
-
 # --------------------------------------------------------------------------- compare
 def scored_windows(sessions_dir):
     """{start_ms: row} of every scored window in <sessions_dir>/*/windows.csv (one replay output folder)."""
@@ -792,21 +757,6 @@ def selftest():
             os.remove(LOCAL)
             promote("t1")                                       # the old single-model pointer still works
             assert live_models() == [] and current()["run"] == "t1"
-            # lab flows: only flows between monitored hosts, one key per direction of service
-            hf = os.path.join(d, "hosts.json")
-            with open(hf, "w") as fh:
-                json.dump({"ws-etw-0": "10.0.0.10", "ws-etw-1": "10.0.0.11"}, fh)
-            t = str(int(time.time() * 1e9) - 60 * NS)
-
-            def knet(sa, da, sp, dp):
-                return json.dumps({"EventName": "KERNEL_NETWORK_TASK_TCPIP/Datasent.", "XmlEventData":
-                                   {"PID": "1", "saddr": sa, "daddr": da, "sport": str(sp), "dport": str(dp)}})
-            Loki(fake.url).push([{"stream": {"job": "silketw", "host": "ws-etw-0", "split": "test", "run": "r", "provider": "knet"},
-                                  "values": [[t, knet("10.0.0.10", "10.0.0.11", 51000, 135)],
-                                             [str(int(t) + 1), knet("10.0.0.10", "8.8.8.8", 51000, 443)]]}])
-            bf = os.path.join(d, "baseline.json")
-            got = flows("now-5m", None, hf, bf, fake.url)
-            assert list(got) == ["ws-etw-0>ws-etw-1/tcp/135"] and json.load(open(bf))["flows"] == list(got), got
             # compare: same windows only, red counted per label
             cols = ["window", "start_ms", "end_ms", "start_utc", "status", "edges", "max_sg_score", "alert"]
             for name, rows_ in (("a", [(0, "scored", "20.0", True), (1, "scored", "0.0", False), (2, "scored", "50.0", True)]),
@@ -829,7 +779,7 @@ def selftest():
     print("[SELFTEST OK] Loki -> pull + build -> features + train into one run folder -> promote -> current;"
           " test-split idle range needs --benign-split test; exclusions drop whole windows; "
           "--host refuses a mixed range, two hosts build apart and merge interleaved; promote --host + lab hosts switch "
-          "one-VM / two-VM and refuse bad input; lab flows records known flows; compare counts red per label")
+          "one-VM / two-VM and refuse bad input; compare counts red per label")
     return 0
 
 
@@ -912,11 +862,6 @@ EX_HOSTS = """examples:
   lab hosts ws-etw-0 ws-etw-1       two-VM mode
 then restart the live server:  sudo systemctl restart ocr-live"""
 
-EX_FLOWS = """examples:
-  lab flows --start 2026-11-06T17:00:00Z --end 2026-11-07T03:00:00Z
-pick a range with no attack in it: a flow recorded here is never reported"""
-
-
 def _parser(sub, name, summary, description, epilog=None):
     return sub.add_parser(name, help=summary, description=description, epilog=epilog,
                           formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -998,15 +943,6 @@ def build_parser():
                  "switching back needs no retraining.", EX_HOSTS)
     ho.add_argument("hosts", nargs="*", metavar="VM")
 
-    fl = _parser(sub, "flows", "record the normal traffic between VMs",
-                 "Write src/artifacts/flow-baseline.json: every flow between monitored VMs in a time range you assert\n"
-                 "is clean. Cross-host correlation reports only flows that are NOT in it.", EX_FLOWS)
-    fl.add_argument("--start", required=True, metavar="TIME", help="ISO 8601 or now-2h")
-    fl.add_argument("--end", metavar="TIME", help="default: now")
-    fl.add_argument("--hosts-file", metavar="FILE", help="default: /etc/nt2102-hosts.json (written by Ansible)")
-    fl.add_argument("--out", metavar="FILE", help="default: src/artifacts/flow-baseline.json")
-    fl.add_argument("--loki", metavar="URL", help="Loki address (default: $LOKI_URL, else http://127.0.0.1:3100)")
-
     cp = _parser(sub, "compare", "two models on the same replayed windows",
                  "Join the windows.csv of replay output folders on window start, and count red windows per label\n"
                  "(the label file's ranges; every other window is idle). Only windows scored by all models count.",
@@ -1064,9 +1000,6 @@ def main(argv=None):
         return 0
     if a.cmd == "hosts":
         set_hosts(a.hosts)
-        return 0
-    if a.cmd == "flows":
-        flows(a.start, a.end, a.hosts_file, a.out, a.loki)
         return 0
     if a.cmd == "compare":
         compare(a.baseline, a.candidate, a.label_file, a.out)

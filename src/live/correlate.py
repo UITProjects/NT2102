@@ -1,28 +1,30 @@
 #!/usr/bin/env python3
 """
-correlate.py - link what each host's detector found into one cross-host picture. [OURS], DEVIATIONS D13.
+correlate.py - follow an anomaly on one host to the other monitored host it talked to. [OURS], DEVIATIONS D13.
 
 [PAPER] §7 leaves lateral movement out of scope: OCR-APT does not process network traffic logs. Each host's model only
-sees that host's 5-min graph, so no model can see a connection as two ends of one thing. This stage can. Plain code finds
-the link; the LLM only explains it (the LLM runs on red windows and within a budget, so it could not find a link to a
-host that stayed green). Nothing here changes a host's own window: every result is an overlay.
+sees that host's 5-min graph. This stage starts where the detector already said "anomalous" and asks one question:
+did that anomaly talk to another monitored VM, and what happened on the other end? Nothing is reported without a red
+window: the GNN score is the only gate. Every result is an overlay; no host's own window changes.
 
-    every host's raw knet line --add_line()--> flow table, one bucket per window start
-      keep only flows whose peer is another monitored host, drop broadcast / multicast
-    every closed window ---------on_window()-> window table {host: {start_ms: alert, score, folder}}
-      -> evaluate(): for each flow not in the baseline
-           link       a unicast flow between monitored hosts, new to the baseline
-           suspected  ... and one end has a red window at or before the flow
-           confirmed  ... and the other end also has a red window in range
-      -> sessions/campaigns.jsonl (last line of an id wins) + listeners
-      -> suspected / confirmed: LLM thread: both hosts' subgraphs + the link in one document (alg2.investigate_campaign)
+    every closed window ------on_window()-> window table {host: {start_ms: state}}
+      a RED window of host A: its KEPT subgraphs (Alg. 1 + SG-Det)
+        -> seeds: every NET node in them (anomalous or connector) whose IP is another monitored host P
+        -> finding  A-window-P  (pending)
+    every raw knet line -------add_line()-> connection index, one bucket per window start, key = the 5-tuple
+      used only for the join: seed "P_ip:P_port" on A -> A's own port -> "A_ip:A_port" = the NET node on P, + both PIDs
+    P's windows in [t - 1 w, t + 1 w] closed -> resolve():
+        P nodes = the matched NET nodes + their owner processes + the processes' 1-hop objects, and a 2nd hop only
+                  through nodes P's own model flagged; scores from P's scores.csv
+        one-sided     none of them flagged, no P kept subgraph holds them
+        corroborated  >= 1 of them flagged by P's model, or a P kept subgraph holds them
+      -> sessions/crosshost.jsonl (last line of an id wins) + listeners
+      -> LLM thread: A's kept subgraphs + P's related nodes + the join lines, one document (alg2.investigate_crosshost)
 
-Why raw lines: the converter keeps only daddr:dport, so on the receiving host the NET node is the peer's ephemeral port,
-and the two ends cannot be matched from edges. Reading raw lines here also leaves the converter's sha256 unchanged.
-
-Address fields (verified in Loki, 2026-11-07): TCP has saddr = this host in both directions; UDP receive has daddr = this
-host, or a broadcast address. So parse_flow() compares both fields with the host's own IP instead of trusting the
-direction, which covers all of it and drops broadcast without a special case.
+Why raw lines: the converter keeps only daddr:dport. TCP has saddr = this host in both directions (verified in Loki,
+2026-11-07), so one connection A:51000 -> P:445 is the node "P_ip:445" on A and "A_ip:51000" on P. Only the 5-tuple
+from the raw lines tells which of P's NET nodes (and so which P process) is the other end. Reading them here leaves the
+converter's sha256 unchanged.
 
     uv run python src/live/correlate.py --selftest
 """
@@ -34,7 +36,6 @@ import os
 import queue
 import sys
 import threading
-import time
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,11 +43,11 @@ SRC = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(SRC, "pipeline"))
 
 HOSTS_FILE = "/etc/nt2102-hosts.json"          # {"ws-etw-0": "<ip>", ...}, written by Ansible from the inventory
-BASELINE_FILE = os.path.join(SRC, "artifacts", "flow-baseline.json")
-LEVELS = ("link", "suspected", "confirmed")
-DYNAMIC_PORT = 49152                           # both ends above this: an RPC-style dynamic port, grouped as "dyn"
+LEVELS = ("pending", "one-sided", "corroborated")
+DYNAMIC_PORT = 49152                           # both ends above this: an RPC-style dynamic port, shown as "dyn"
 MAX_DOC_LINES = 400                            # same bound as alg2.serialize
-MAX_EVIDENCE_WINDOWS = 3                       # per host
+MAX_PEER_NODES = 60                            # per peer window, flagged first, then by score
+STALE_WINDOWS = 3                              # resolve anyway once any host is this far past the range
 
 
 def load_hosts(path: str = HOSTS_FILE) -> dict:
@@ -58,24 +59,16 @@ def load_hosts(path: str = HOSTS_FILE) -> dict:
         return {}
 
 
-def load_baseline(path: str = BASELINE_FILE) -> set | None:
-    """Known flow keys (`lab flows`), or None when there is no baseline yet."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return set(json.load(fh)["flows"])
-    except (OSError, ValueError, KeyError):
-        return None
-
-
 def _lower(d) -> dict:
     return {str(k).lower(): v for k, v in d.items()} if isinstance(d, dict) else {}
 
 
 def parse_flow(ev: dict, host: str, ips: dict) -> dict | None:
-    """One raw knet event seen on `host` -> a flow between two monitored hosts, else None.
+    """One raw knet event seen on `host` -> one end of a connection between two monitored hosts, else None.
 
-    ev: the parsed JSON line; ips: {host: ip}. The side with the lower port is taken as the server (the side listening on
-    a well-known port), so both hosts' events of one connection give the same key."""
+    ev: the parsed JSON line; ips: {host: ip}. Returns this host's port (lport), the peer's (rport) and the 5-tuple key
+    `conn`, which both hosts' events of one connection share. `key` is the display name: the side with the lower port is
+    taken as the server [INFERENCE: the side listening on a well-known port]."""
     e = _lower(ev)
     name = str(e.get("eventname") or "").lower()
     proto = "tcp" if "tcpip" in name else "udp" if "udpip" in name else None
@@ -112,26 +105,55 @@ def parse_flow(ev: dict, host: str, ips: dict) -> dict | None:
         pid = int(str(d.get("_pid") or d.get("pid")).replace(",", ""))
     except ValueError:
         pid = None
-    return {"key": f"{client}>{server}/{proto}/{label}", "client": client, "server": server, "proto": proto,
-            "port": label, "observer": host, "pid": pid, "sent": sent}
+    conn = (proto,) + tuple(sorted(((host, lport), (peer_host, rport))))
+    return {"key": f"{client}>{server}/{proto}/{label}", "conn": conn, "proto": proto, "host": host,
+            "peer": peer_host, "lport": lport, "rport": rport, "pid": pid, "sent": sent}
 
 
 def _utc(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _split_net(attr: str) -> tuple:
+    """NET node attr -> (ip, port) or (None, None). Both the SilkETW int form and dotted text are accepted."""
+    import alg2
+    a = alg2.decode_net_attr(str(attr or ""))
+    ip, _, port = a.rpartition(":")
+    try:
+        return ip, int(port)
+    except ValueError:
+        return None, None
+
+
+def _wdir(sessions_dir: str, sdir: str, window: str) -> str:
+    base = sdir if os.path.isabs(sdir) else os.path.join(sessions_dir, sdir)
+    return os.path.join(base, "windows", window)
+
+
+def _read_csv(path: str) -> list:
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            return list(csv.DictReader(fh))
+    except OSError:
+        return []
+
+
+def _kept_subgraphs(wdir: str) -> list:
+    try:
+        return [g for g in json.load(open(os.path.join(wdir, "subgraphs.json")))["subgraphs"] if g.get("kept")]
+    except (OSError, ValueError, KeyError):
+        return []
+
+
 class Correlator:
-    def __init__(self, ips: dict, sessions_dir: str, window_ms: int = 300_000, baseline: set | None = None,
-                 lookback_windows: int = 3, llm=None, take_budget=None, log=print):
-        self.ips, self.dir, self.w_ms, self.baseline = ips, sessions_dir, int(window_ms), baseline
-        self.span_ms = int(lookback_windows) * self.w_ms   # how far apart two ends of a story may be
+    def __init__(self, ips: dict, sessions_dir: str, window_ms: int = 300_000, llm=None, take_budget=None, log=print):
+        self.ips, self.dir, self.w_ms = ips, sessions_dir, int(window_ms)
         self.llm, self.take_budget, self.log = llm, take_budget, log
-        self.path = os.path.join(sessions_dir, "campaigns.jsonl")
+        self.path = os.path.join(sessions_dir, "crosshost.jsonl")
         self.lock = threading.Lock()
-        self.flows: dict[int, dict] = {}              # window start -> {key: flow record}
+        self.conns: dict[int, dict] = {}              # window start -> {5-tuple: connection record}
         self.wins: dict[str, dict] = {h: {} for h in ips}   # host -> {window start: state}
-        self.campaigns: dict[str, dict] = {}          # id -> campaign
-        self.open: dict[str, str] = {}                # flow key -> id of its running campaign
+        self.findings: dict[str, dict] = {}           # id -> finding
         self.listeners = []
         self.llm_jobs = queue.Queue()
         os.makedirs(sessions_dir, exist_ok=True)
@@ -146,36 +168,39 @@ class Correlator:
         with open(self.path, encoding="utf-8") as fh:
             for line in fh:
                 try:
-                    c = json.loads(line)
-                    self.campaigns[c["id"]] = c
+                    f = json.loads(line)
+                    self.findings[f["id"]] = f
                 except (ValueError, KeyError):
                     pass                              # a line torn by a crash
-        for c in sorted(self.campaigns.values(), key=lambda x: x["last_ms"]):
-            self.open[c["key"]] = c["id"]             # a restart re-reads up to 1 h: extend, do not repeat
+        for f in self.findings.values():              # the window table is gone: a pending one cannot finish
+            f.pop("dirty", None)
+            if f["level"] == "pending":
+                f["level"], f["note"] = "one-sided", "server restarted before the peer windows closed; peer side not read"
 
-    def _save(self, c: dict):
+    def _save(self, f: dict):
         with open(self.path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(c) + "\n")
+            fh.write(json.dumps(f) + "\n")
 
-    def _emit(self, c: dict):
+    def _emit(self, f: dict):
         for cb in list(self.listeners):
             try:
-                cb({"type": "campaign", "campaign": c})
+                cb({"type": "crosshost", "finding": f})
             except Exception:
                 pass
 
     # ---------------------------------------------------------------- input
     def add_line(self, host: str, ev: dict, t_ms: int):
+        """Raw knet line -> connection index. Only an index for the join; it never opens a finding."""
         f = parse_flow(ev, host, self.ips)
         if f is None:
             return
         start = t_ms - t_ms % self.w_ms
         with self.lock:
-            b = self.flows.setdefault(start, {})
-            r = b.get(f["key"])
+            b = self.conns.setdefault(start, {})
+            r = b.get(f["conn"])
             if r is None:
-                r = b[f["key"]] = {k: f[k] for k in ("key", "client", "server", "proto", "port")} | {
-                    "count": 0, "first_ms": t_ms, "last_ms": t_ms, "seen_by": set(), "pids": {}}
+                r = b[f["conn"]] = {"proto": f["proto"], "key": f["key"], "ports": {host: f["lport"], f["peer"]: f["rport"]},
+                                    "count": 0, "first_ms": t_ms, "last_ms": t_ms, "seen_by": set(), "pids": {}}
             r["count"] += 1
             r["first_ms"], r["last_ms"] = min(r["first_ms"], t_ms), max(r["last_ms"], t_ms)
             r["seen_by"].add(host)
@@ -183,139 +208,228 @@ class Correlator:
                 r["pids"].setdefault(host, set()).add(f["pid"])
 
     def on_window(self, host: str, rec: dict, sdir: str):
-        """A window of `host` reached a final state; a scored one can lift a campaign, so evaluate then."""
+        """A window of `host` reached a final state: a red one may open a finding, any one may finish a pending one."""
         if host not in self.wins or rec.get("status") not in ("scored", "empty"):
             return
+        start = rec["start_ms"]
         with self.lock:
-            self.wins[host][rec["start_ms"]] = {"alert": bool(rec.get("alert")), "score": rec.get("max_sg_score") or 0.0,
-                                                "flagged": rec.get("flagged") or 0, "window": rec["window"], "sdir": sdir}
+            self.wins[host][start] = {"alert": bool(rec.get("alert")), "score": rec.get("max_sg_score") or 0.0,
+                                      "flagged": rec.get("flagged") or 0, "window": rec["window"], "sdir": sdir}
+            if rec.get("alert"):
+                self._open(host, start, self.wins[host][start])
         self.evaluate()
 
     # ---------------------------------------------------------------- the rule
-    def _red(self, host: str, lo: int, hi: int) -> bool:
-        return any(w["alert"] and lo <= s <= hi for s, w in self.wins.get(host, {}).items())
-
-    def _level(self, r: dict, start: int) -> tuple:
-        """-> (level, origin, target). Origin = the end already red when the flow happened."""
-        lo = start - self.span_ms
-        client_red, server_red = self._red(r["client"], lo, start), self._red(r["server"], lo, start)
-        if not (client_red or server_red):
-            return "link", None, None
-        origin, target = (r["client"], r["server"]) if client_red else (r["server"], r["client"])
-        return ("confirmed" if self._red(target, lo, start + self.span_ms) else "suspected"), origin, target
-
-    def _evidence(self, c: dict) -> dict:
-        lo, hi = c["first_ms"] - self.span_ms - self.w_ms, c["last_ms"] + self.span_ms
+    def _seeds(self, host: str, w: dict) -> dict:
+        """NET nodes of the window's kept subgraphs that point at another monitored host -> {peer: [seed]}."""
         out = {}
-        for h in (c["client"], c["server"]):
-            ws = [{"start_ms": s, **w} for s, w in self.wins.get(h, {}).items() if lo <= s <= hi and w["flagged"]]
-            ws.sort(key=lambda w: (not w["alert"], -w["score"]))
-            out[h] = ws[:MAX_EVIDENCE_WINDOWS]
+        for g in _kept_subgraphs(_wdir(self.dir, w["sdir"], w["window"])):
+            for n in g["nodes"]:
+                if str(n.get("type", "")).lower() != "net":
+                    continue
+                ip, port = _split_net(n.get("attr"))
+                peer = next((h for h, a in self.ips.items() if a == ip and h != host), None)
+                if peer is None:
+                    continue
+                out.setdefault(peer, []).append({"node": n["id"], "attr": f"{ip}:{port}", "port": port, "sg": g["id"],
+                                                 "sg_score": g.get("sg_score"), "role": n.get("role"),
+                                                 "prob": n.get("prob"), "score": n.get("score")})
         return out
+
+    def _open(self, host: str, start: int, w: dict):
+        for peer, seeds in self._seeds(host, w).items():
+            mirror = next((f for f in self.findings.values() if f["origin"] == peer and f["peer"] == host
+                           and abs(f["start_ms"] - start) <= self.w_ms), None)
+            if mirror is not None:                    # the peer's own red window points back: same story, one finding
+                if not any(m["window"] == w["window"] for m in mirror["mirror"]):
+                    mirror["mirror"].append({"window": w["window"], "start_ms": start, "sdir": w["sdir"], "seeds": seeds})
+                    mirror["dirty"] = mirror["fresh"] = True
+                    self.log(f"[correlate] {host} {w['window']} points back at {mirror['id']}")
+                continue
+            fid = f"{host}-{w['window']}-{peer}"
+            if fid in self.findings:
+                continue
+            self.findings[fid] = {
+                "id": fid, "origin": host, "peer": peer, "window": w["window"], "start_ms": start,
+                "start_utc": _utc(start), "sdir": w["sdir"], "score": w["score"], "seeds": seeds, "mirror": [],
+                "level": "pending", "join": None, "connections": [], "peer_windows": [], "note": None, "llm": None,
+                "dirty": True, "fresh": True}
+            self.log(f"[correlate] {host} {w['window']} red, {len(seeds)} NET seed(s) -> {peer}: pending")
+
+    def _ready(self, f: dict) -> bool:
+        hi = f["start_ms"] + self.w_ms
+        if max(self.wins.get(f["peer"], {}), default=-1) >= hi:
+            return True
+        newest = max((s for w in self.wins.values() for s in w), default=-1)
+        if newest >= hi + STALE_WINDOWS * self.w_ms:  # the peer stopped reporting: resolve with what is there
+            f["note"] = "peer windows missing for this range"
+            return True
+        return False
+
+    def _connections(self, f: dict) -> list:
+        """Raw connections between origin and peer in range whose peer port is a seed's port."""
+        A, P, lo, hi = f["origin"], f["peer"], f["start_ms"] - self.w_ms, f["start_ms"] + self.w_ms
+        ports = {s["port"] for s in f["seeds"]} | {s["port"] for m in f["mirror"] for s in m["seeds"]}
+        out = {}
+        for start, b in self.conns.items():
+            if not lo <= start <= hi:
+                continue
+            for k, r in b.items():
+                if A not in r["ports"] or P not in r["ports"]:
+                    continue
+                if r["ports"][P] not in ports and r["ports"][A] not in ports:
+                    continue                          # the second test catches a mirror seed (P's NET node = A's port)
+                c = out.setdefault(k, {"proto": r["proto"], "key": r["key"], "origin_port": r["ports"][A],
+                                       "peer_port": r["ports"][P], "count": 0, "first_ms": r["first_ms"],
+                                       "seen_by": set(), "pids": {A: set(), P: set()}})
+                c["count"] += r["count"]
+                c["first_ms"] = min(c["first_ms"], r["first_ms"])
+                c["seen_by"] |= r["seen_by"]
+                for h, p in r["pids"].items():
+                    c["pids"].setdefault(h, set()).update(p)
+        return [{**c, "seen_by": sorted(c["seen_by"]), "pids": {h: sorted(p) for h, p in c["pids"].items()}}
+                for c in sorted(out.values(), key=lambda c: c["first_ms"])]
+
+    def _peer_window(self, f: dict, start: int, w: dict, targets: set, pids: set, by_ip: bool) -> dict:
+        """One peer window -> the nodes around the other end of the connection, with the peer model's scores."""
+        wdir = _wdir(self.dir, w["sdir"], w["window"])
+        attrs = {r["node"]: r for r in _read_csv(os.path.join(wdir, "node_attrs.csv"))}
+        a_ip = self.ips[f["origin"]]
+        ends = set()
+        for n, r in attrs.items():
+            if r["node_type"].upper() != "NET":
+                continue
+            ip, port = _split_net(r["node_attr"])
+            if f"{ip}:{port}" in targets or (by_ip and ip == a_ip):
+                ends.add(n)
+        procs = {n for n, r in attrs.items() if r["node_type"].upper() == "PROCESS"
+                 and any(n.startswith(f"p{p}_") for p in pids)}
+        edges = _read_csv(os.path.join(wdir, "edges.csv"))
+        adj = {}
+        for e in edges:
+            adj.setdefault(e["source-id"], set()).add(e["destination-id"])
+            adj.setdefault(e["destination-id"], set()).add(e["source-id"])
+        scores = {r["node_uuid"]: r for r in _read_csv(os.path.join(wdir, "scores.csv"))}
+        flagged = {n for n, r in scores.items() if str(r.get("flagged")).lower() == "true"}
+        owners = {s for n in ends for s in adj.get(n, ())} | procs
+        role = {n: "connection end" for n in ends} | {n: "owner process" for n in owners}
+        for p in owners:                              # hop 1: everything the owner processes touched
+            for n in adj.get(p, ()):
+                role.setdefault(n, "neighbour")
+        for n in [n for n in role if n in flagged]:   # hop 2 [OURS]: only through nodes the peer model flagged,
+            for m in adj.get(n, ()):                  # so a common DLL does not pull in every process on the host
+                role.setdefault(m, "2nd hop via flagged")
+        nodes = []
+        for n, why in role.items():
+            r, a = scores.get(n, {}), attrs.get(n, {})
+            nodes.append({"id": n, "type": (r.get("node_type") or a.get("node_type") or "").lower(),
+                          "attr": a.get("node_attr", r.get("attr", "")), "why": why, "flagged": n in flagged,
+                          "score": float(r["score"]) if r.get("score") else None,
+                          "margin": float(r["margin"]) if r.get("margin") else None})
+        nodes.sort(key=lambda x: (not x["flagged"], -(x["margin"] or -1e9)))
+        cut = max(0, len(nodes) - MAX_PEER_NODES)
+        nodes = nodes[:MAX_PEER_NODES]
+        ids = {n["id"] for n in nodes}
+        kept = [g["id"] for g in _kept_subgraphs(wdir) if ids & {n["id"] for n in g["nodes"]}]
+        return {"window": w["window"], "start_ms": start, "sdir": w["sdir"], "alert": w["alert"],
+                "n_flagged": sum(n["flagged"] for n in nodes), "kept_subgraphs": kept, "nodes": nodes, "cut": cut}
+
+    def _resolve(self, f: dict):
+        A, P = f["origin"], f["peer"]
+        conns = self._connections(f)
+        targets = {f"{self.ips[A]}:{c['origin_port']}" for c in conns}
+        targets |= {s["attr"] for m in f["mirror"] for s in m["seeds"]}
+        pids = {p for c in conns for p in c["pids"].get(P, [])}
+        f["join"] = "5-tuple" if conns else "ip-only"  # no raw line matched: any P node with A's IP, coarse
+        lo, hi = f["start_ms"] - self.w_ms, f["start_ms"] + self.w_ms
+        f["peer_windows"] = [self._peer_window(f, s, w, targets, pids, not conns)
+                             for s, w in sorted(self.wins.get(P, {}).items()) if lo <= s <= hi]
+        f["peer_windows"] = [pw for pw in f["peer_windows"] if pw["nodes"]]
+        f["connections"] = conns
+        hit = any(pw["n_flagged"] or pw["kept_subgraphs"] for pw in f["peer_windows"])
+        return "corroborated" if hit else "one-sided"
 
     def evaluate(self):
         changed, llm = [], []
         with self.lock:
-            for start in sorted(self.flows):
-                for key, r in self.flows[start].items():
-                    if self.baseline is not None and key in self.baseline:
-                        continue
-                    level, origin, target = self._level(r, start)
-                    cid = self.open.get(key)
-                    c = self.campaigns.get(cid) if cid else None
-                    if c is None or r["first_ms"] - c["last_ms"] > self.span_ms + self.w_ms:
-                        cid = f"{datetime.fromtimestamp(start / 1000, timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{key}"
-                        cid = cid.replace(">", "-").replace("/", "-")
-                        c = self.campaigns.get(cid)
-                    if c is None:
-                        c = {"id": cid, "key": key, "level": "link", "client": r["client"], "server": r["server"],
-                             "proto": r["proto"], "port": r["port"], "origin": None, "target": None, "first_ms": r["first_ms"],
-                             "last_ms": r["last_ms"], "first_utc": _utc(r["first_ms"]), "count": 0, "buckets": {},
-                             "seen_by": [], "pids": {}, "evidence": {}, "llm": None,
-                             "baseline_known": self.baseline is not None}
-                        self.campaigns[cid] = c
-                        self.log(f"[correlate] new link {key}")
-                        changed.append(c)
-                    self.open[key] = cid
-                    before = (c["count"], c["level"])
-                    c["buckets"][str(start)] = r["count"]
-                    c["count"] = sum(c["buckets"].values())
-                    c["first_ms"], c["last_ms"] = min(c["first_ms"], r["first_ms"]), max(c["last_ms"], r["last_ms"])
-                    c["seen_by"] = sorted(set(c["seen_by"]) | r["seen_by"])
-                    for h, p in r["pids"].items():
-                        c["pids"][h] = sorted(set(c["pids"].get(h, [])) | p)
-                    if LEVELS.index(level) > LEVELS.index(c["level"]):     # a campaign only ever rises
-                        c["level"], c["origin"], c["target"] = level, origin, target
-                        self.log(f"[correlate] {key} -> {level} ({origin} -> {target})")
-                        llm.append(c["id"])
-                    c["evidence"] = self._evidence(c)
-                    if (c["count"], c["level"]) != before and c not in changed:
-                        changed.append(c)
-            keep = max(self.flows, default=0) - 4 * self.span_ms - self.w_ms
-            for start in [s for s in self.flows if s < keep]:
-                del self.flows[start]
+            for f in self.findings.values():
+                if f.pop("fresh", False):             # a new pending finding: show it now
+                    changed.append(f)
+                if not f.get("dirty") or not self._ready(f):
+                    continue
+                before = f["level"]
+                level = self._resolve(f)
+                if LEVELS.index(level) > LEVELS.index(f["level"]):     # a finding only ever rises
+                    f["level"] = level
+                f.pop("dirty", None)
+                if f["level"] != before:
+                    self.log(f"[correlate] {f['id']}: {before} -> {f['level']} (join {f['join']})")
+                    llm.append(f["id"])
+                if f not in changed:
+                    changed.append(f)
+            keep = max((s for w in self.wins.values() for s in w), default=0) - (STALE_WINDOWS + 3) * self.w_ms
+            for start in [s for s in self.conns if s < keep]:
+                del self.conns[start]
             for w in self.wins.values():
                 for s in [s for s in w if s < keep]:
                     del w[s]
-            snapshot = [json.loads(json.dumps(c)) for c in changed]
-            for cid in llm:
-                if self.llm is not None:
-                    self.campaigns[cid]["llm"] = {"status": "pending"}
+            if self.llm is not None:
+                for fid in llm:
+                    self.findings[fid]["llm"] = {"status": "pending"}
+            snapshot = [{k: v for k, v in json.loads(json.dumps(f)).items() if k != "dirty"} for f in changed]
             for s in snapshot:
-                s["llm"] = self.campaigns[s["id"]]["llm"]
                 self._save(s)
         for s in snapshot:
             self._emit(s)
         if self.llm is not None:
-            for cid in llm:
-                self.llm_jobs.put(cid)
+            for fid in llm:
+                self.llm_jobs.put(fid)
 
     # ---------------------------------------------------------------- LLM
     def _llm_loop(self):
         import alg2
         while True:
-            cid = self.llm_jobs.get()
+            fid = self.llm_jobs.get()
             try:
                 with self.lock:
-                    c = json.loads(json.dumps(self.campaigns[cid]))
+                    f = json.loads(json.dumps(self.findings[fid]))
                 if self.take_budget and not self.take_budget():
-                    state = {"status": "skipped", "error": "daily LLM budget reached; the campaign stands"}
+                    state = {"status": "skipped", "error": "daily LLM budget reached; the finding stands"}
                 else:
-                    doc = build_document(c, self.dir)
-                    window = {"window": cid, "start_utc": _utc(c["first_ms"]), "end_utc": _utc(c["last_ms"])}
-                    score = sum(w["score"] for ws in c["evidence"].values() for w in ws)
-                    flagged = sum(w["flagged"] for ws in c["evidence"].values() for w in ws)
-                    res = alg2.investigate_campaign(doc, window, flagged, round(score, 2), self.llm,
-                                                    os.path.join(self.dir, "campaigns", cid))
+                    doc = build_document(f, self.dir, self.ips)
+                    window = {"window": fid, "start_utc": f["start_utc"], "end_utc": _utc(f["start_ms"] + self.w_ms)}
+                    flagged = sum(pw["n_flagged"] for pw in f["peer_windows"]) + len(f["seeds"])
+                    res = alg2.investigate_crosshost(doc, window, flagged, round(f["score"] or 0.0, 2), self.llm,
+                                                     os.path.join(self.dir, "crosshost", fid))
                     state = {"status": res["verdict"], **res}
-            except Exception as e:                    # investigate_campaign catches provider errors; this is a bug guard
+            except Exception as e:                    # investigate_crosshost catches provider errors; this is a bug guard
                 import traceback
                 traceback.print_exc()
                 state = {"status": "error", "error": f"{type(e).__name__}: {e}"}
             finally:
                 self.llm_jobs.task_done()
             with self.lock:
-                c = self.campaigns[cid]
-                c["llm"] = state
-                self._save(c)
-                out = json.loads(json.dumps(c))
+                f = self.findings[fid]
+                f["llm"] = state
+                self._save(f)
+                out = json.loads(json.dumps(f))
             self._emit(out)
 
     # ---------------------------------------------------------------- read side
     def list(self, limit: int = 100) -> list:
         with self.lock:
-            rows = sorted(self.campaigns.values(), key=lambda c: c["last_ms"], reverse=True)[:limit]
-            return json.loads(json.dumps(rows))
+            rows = sorted(self.findings.values(), key=lambda f: f["start_ms"], reverse=True)[:limit]
+            return [{k: v for k, v in r.items() if k != "dirty"} for r in json.loads(json.dumps(rows))]
 
-    def get(self, cid: str) -> dict | None:
+    def get(self, fid: str) -> dict | None:
         with self.lock:
-            c = self.campaigns.get(cid)
-            return json.loads(json.dumps(c)) if c else None
+            f = self.findings.get(fid)
+            return json.loads(json.dumps(f)) if f else None
 
     def status(self) -> dict:
         with self.lock:
-            n = {lv: sum(c["level"] == lv for c in self.campaigns.values()) for lv in LEVELS}
-        return {"hosts": self.ips, "baseline": None if self.baseline is None else len(self.baseline), "campaigns": n}
+            n = {lv: sum(f["level"] == lv for f in self.findings.values()) for lv in LEVELS}
+        return {"hosts": self.ips, "findings": n}
 
     def drain(self):
         self.llm_jobs.join()
@@ -325,54 +439,65 @@ class Correlator:
 def _process_names(wdir: str, pids: list) -> list:
     """PIDs -> image names, from this window's node table (process nodes are "p<pid>_...")."""
     want = {f"p{p}_" for p in pids}
-    out = set()
-    try:
-        with open(os.path.join(wdir, "node_attrs.csv"), newline="", encoding="utf-8") as fh:
-            for r in csv.DictReader(fh):
-                if r["node_type"] == "PROCESS" and any(r["node"].startswith(w) for w in want):
-                    out.add(r["node_attr"].replace("/", "\\").split("\\")[-1])
-    except OSError:
-        pass
-    return sorted(out)
+    return sorted({r["node_attr"].replace("/", "\\").split("\\")[-1] for r in _read_csv(os.path.join(wdir, "node_attrs.csv"))
+                   if r["node_type"] == "PROCESS" and any(r["node"].startswith(w) for w in want)})
 
 
-def build_document(c: dict, sessions_dir: str, max_lines: int = MAX_DOC_LINES) -> dict:
-    """Both hosts' subgraphs + the link, one document. Link lines first, so a cut never drops them.
-
-    A host with no kept subgraph contributes its best one anyway: that is often the point of correlating, since a short
-    hop can stay under SG-Det's cut-off on the host it reached."""
+def _edges(wdir: str):
     import pandas as pd
-    import alg2
     import train_gnn_models as tgm
-    lines, names = [], {}
-    for host, ws in c["evidence"].items():
-        for w in ws:
-            wdir = os.path.join(sessions_dir, w["sdir"], "windows", w["window"]) if not os.path.isabs(w["sdir"]) \
-                else os.path.join(w["sdir"], "windows", w["window"])
-            names.setdefault(host, set()).update(_process_names(wdir, c["pids"].get(host, [])))
-            try:
-                sgs = json.load(open(os.path.join(wdir, "subgraphs.json")))["subgraphs"]
-                edges = tgm.normalise_edges(pd.read_csv(os.path.join(wdir, "edges.csv"),
-                                                        dtype={"source-id": str, "destination-id": str}))
-            except (OSError, ValueError, KeyError):
-                continue
-            for sg in ([g for g in sgs if g.get("kept")] or sgs[:1]):
-                lines += [f"[{host}] {ln}" for ln in alg2.serialize(sg, edges, max_lines)["lines"]]
-    when = alg2.display_time(_utc(c["first_ms"]))
+    return tgm.normalise_edges(pd.read_csv(os.path.join(wdir, "edges.csv"), dtype={"source-id": str, "destination-id": str}))
+
+
+def build_document(f: dict, sessions_dir: str, ips: dict, max_lines: int = MAX_DOC_LINES) -> dict:
+    """Origin's kept subgraphs + the peer's related nodes + the join, one document. Join lines first, so a cut never
+    drops them. Peer nodes the peer model flagged are 'anomalous' in the document, the rest 'connector'."""
+    import alg2
+    A, P = f["origin"], f["peer"]
+    a_dir = _wdir(sessions_dir, f["sdir"], f["window"])
+    when = alg2.display_time(f["start_utc"])
     net = []
-    for h in (c["client"], c["server"]):
-        who = ", ".join(sorted(names.get(h, []))) or "an unresolved process"
-        net.append(f"[network] {who} on {h} took part in {c['proto']}/{c['port']} between {c['client']} (client) and "
-                   f"{c['server']} (server), {c['count']} network events, first seen {when}.")
+    for s in f["seeds"]:
+        net.append(f"[network] the anomalous subgraph on {A} (score {s['sg_score']}) holds the socket {s['attr']} on {P} "
+                   f"({s['role']} node), first window {when}.")
+    for c in f["connections"]:
+        a_names = ", ".join(_process_names(a_dir, c["pids"].get(A, []))) or "an unresolved process"
+        p_names = sorted({n for pw in f["peer_windows"] for n in
+                          _process_names(_wdir(sessions_dir, pw["sdir"], pw["window"]), c["pids"].get(P, []))})
+        net.append(f"[network] {a_names} on {A} ({ips.get(A)}:{c['origin_port']}) and {', '.join(p_names) or 'an unresolved process'} "
+                   f"on {P} ({ips.get(P)}:{c['peer_port']}) exchanged {c['count']} {c['proto']} network events.")
+    if f["join"] == "ip-only":
+        net.append(f"[network] no raw network event matched the exact connection; the {P} side below is every socket "
+                   f"on {P} that talks to {ips.get(A)}.")
+    lines = []
+    try:
+        ea = _edges(a_dir)
+        for sg in _kept_subgraphs(a_dir):
+            lines += [f"[{A}] {ln}" for ln in alg2.serialize(sg, ea, max_lines)["lines"]]
+    except (OSError, ValueError, KeyError):
+        pass
+    for pw in f["peer_windows"]:
+        p_dir = _wdir(sessions_dir, pw["sdir"], pw["window"])
+        try:
+            ep = _edges(p_dir)
+        except (OSError, ValueError, KeyError):
+            continue
+        sg = {"nodes": [{"id": n["id"], "type": n["type"], "attr": n["attr"],
+                         "role": "anomalous" if n["flagged"] else "connector"} for n in pw["nodes"]]}
+        lines += [f"[{P}] {ln}" for ln in alg2.serialize(sg, ep, max_lines)["lines"]]
+        for g in _kept_subgraphs(p_dir):
+            if g["id"] in pw["kept_subgraphs"]:
+                lines += [f"[{P}] {ln}" for ln in alg2.serialize(g, ep, max_lines)["lines"]]
     keep = list(dict.fromkeys(net + lines))
     cut = max(0, len(keep) - max_lines)
     keep = keep[:max_lines]
-    return {"text": "".join(f"{ln} \n" for ln in keep), "lines": keep, "truncated": cut, "n_events": c["count"]}
+    return {"text": "".join(f"{ln} \n" for ln in keep), "lines": keep, "truncated": cut,
+            "n_events": sum(c["count"] for c in f["connections"])}
 
 
 # --------------------------------------------------------------------------- selftest
 def selftest():
-    """'It runs' + invariants on synthetic flows. Never evidence that real cross-host movement is detected."""
+    """'It runs' + invariants on synthetic windows and flows. Never evidence that real cross-host movement is detected."""
     import tempfile
     import alg2
     ips = {"h0": "10.0.0.10", "h1": "10.0.0.11"}
@@ -386,7 +511,8 @@ def selftest():
     # parsing: real field shapes from Loki. TCP keeps saddr = this host both ways; UDP receive flips.
     a = parse_flow(ev(tcp_s, "10.0.0.10", "10.0.0.11", 51000, 445), "h0", ips)
     b = parse_flow(ev(tcp_r, "10.0.0.11", "10.0.0.10", 445, 51000), "h1", ips)
-    assert a["key"] == b["key"] == "h0>h1/tcp/445", (a, b)
+    assert a["key"] == b["key"] == "h0>h1/tcp/445" and a["conn"] == b["conn"], (a, b)
+    assert (a["lport"], a["rport"], b["lport"], b["rport"]) == (51000, 445, 445, 51000)
     u = parse_flow(ev(udp_r, "10.0.0.10", "10.0.0.11", 51000, 53), "h1", ips)
     assert u["key"] == "h0>h1/udp/53", u
     assert parse_flow(ev(udp_r, "10.0.0.10", "10.0.0.255", 138, 138), "h1", ips) is None, "broadcast kept"
@@ -394,9 +520,10 @@ def selftest():
     assert parse_flow(ev(tcp_s, "10.0.0.10", "8.8.8.8", 51000, 443), "h0", ips) is None, "unmonitored peer kept"
     assert parse_flow(ev("KERNEL_NETWORK_TASK_TCPIP/connectionattempted", "10.0.0.10", "10.0.0.11", 1, 2), "h0", ips) is None
     assert parse_flow(ev(tcp_s, "10.0.0.10", "10.0.0.11", 50000, 50001), "h0", ips)["key"] == "h0>h1/tcp/dyn"
-    assert parse_flow(ev(tcp_s, "10.0.0.10", "10.0.0.11", 50001, 50000), "h0", ips)["key"] == "h0>h1/tcp/dyn"
     assert parse_flow(ev(udp_s, "10.0.0.10", "10.0.0.11", 138, 138), "h0", ips)["key"] == "h0>h1/udp/138"
-    assert "several Windows hosts" in alg2.CAMPAIGN_TRIAGE_SYSTEM and "[network]" in alg2.CAMPAIGN_TRIAGE_SYSTEM
+    assert _split_net("10.0.0.11:445") == ("10.0.0.11", 445) and _split_net("x") == (None, None)
+    assert _split_net("-1,707,025,385:-17,663")[0] == "23.220.64.154", "SilkETW int form not decoded"
+    assert "several Windows hosts" in alg2.CROSSHOST_TRIAGE_SYSTEM and "[network]" in alg2.CROSSHOST_TRIAGE_SYSTEM
     assert "one Windows 10 host" in alg2.TRIAGE_SYSTEM, "the per-host prompt must stay as it was"
 
     base = 1_791_000_000_000                         # multiple of 5 min
@@ -406,98 +533,134 @@ def selftest():
         return {"window": f"w{k}", "start_ms": base + k * w, "status": "scored", "alert": alert, "flagged": flagged,
                 "max_sg_score": score}
 
+    def window(d, host, k, nodes, edges, flagged=(), kept=None):
+        """nodes: {id: (TYPE, attr)}; edges: [(src, dst, type)]; kept: ids of one kept subgraph (+ one not kept)."""
+        wd = os.path.join(d, f"s-{host}", "windows", f"w{k}")
+        os.makedirs(wd, exist_ok=True)
+        t = base + k * w + 1000
+        with open(os.path.join(wd, "edges.csv"), "w") as fh:
+            fh.write("source-id,source-type,destination-id,destination-type,edge-type,timestamp\n")
+            fh.writelines(f"{s},{nodes[s][0]},{x},{nodes[x][0]},{e},{t + i}\n" for i, (s, x, e) in enumerate(edges))
+        with open(os.path.join(wd, "node_attrs.csv"), "w") as fh:
+            fh.write("node,node_type,node_attr\n" + "".join(f"{n},{ty},{at}\n" for n, (ty, at) in nodes.items()))
+        with open(os.path.join(wd, "scores.csv"), "w") as fh:
+            fh.write("node_uuid,node_type,score,tau,margin,flagged,attr\n" +
+                     "".join(f"{n},{ty.lower()},0.1,0.0,{0.5 if n in flagged else -0.5},{n in flagged},{at}\n"
+                             for n, (ty, at) in nodes.items()))
+        sgs = []
+        if kept:
+            sgs.append({"id": 0, "kept": True, "sg_score": 12.0, "level": "Moderate", "nodes": [
+                {"id": n, "type": nodes[n][0].lower(), "attr": nodes[n][1],
+                 "role": "anomalous" if n in flagged else "connector", "prob": 0.9, "score": 0.1} for n in kept]})
+        sgs.append({"id": 1, "kept": False, "sg_score": 1.0, "level": "Low", "nodes": [
+            {"id": "nx", "type": "net", "attr": "10.0.0.11:3389", "role": "anomalous"}]})
+        json.dump({"subgraphs": sgs}, open(os.path.join(wd, "subgraphs.json"), "w"))
+
+    # origin h0, window 1: tool0.exe (pid 700) in a kept subgraph with the socket 10.0.0.11:445 and an internet socket
+    h0n = {"p700_1": ("PROCESS", r"c:\x\tool0.exe"), "n445": ("NET", "10.0.0.11:445"), "nweb": ("NET", "8.8.8.8:443"),
+           "f1": ("FILE", r"c:\x\out.bin")}
+    h0e = [("p700_1", "n445", "Send"), ("p700_1", "nweb", "Send"), ("p700_1", "f1", "Write")]
+    # peer h1: lsass-like pid 900 owns the other end 10.0.0.10:51001, touches a dll every process loads and a dropped file
+    h1n = {"p900_1": ("PROCESS", r"c:\w\svc.exe"), "nend": ("NET", "10.0.0.10:51001"), "fdll": ("FILE", r"c:\w\common.dll"),
+           "fdrop": ("FILE", r"c:\w\drop.exe"), "p950_1": ("PROCESS", r"c:\w\other.exe"),
+           "p960_1": ("PROCESS", r"c:\w\runner.exe"), "nold": ("NET", "10.0.0.10:60000")}
+    h1e = [("p900_1", "nend", "Recv"), ("p900_1", "fdll", "Load"), ("p900_1", "fdrop", "Write"),
+           ("p950_1", "fdll", "Load"), ("p960_1", "fdrop", "Read")]
+
     with tempfile.TemporaryDirectory() as d:
-        # one fake window on disk per host, for the LLM document
-        for host, tool, wid in (("h0", "tool0.exe", "w1"), ("h1", "tool1.exe", "w2")):
-            wd = os.path.join(d, f"s-{host}", "windows", wid)
-            os.makedirs(wd)
-            with open(os.path.join(wd, "edges.csv"), "w") as fh:
-                fh.write("source-id,source-type,destination-id,destination-type,edge-type,timestamp\n"
-                         f"p700_1,PROCESS,f1,FILE,Write,{base + w + 1000}\n")
-            with open(os.path.join(wd, "node_attrs.csv"), "w") as fh:
-                fh.write(f"node,node_type,node_attr\np700_1,PROCESS,c:\\x\\{tool}\nf1,FILE,c:\\x\\out.bin\n")
-            json.dump({"subgraphs": [{"id": 0, "seed": "p700_1", "kept": host == "h0", "sg_score": 12.0, "level": "Moderate",
-                                      "n_anomalous": 2, "n_connectors": 0,
-                                      "nodes": [{"id": "p700_1", "type": "process", "attr": f"c:\\x\\{tool}", "role": "anomalous"},
-                                                {"id": "f1", "type": "file", "attr": "c:\\x\\out.bin", "role": "anomalous"}]}]},
-                      open(os.path.join(wd, "subgraphs.json"), "w"))
+        window(d, "h0", 0, h0n, h0e)                                       # green, no kept subgraph
+        window(d, "h0", 1, h0n, h0e, flagged={"p700_1", "f1"}, kept=["p700_1", "n445", "nweb", "f1"])
+        for k in (0, 1, 2):
+            window(d, "h1", k, h1n, h1e)                                   # peer: nothing flagged
         seen = []
-        c = Correlator(ips, d, w, baseline={"h0>h1/tcp/135"}, llm=alg2.MockLLM(alg2.rule_mock_responder),
-                       take_budget=lambda: True, log=lambda *_: None)
+        c = Correlator(ips, d, w, llm=alg2.MockLLM(alg2.rule_mock_responder), take_budget=lambda: True, log=lambda *_: None)
         c.listeners.append(seen.append)
 
-        # a known flow stays silent; broadcast never counts
-        c.add_line("h0", ev(tcp_s, "10.0.0.10", "10.0.0.11", 51000, 135), base + 1000)
-        c.add_line("h1", ev(udp_r, "10.0.0.10", "10.0.0.255", 138, 138), base + 1000)
+        # a connection alone is never a finding, nor is a green window
+        c.add_line("h0", ev(tcp_s, "10.0.0.10", "10.0.0.11", 51001, 445), base + w + 2000)
+        c.add_line("h1", ev(tcp_r, "10.0.0.11", "10.0.0.10", 445, 51001, pid=900), base + w + 2100)
+        c.add_line("h1", ev(tcp_r, "10.0.0.11", "10.0.0.10", 3389, 60000, pid=999), base + w + 2200)  # other conn
         c.on_window("h0", rec(0), "s-h0")
+        c.on_window("h1", rec(0), "s-h1")
         assert c.list() == [], c.list()
 
-        # link: a new flow, nobody red, no LLM call
-        c.add_line("h0", ev(tcp_s, "10.0.0.10", "10.0.0.11", 51001, 445), base + w + 2000)
-        c.add_line("h1", ev(tcp_r, "10.0.0.11", "10.0.0.10", 445, 51001), base + w + 2100)
-        c.on_window("h1", rec(1), "s-h1")
+        # red window: one seed (n445, not the internet socket nor the not-kept 3389 one), pending until h1 passes t+w
+        c.on_window("h0", rec(1, True, 2, 12.0), "s-h0")
         got = c.list()
-        assert len(got) == 1 and got[0]["level"] == "link" and got[0]["llm"] is None, got
-        assert got[0]["seen_by"] == ["h0", "h1"] and got[0]["count"] == 2, got[0]
-
-        # suspected: the client host goes red in that same window
-        c.on_window("h0", rec(1, True, 12, 15.0), "s-h0")
-        got = c.get(c.list()[0]["id"])
-        assert got["level"] == "suspected" and (got["origin"], got["target"]) == ("h0", "h1"), got
+        assert len(got) == 1 and got[0]["level"] == "pending" and got[0]["peer"] == "h1", got
+        assert [s["node"] for s in got[0]["seeds"]] == ["n445"], got[0]["seeds"]
+        c.on_window("h1", rec(1), "s-h1")
+        assert c.list()[0]["level"] == "pending"
+        c.on_window("h1", rec(2), "s-h1")
         c.drain()
+        f = c.list()[0]
+        assert f["level"] == "one-sided" and f["join"] == "5-tuple", f
+        assert f["llm"]["status"] in ("attack", "false_positive", "uncertain"), f["llm"]
+        assert [x["origin_port"] for x in f["connections"]] == [51001] and f["connections"][0]["pids"]["h1"] == [900]
+        ids = {n["id"]: n["why"] for n in f["peer_windows"][0]["nodes"]}
+        assert ids.get("nend") == "connection end" and ids.get("p900_1") == "owner process", ids
+        assert "fdrop" in ids and "fdll" in ids and "p950_1" not in ids and "nold" not in ids, ids
 
-        # confirmed: the other host goes red one window later (it can arrive after the flow)
-        c.on_window("h1", rec(2, True, 11, 11.0), "s-h1")
-        c.drain()
-        got = c.get(c.list()[0]["id"])
-        assert got["level"] == "confirmed" and got["llm"]["status"] in ("attack", "false_positive", "uncertain"), got
-
-        # never falls back; the same flow later extends the campaign instead of opening another
-        c.add_line("h0", ev(tcp_s, "10.0.0.10", "10.0.0.11", 51002, 445), base + 2 * w + 500)
-        c.on_window("h0", rec(2), "s-h0")
-        assert len(c.list()) == 1 and c.list()[0]["level"] == "confirmed" and c.list()[0]["count"] == 3, c.list()
-
-        # the LLM document holds both hosts, tagged, and the link first; a host below the cut-off still contributes
-        doc = build_document(c.list()[0], d)
-        assert doc["lines"][0].startswith("[network] ") and "tool0.exe" in doc["lines"][0], doc["lines"][:2]
+        # the LLM document: join lines first, both hosts tagged
+        doc = build_document(f, d, ips)
+        assert doc["lines"][0].startswith("[network] ") and "10.0.0.11:445" in doc["lines"][0], doc["lines"][:3]
+        assert any("tool0.exe" in x and "svc.exe" in x for x in doc["lines"] if x.startswith("[network]")), doc["lines"][:4]
         assert any(x.startswith("[h0] ") for x in doc["lines"]) and any(x.startswith("[h1] ") for x in doc["lines"]), doc
-        assert os.path.exists(os.path.join(d, "campaigns", c.list()[0]["id"], "doc.txt"))
-        assert any(e["type"] == "campaign" for e in seen)
+        assert os.path.exists(os.path.join(d, "crosshost", f["id"], "doc.txt"))
+        assert any(e["type"] == "crosshost" for e in seen)
 
-        # a restart reloads the campaign; the same flow does not open a second one
-        c2 = Correlator(ips, d, w, baseline={"h0>h1/tcp/135"}, log=lambda *_: None)
-        assert len(c2.list()) == 1 and c2.list()[0]["level"] == "confirmed"
-        c2.add_line("h0", ev(tcp_s, "10.0.0.10", "10.0.0.11", 51003, 445), base + 2 * w + 900)
-        c2.on_window("h0", rec(2), "s-h0")
-        assert len(c2.list()) == 1, c2.list()
+        # the peer's own red window points back at the same connection: no mirror finding, the first one rises
+        window(d, "h1", 2, h1n, h1e, flagged={"nend", "fdrop"}, kept=["p900_1", "nend", "fdrop"])
+        c.on_window("h1", rec(2, True, 2, 11.0), "s-h1")
+        c.drain()
+        got = c.list()
+        assert len(got) == 1 and got[0]["level"] == "corroborated" and got[0]["mirror"][0]["window"] == "w2", got
+        p2 = [pw for pw in got[0]["peer_windows"] if pw["window"] == "w2"][0]
+        assert p2["kept_subgraphs"] == [0] and p2["n_flagged"] == 2, p2
+        ids = {n["id"] for n in p2["nodes"]}
+        assert "p960_1" in ids, "2nd hop via the flagged dropped file missing"
 
-        # budget spent: the campaign stands, the LLM is skipped
+        # a restart reloads; a pending finding cannot finish after a restart and says so
+        c2 = Correlator(ips, d, w, log=lambda *_: None)
+        assert len(c2.list()) == 1 and c2.list()[0]["level"] == "corroborated"
+
+        # no raw line matched (collector gap): ip-only join, budget spent -> the finding stands, LLM skipped
         d2 = os.path.join(d, "b")
-        c3 = Correlator(ips, d2, w, baseline=set(), llm=alg2.MockLLM(alg2.rule_mock_responder),
-                        take_budget=lambda: False, log=lambda *_: None)
-        c3.add_line("h1", ev(tcp_s, "10.0.0.11", "10.0.0.10", 51000, 3389), base + 1000)
-        c3.on_window("h1", rec(0, True, 11, 11.0), "s-h1")
+        window(d2, "h0", 1, h0n, h0e, flagged={"p700_1"}, kept=["p700_1", "n445"])
+        for k in (1, 2):
+            window(d2, "h1", k, h1n, h1e, flagged={"p950_1"} if k == 1 else ())
+        c3 = Correlator(ips, d2, w, llm=alg2.MockLLM(alg2.rule_mock_responder), take_budget=lambda: False, log=lambda *_: None)
+        c3.on_window("h0", rec(1, True, 1, 11.0), "s-h0")
+        c3.on_window("h1", rec(1), "s-h1")
+        c3.on_window("h1", rec(2), "s-h1")
         c3.drain()
         got = c3.list()[0]
-        assert got["level"] == "suspected" and got["llm"]["status"] == "skipped", got
-        assert (got["origin"], got["target"]) == ("h1", "h0"), got
+        assert got["join"] == "ip-only" and got["llm"]["status"] == "skipped", got
+        ids = {n["id"] for pw in got["peer_windows"] for n in pw["nodes"]}
+        assert {"nend", "nold"} <= ids and got["level"] == "one-sided", (ids, got["level"])   # p950 not reached via fdll
 
-        # no baseline yet: flows are still reported, and the record says the baseline was missing
-        c4 = Correlator(ips, os.path.join(d, "n"), w, baseline=None, log=lambda *_: None)
-        c4.add_line("h0", ev(tcp_s, "10.0.0.10", "10.0.0.11", 51000, 135), base + 1000)
-        c4.on_window("h0", rec(0), "s-h0")
-        assert c4.list()[0]["baseline_known"] is False and c4.status()["baseline"] is None
-    assert load_hosts("/nonexistent") == {} and load_baseline("/nonexistent") is None
+        # the peer went silent: resolve after STALE_WINDOWS with a note
+        d3 = os.path.join(d, "c")
+        window(d3, "h0", 1, h0n, h0e, flagged={"p700_1"}, kept=["p700_1", "n445"])
+        c4 = Correlator(ips, d3, w, log=lambda *_: None)
+        c4.on_window("h0", rec(1, True, 1, 11.0), "s-h0")
+        for k in range(2, 3 + STALE_WINDOWS):
+            window(d3, "h0", k, h0n, h0e)
+            c4.on_window("h0", rec(k), "s-h0")
+        got = c4.list()[0]
+        assert got["level"] == "one-sided" and got["note"] and got["peer_windows"] == [], got
+    assert load_hosts("/nonexistent") == {}
     two_engines()
-    print("[SELFTEST OK] TCP/UDP address parsing, broadcast + multicast + unmonitored peers dropped, baseline silences known "
-          "flows, link -> suspected -> confirmed, levels never fall, later flows extend a campaign, LLM document holds both "
-          "hosts, restart reloads, budget respected, two engines with different models, one-host results unchanged")
+    print("[SELFTEST OK] TCP/UDP address parsing, broadcast + multicast + unmonitored peers dropped, no finding without a "
+          "red window, NET seeds from kept subgraphs only, pending until the peer closes, 5-tuple join to the peer's "
+          "process, 2nd hop only via flagged nodes, one-sided -> corroborated, mirror merges, ip-only fallback, stale "
+          "peer, LLM document holds both hosts, restart reloads, budget respected, two engines with different models, "
+          "one-host results unchanged")
 
 
 def two_engines():
     """Two real Engines with different tiny models feed one Correlator, and a host's windows match a plain Engine's."""
     import tempfile
-    import alg2
     import encode_to_features as enc
     from engine import Engine
     import score_window as sw
@@ -562,7 +725,7 @@ def two_engines():
             runs[name] = (f"{d}/{name}/run", f"{d}/{name}/scaler.json")
 
         sess = f"{d}/sessions"
-        cor = Correlator(ips, sess, 300_000, baseline=set(), log=lambda *_: None)
+        cor = Correlator(ips, sess, 300_000, log=lambda *_: None)
         from history import HistoryStore
         shared = HistoryStore(sess)
         engines = {}
@@ -580,7 +743,10 @@ def two_engines():
         assert engines["h0"].run_dir != engines["h1"].run_dir, "each host loads its own model"
         q = shared.query(base, base + 20 * 60_000, include_replay=True)["windows"]
         assert {w["host"] for w in q} == {"h0", "h1"}, q
-        assert any(c["key"] == "h0>h1/tcp/445" and c["seen_by"] == ["h0", "h1"] for c in cor.list()), cor.list()
+        conns = [r for b in cor.conns.values() for r in b.values()]
+        assert any(r["key"] == "h0>h1/tcp/445" and r["seen_by"] == {"h0", "h1"} for r in conns), conns
+        red = {h for h, e in engines.items() for w in e.windows() if w.get("alert")}
+        assert all(f["origin"] in red for f in cor.list()), "a finding without a red window"
 
         # same lines through a plain Engine: identical windows, so two-host mode leaves a host's result alone
         plain = Engine(*runs["m0"], f"{d}/plain", window_min=5, lateness_s=20)

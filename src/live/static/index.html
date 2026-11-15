@@ -131,13 +131,14 @@ tr.flag td{color:var(--anom);font-weight:600}
 .hosttabs .red{color:var(--anom)}
 .hrow{margin-bottom:8px}
 .hrow .hlabel{font:600 .8rem var(--mono);color:var(--muted);margin-bottom:3px}
-/* cross-host links and campaigns */
+/* cross-host follow-ups of red windows */
 .lvl{display:inline-block;font:600 .72rem var(--sans);border-radius:4px;padding:0 6px;border:1px solid currentColor;color:var(--muted)}
-.lvl.suspected{color:var(--warn)} .lvl.confirmed{color:var(--anom)}
+.lvl.one-sided{color:var(--warn)} .lvl.corroborated{color:var(--anom)}
+.pnodes{font:.78rem var(--mono);margin:4px 0 8px}
+.pnodes .fl{color:var(--anom);font-weight:600}
 #cTable tr[data-c]{cursor:pointer}
 #cTable tr[data-c]:hover td{background:var(--win-soft)}
 #cTable tr.sel td{background:var(--win-soft)}
-.cwarn{color:var(--warn);font-size:.8rem;margin-bottom:6px}
 /* Parameters panel: one column per scored VM, what the running server actually uses */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:10px}
 .pcol{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
@@ -187,13 +188,13 @@ tr.flag td{color:var(--anom);font-weight:600}
   </section>
 
   <section class="panel" id="cross" hidden>
-    <h2>Cross-host activity <span class="muted">(connections between the monitored VMs, found by code; the LLM only explains them)</span></h2>
-    <div class="cwarn" id="cWarn" hidden></div>
+    <h2>Cross-host follow-up <span class="muted">(starts from a red window on one VM, follows the network nodes in its anomalous subgraph to the other VM; the LLM aggregates both sides)</span></h2>
     <div class="hwrap"><table id="cTable"></table></div>
     <div id="cDetail"></div>
-    <div class="note"><span class="lvl">link</span> a new connection between two VMs, not in the known-traffic list; it turns nothing red ·
-      <span class="lvl suspected">suspected</span> one end had a red window at or before it ·
-      <span class="lvl confirmed">confirmed</span> both ends had red windows · a campaign never changes a VM's own windows</div>
+    <div class="note"><span class="lvl">pending</span> a red window's kept subgraph holds a socket on the other VM; waiting for that VM's windows ·
+      <span class="lvl one-sided">one-sided</span> the other VM's model scored the nodes around that connection as normal ·
+      <span class="lvl corroborated">corroborated</span> the other VM's model flagged ≥ 1 of them, or they sit in one of its kept subgraphs ·
+      a connection with no red window is never shown · a finding never changes a VM's own windows</div>
   </section>
 
   <section class="panel">
@@ -257,7 +258,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   let winsBy = {"": new Map()};  // VM -> (wid -> summary)
   const curWins = () => (winsBy[curHost] ??= new Map());
   const hostQ = (h = curHost) => h ? "?host=" + encodeURIComponent(h) : "";
-  let es = null, campaigns = new Map(), campSel = null;
+  let es = null, findings = new Map(), findSel = null;
   let status = null, selected = null, pinned = false, cy = null, detail = null, sgIdx = 0;
   let histSel = null;            // {sdir, wid} when the detail panel shows a window picked from History
 
@@ -380,9 +381,6 @@ tr.flag td{color:var(--anom);font-weight:600}
     if (many && $("hHost").options.length !== hosts.length + 1)
       $("hHost").innerHTML = '<option value="">all</option>' + hosts.map(h => `<option>${esc(h)}</option>`).join("");
     $("cross").hidden = !status?.correlation;
-    const noBase = status?.correlation && status.correlation.baseline == null;
-    $("cWarn").hidden = !noBase;
-    if (noBase) $("cWarn").textContent = "No known-traffic list yet, so every connection between the VMs shows as new. Run: lab flows --start … --end …";
   }
   function switchHost(h) {
     if (h === curHost) return;
@@ -395,38 +393,49 @@ tr.flag td{color:var(--anom);font-weight:600}
     if (b) switchHost(b.dataset.host);
   });
 
-  // ------------------------------------------------------------- cross-host (api/campaigns, src/live/correlate.py)
-  function renderCampaigns() {
-    const rows = [...campaigns.values()].sort((a,b) => b.last_ms - a.last_ms);
-    $("cTable").innerHTML = rows.length ? `<tr><th>level</th><th>first seen (lab)</th><th>connection</th><th>events</th><th>seen by</th><th>red order</th><th>LLM</th></tr>`
-      + rows.map(c => `<tr class="${c.id === campSel ? "sel" : ""}" data-c="${esc(c.id)}">
-        <td><span class="lvl ${esc(c.level)}">${esc(c.level)}</span></td><td class="num">${dhm(c.first_ms)}</td>
-        <td class="mono">${esc(c.client)} → ${esc(c.server)} ${esc(c.proto)}/${esc(c.port)}</td><td class="num">${c.count}</td>
-        <td class="mono">${esc((c.seen_by || []).join(", "))}</td><td class="mono">${c.origin ? esc(c.origin) + " → " + esc(c.target) : "–"}</td>
-        <td>${esc(c.llm?.status ? (LLM_LABEL[c.llm.status] || c.llm.status) : "")}</td></tr>`).join("")
-      : '<tr><td class="muted">no connection between the VMs that is outside the known traffic</td></tr>';
-    const c = campaigns.get(campSel), L = c?.llm;
-    if (!c) { $("cDetail").innerHTML = ""; return; }
-    const ev = Object.entries(c.evidence || {}).map(([h, ws]) => `<div><b class="mono">${esc(h)}</b>: ${ws.length
-      ? ws.map(w => `${hm(w.start_ms)} ${w.alert ? "RED" : "green"} (score ${num(w.score, 2)}, ${w.flagged} above τ)`).join(" · ")
-      : "no window with nodes above τ in range"}</div>`).join("");
-    const llm = !L ? '<div class="muted">No LLM step: it runs on suspected and confirmed campaigns when a provider is set.</div>'
+  // ------------------------------------------------------------- cross-host (api/crosshost, src/live/correlate.py)
+  function renderFindings() {
+    const rows = [...findings.values()].sort((a,b) => b.start_ms - a.start_ms);
+    const procs = f => [...new Set((f.peer_windows || []).flatMap(pw => pw.nodes.filter(n => n.type === "process" && n.why !== "neighbour")
+      .map(n => String(n.attr).split(/[\\/]/).pop())))].join(", ") || "–";
+    $("cTable").innerHTML = rows.length ? `<tr><th>level</th><th>red window (lab)</th><th>origin → peer</th><th>seed sockets</th><th>peer processes</th><th>peer flagged</th><th>LLM</th></tr>`
+      + rows.map(f => `<tr class="${f.id === findSel ? "sel" : ""}" data-c="${esc(f.id)}">
+        <td><span class="lvl ${esc(f.level)}">${esc(f.level)}</span></td><td class="num">${dhm(f.start_ms)}</td>
+        <td class="mono">${esc(f.origin)} → ${esc(f.peer)}</td>
+        <td class="mono">${(f.seeds || []).map(s => esc(s.attr) + (s.role === "anomalous" ? " ●" : "")).join("<br>")}</td>
+        <td class="mono">${esc(procs(f))}</td>
+        <td class="num">${(f.peer_windows || []).reduce((a, pw) => a + pw.n_flagged, 0)}</td>
+        <td>${esc(f.llm?.status ? (LLM_LABEL[f.llm.status] || f.llm.status) : "")}</td></tr>`).join("")
+      : '<tr><td class="muted">no red window has talked to another monitored VM</td></tr>';
+    const f = findings.get(findSel), L = f?.llm;
+    if (!f) { $("cDetail").innerHTML = ""; return; }
+    const seeds = `<div><b class="mono">${esc(f.origin)}</b> ${esc(f.window)} RED (score ${num(f.score, 2)}): kept subgraph holds `
+      + (f.seeds || []).map(s => `<span class="mono">${esc(s.attr)}</span> (${esc(s.role)}, subgraph #${s.sg})`).join(", ") + "</div>";
+    const conns = (f.connections || []).length
+      ? (f.connections).map(c => `<div class="mono">${esc(c.proto)} ${esc(f.origin)}:${c.origin_port} ↔ ${esc(f.peer)}:${c.peer_port} · ${c.count} events · pids ${esc(JSON.stringify(c.pids))}</div>`).join("")
+      : `<div class="muted">join: ${esc(f.join || "not yet")}${f.join === "ip-only" ? " (no raw network event matched; every socket on the peer that talks to the origin's IP)" : ""}</div>`;
+    const peer = (f.peer_windows || []).map(pw => `<div><b class="mono">${esc(f.peer)}</b> ${esc(pw.window)} ${pw.alert ? "RED" : "green"} · ${pw.n_flagged} flagged`
+      + `${pw.kept_subgraphs.length ? " · in kept subgraph #" + pw.kept_subgraphs.join(", #") : ""}${pw.cut ? ` · ${pw.cut} more nodes cut` : ""}</div>`
+      + `<div class="pnodes">${pw.nodes.map(n => `<div class="${n.flagged ? "fl" : ""}">${esc(n.type)} ${esc(n.attr)} <span class="muted">(${esc(n.why)}${n.margin != null ? ", margin " + num(n.margin, 3) : ""})</span></div>`).join("")}</div>`).join("")
+      || `<div class="muted">${f.level === "pending" ? "waiting for the peer's windows…" : "no node on the peer matched this connection"}</div>`;
+    const llm = !L ? '<div class="muted">No LLM step: it runs on every resolved finding when a provider is set.</div>'
       : L.status === "pending" ? '<h3>LLM: waiting for the model…</h3>'
       : L.error ? `<h3>LLM: ${esc(L.status)}</h3><div class="ev">${esc(L.error)}</div>`
-      : `<h3>LLM verdict on the full flow: ${esc(L.status)}${L.confidence != null ? " · confidence " + num(L.confidence, 2) : ""}</h3>
-         <div class="muted">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · not ground truth; the campaign stands either way</div>
+      : `<h3>LLM verdict on both sides: ${esc(L.status)}${L.confidence != null ? " · confidence " + num(L.confidence, 2) : ""}</h3>
+         <div class="muted">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · not ground truth; the finding stands either way</div>
          <div>${esc(L.rationale)}</div>${L.note ? `<div class="muted">${esc(L.note)}</div>` : ""}
          ${(L.tactics || []).length ? `<div class="muted">${L.tactics.map(t => esc(t.id || "") + " " + esc(t.name || "")).join(", ")}</div>` : ""}
          <div class="ev">${(L.evidence || []).map(esc).join("\n")}</div>
          ${L.report ? `<div class="report">${md(L.report)}</div>` : ""}
          ${L.report_error ? `<div class="muted">report failed: ${esc(L.report_error)}</div>` : ""}`;
-    $("cDetail").innerHTML = `<div class="llmcard ${esc(L?.status || "")}"><h3>${esc(c.client)} → ${esc(c.server)} ${esc(c.proto)}/${esc(c.port)}</h3>${ev}${llm}</div>`;
+    $("cDetail").innerHTML = `<div class="llmcard ${esc(L?.status || "")}"><h3>${esc(f.origin)} → ${esc(f.peer)} · ${esc(f.level)}</h3>`
+      + `${seeds}${conns}${peer}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ""}${llm}</div>`;
   }
   $("cTable").addEventListener("click", e => {
     const tr = e.target.closest("tr[data-c]");
     if (!tr) return;
-    campSel = campSel === tr.dataset.c ? null : tr.dataset.c;
-    renderCampaigns();
+    findSel = findSel === tr.dataset.c ? null : tr.dataset.c;
+    renderFindings();
   });
 
   // ------------------------------------------------------------- timeline: one row per VM
@@ -734,9 +743,9 @@ tr.flag td{color:var(--anom);font-weight:600}
         winsBy[h] = new Map(list.map(w => [w.window, w]));
       }
       if (status.correlation) {
-        const list = await (await fetch("api/campaigns")).json();
-        campaigns = new Map(list.map(c => [c.id, c]));
-        renderCampaigns();
+        const list = await (await fetch("api/crosshost")).json();
+        findings = new Map(list.map(f => [f.id, f]));
+        renderFindings();
       }
     } catch (e) {}
     renderStatus();
@@ -770,10 +779,10 @@ tr.flag td{color:var(--anom);font-weight:600}
       if (w.window === selected && (w.status === "scored" || w.status === "error")) loadDetail();
       else renderTimeline();
     });
-    es.addEventListener("campaign", e => {
-      const c = JSON.parse(e.data).campaign;
-      campaigns.set(c.id, c);
-      renderCampaigns();
+    es.addEventListener("crosshost", e => {
+      const f = JSON.parse(e.data).finding;
+      findings.set(f.id, f);
+      renderFindings();
     });
     es.onerror = () => { $("conn").className = "dot off"; $("connTxt").textContent = "UI lost the server, retrying…"; };
   }

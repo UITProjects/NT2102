@@ -228,22 +228,20 @@ VM: a selftest checks that a VM's windows are identical either way. Until `lab h
 `--host` twice still builds a pooled experiment (`merge_experiments()`, D12), but live scoring uses one model per host.
 A range that holds several hosts and no `--host` is refused. Lines from before the rename are `--host ws-etw`.
 
-### Cross-host correlation (`src/live/correlate.py`, DEVIATIONS D13)
+### Cross-host follow-up (`src/live/correlate.py`, DEVIATIONS D13)
 
-With two or more VMs scored and `/etc/nt2102-hosts.json` present (Ansible writes it from the inventory), plain code links
-the hosts; the LLM only explains the result. Each VM's model cannot do this, because it only sees that VM's graph.
+With two or more VMs scored and `/etc/nt2102-hosts.json` present (Ansible writes it from the inventory), a **red window** on
+one VM is followed to the other: every NET node in its kept subgraphs whose IP is another monitored VM is a seed. The raw
+network lines give the exact connection (5-tuple), so the other end is found on the peer VM: its socket node, the process
+that owns it, and what that process touched, scored by the **peer's own model**. The LLM gets both sides in one document.
+Each VM's model cannot do this, because it only sees that VM's graph.
 
 | Level | Meaning | Effect |
 |---|---|---|
-| `link` | unicast flow between monitored VMs, not in the known-traffic list | shown only, no LLM |
-| `suspected` | one end had a red window at or before the flow | LLM report of the full flow |
-| `confirmed` | the other end also had a red window in range | LLM report again |
+| `pending` | a red window's kept subgraph holds a socket on another VM; the peer's windows in [t − 5 min, t + 5 min] are not closed yet | shown |
+| `one-sided` | the peer's model scored the nodes around that connection as normal | LLM report of both sides |
+| `corroborated` | the peer's model flagged ≥ 1 of them, or one of its kept subgraphs holds them | LLM report again |
 
-Nothing here changes a VM's own windows. Lookback is 3 windows. First record normal traffic, from a range with no attack:
-
-```bash
-lab flows --start 2026-11-06T17:00:00Z --end 2026-11-07T03:00:00Z && sudo systemctl restart ocr-live
-```
-
-Without that file every flow counts as new, and the UI says so. Results: `sessions/campaigns.jsonl`, LLM files in
-`sessions/campaigns/<id>/`, API `/api/campaigns`, UI panel **Cross-host activity**. Validated on synthetic flows only.
+A connection between the VMs with no red window is never shown, and there is no known-traffic list. Nothing here changes a
+VM's own windows. Results: `sessions/crosshost.jsonl`, LLM files in `sessions/crosshost/<id>/`, API `/api/crosshost`, UI
+panel **Cross-host follow-up**. Validated on synthetic windows only.

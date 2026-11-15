@@ -41,25 +41,25 @@ Passing shows idle stays green on `ws-etw-1`. It does not show detection: no att
 
 In order, each on real events. Levels are in `src/live/README.md`.
 
-1. **Baseline.** On a clean range: `lab flows --start <t> --end <t>`. Read the printed list. Few or no unicast flows are expected:
-   idle sampling found only NetBIOS broadcast, which is dropped. Anything else needs a reason before it joins the baseline.
+1. **Silence.** With both VMs idle, a benign connection between them (a file share) opens **no** finding: nothing is red.
 2. **Regression.** Replay a saved `ws-etw-0` session that still has `raw/` through a server started with one `--loki-host` and through one
    started with both (`--port 8010 --sessions-dir <dir>`, no `--loki-url`; `PORT=8010 ./replay.sh <session>`). Replays feed the first
    host. `lab compare --baseline <dir1> --candidate <dir2>` must show identical windows.
 3. **Two-VM mode.** `lab hosts ws-etw-0 ws-etw-1 && sudo systemctl restart ocr-live`. Both timelines fill, the UI shows each "trained for" line.
    Watch **private memory** in Grafana "Trainer resources" through the catch-up, up to an hour of lines per host.
-4. **`link`.** An operator opens a normal connection between the VMs, for example a file share. Expect one `link`, `seen by` both hosts,
-   nothing red, no LLM call.
-5. **`suspected`.** The same connection in a window where `ws-etw-0` is red from the existing DVWA kill chain. The chain's subnet sweep may
-   create a link by itself [INFERENCE]; note it if so.
-6. **`confirmed`.** The other end red too. An RDP login is expected to redden an idle model [INFERENCE], which tests the rule with benign activity.
-7. **LLM document.** Open `sessions/campaigns/<id>/doc.txt`: `[network]` lines first, then lines tagged with each host.
+4. **`one-sided`.** A normal connection to `ws-etw-1` from a process inside a red `ws-etw-0` window's kept subgraph (the DVWA kill
+   chain's subnet sweep may do this by itself [INFERENCE]). Expect `pending`, then `one-sided` after `ws-etw-1`'s next window, the
+   other end's process named, an LLM call.
+5. **`corroborated`.** The same with something the `ws-etw-1` model flags at the other end. An RDP login is expected to redden an idle
+   model [INFERENCE], which tests the rule with benign activity.
+6. **Join.** `join: 5-tuple` in the finding; `ip-only` means the raw network lines did not match.
+7. **LLM document.** Open `sessions/crosshost/<id>/doc.txt`: `[network]` lines first, then lines tagged with each host.
 8. **Switch back.** `lab hosts ws-etw-0`, restart, and check the banner, `/healthz`, and that assignments stayed.
 
-Also check clock skew: compare the two ends' `first_ms` for one flow. Windows join by clock, and skew was never measured.
+Also check clock skew: compare the two ends' event times for one connection. Windows join by clock, and skew was never measured.
 
 ## What this does not prove
 
-Steps 5 and 6 test the rule on real events, not detection: the connection is benign and only happens to sit near a red window. Showing that
+Steps 4 and 5 test the rule on real events, not detection: the connection is benign and only happens to sit near a red window. Showing that
 real cross-host movement is caught needs an attack that crosses hosts. That is the user's decision and is not planned here.
-A hop from a host that stayed green only ever shows as `link`.
+A hop from a host that stayed green is never followed.

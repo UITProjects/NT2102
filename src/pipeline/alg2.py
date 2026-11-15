@@ -119,10 +119,10 @@ Rules:
 Answer with one JSON object and nothing else:
 {"verdict": "attack" | "benign" | "uncertain", "confidence": <number 0..1>, "attack_tactics": [{"id": "TA0002", "name": "Execution", "technique_id": "T1059.001"}], "evidence": ["<line copied from the document>"], "rationale": "<two or three sentences>"}"""
 
-# [OURS] same rules and JSON answer, for one document that spans several hosts (src/live/correlate.py, D13)
-CAMPAIGN_TRIAGE_SYSTEM = TRIAGE_SYSTEM.replace(
+# [OURS] same rules and JSON answer, for one document that spans two hosts (src/live/correlate.py, D13)
+CROSSHOST_TRIAGE_SYSTEM = TRIAGE_SYSTEM.replace(
     "of one Windows 10 host", "of several Windows hosts, each scored by its own model"
-).replace("Rules:\n", """Each document line starts with a tag. [hostname] marks events recorded on that host. [network] marks a connection between two monitored hosts, found by matching their network events, not by the anomaly detector. Decide whether the events show one adversary active across these hosts. Management traffic between hosts (file shares, remote administration, updates) is common and is not evidence by itself.
+).replace("Rules:\n", """Each document line starts with a tag. [hostname] marks events recorded on that host. The document starts from an anomaly: the first host's lines are a subgraph its anomaly detector flagged, and that subgraph holds a network socket on a second monitored host. [network] lines describe that connection, matched from both hosts' network events. The second host's lines are the processes and objects around the other end of the connection; its own detector may have scored them as normal. Decide whether the events on both hosts show one adversary moving from the first host to the second, or a benign connection next to an unrelated anomaly. Management traffic between hosts (file shares, remote administration, directory services, updates) is common and is not evidence by itself.
 
 Rules:\n""", 1)
 VERDICTS = ("attack", "benign", "uncertain")
@@ -157,7 +157,7 @@ def rule_mock_responder(system, messages):
     """NOT an LLM: keyword rule so the live UI can be exercised without a provider. 'attack' if the
     document mentions a typical attack tool, else 'benign'. Its verdicts mean nothing."""
     last = messages[-1]["content"]
-    if system is TRIAGE_SYSTEM or system is CAMPAIGN_TRIAGE_SYSTEM:
+    if system is TRIAGE_SYSTEM or system is CROSSHOST_TRIAGE_SYSTEM:
         doc = last.split("<document>", 1)[-1]
         hits = [ln.strip() for ln in doc.splitlines()
                 if re.search(r"powershell|cmd\.exe|rundll32|mshta|certutil|whoami|schtasks|reg\.exe", ln, re.I)]
@@ -652,7 +652,7 @@ def investigate(subgraphs: list, edges: pd.DataFrame, window: dict, client, out_
     return res
 
 
-def investigate_campaign(doc: dict, window: dict, n_anomalous: int, score: float, client, out_dir: str | None = None) -> dict:
+def investigate_crosshost(doc: dict, window: dict, n_anomalous: int, score: float, client, out_dir: str | None = None) -> dict:
     """[OURS] one cross-host document -> triage, and for an attack the paper's IOC + report prompts (Alg. 2 l.5-10).
 
     doc: {"text", "lines", "truncated"} built by correlate.py, every line tagged with its host. The verdict stays an
@@ -662,13 +662,13 @@ def investigate_campaign(doc: dict, window: dict, n_anomalous: int, score: float
     sg = {"id": 0, "sg_score": score, "level": "cross-host", "n_anomalous": n_anomalous, "n_connectors": 0, "nodes": []}
     report = None
     try:
-        tri = triage(call, sg, doc, window, CAMPAIGN_TRIAGE_SYSTEM)
-    except Exception as e:                                   # provider down / refusal: the correlation result stands
+        tri = triage(call, sg, doc, window, CROSSHOST_TRIAGE_SYSTEM)
+    except Exception as e:                                   # provider down / refusal: the finding stands
         tri = {"verdict": "error", "confidence": None, "attack_tactics": [], "evidence": [], "evidence_dropped": [],
                "rationale": "", "note": f"{type(e).__name__}: {e}"}
     if tri["verdict"] == "attack":
         try:
-            report = attack_report(call, "campaign", doc)
+            report = attack_report(call, "crosshost", doc)
         except Exception as e:
             report = {"error": f"{type(e).__name__}: {e}"}
     res = {"verdict": {"benign": "false_positive"}.get(tri["verdict"], tri["verdict"]), "confidence": tri["confidence"],

@@ -125,7 +125,8 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   `maintenance.ps1 → whoami` every minute; by user decision each host's baseline includes admin/RDP + current-state work, only
   exploit/enumeration runs excluded (D2). The trainer
   runs `main` via Ansible `--tags project` (hosts file written, correlation on). `lab hosts` switches one-VM / two-VM. A correlation stage
-  links hosts by code and the LLM explains the full flow (D13); no `lab flows` baseline yet, no attack has crossed hosts. Older data says
+  follows a red window's NET nodes to the other VM's process at the other end and the LLM aggregates both sides (D13, anomaly-first
+  since 2026-11-15, local only, not deployed); no attack has crossed hosts. Older data says
   `ws-etw`: Loki lines from before the rename keep that label.
 - **Deliverables (slides + demo) commit to ONE Windows VM** (`ws-etw-0`, exp08): the recorded demo and the deck show a single host.
   The second VM (`ws-etw-1`) and cross-host correlation are **nice-to-have**, shown only as future work unless there is time (user, 2026-11-08).
@@ -137,16 +138,17 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   (R2 attack windows 70.17/54.42 Moderate, LLM `attack` 0.85/0.9; 288 windows / 7 alerts / 3 benign FP), D1–D13. Builds clean
   (`latexmk -pdf main.tex`, 21 pages). Only demo screenshots + LLM-provider name left as `\todoval`. Committed (PR #15).
 - **Next action (user, 2026-11-13): verify cross-host with the teammate's REAL attack** — react2shell (`ws-etw-1`) → DC (`ws-etw-0`),
-  so correlation (D13) fires on real flows. **Changed 2026-11-13:** the attack is the **teammate's real one, not our injected kill chain**,
+  so the anomaly-first follow-up (D13) fires on a real hop. **Changed 2026-11-13:** the attack is the **teammate's real one, not our injected kill chain**,
   so we do NOT build a synthetic scenario in `src/atomic-attack-pack/` and there is **no label oracle** (D6) — ground truth = the
   teammate's account + time window (blocks any P/R/F1 claim). `ws-etw-0` is already retrained as the DC (`exp16-ws0`). Prereqs:
-  (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show; (b) `lab flows` baseline on a clean range; (c) proof the attack
+  (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show; (b) deploy the anomaly-first `correlate.py` to the trainer; (c) proof the attack
   scores red on each host before any claim (D6 risk: DC auth blends into legit AD traffic). Network-flow note for the teammate (the
   user's imagined path): `docs/notes/cross-host-attack-flow.md`. Also owed: `ws-etw-1` D14 rollout, merge the branch to `main`, 24 h
   two-VM soak. Details: PROGRESS top. Then concepts 2–4.
 - SG-Det: code default = the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1. **Live `ocr-live` runs [OURS]
-  Moderate from 4.5 on both hosts since 2026-11-15** (user; `live_sg_moderate_from` in `proxmox.ini`), NET rule kept, so the teammate's
-  react2shell run (peak 4.72) goes red; tuned on that run, so not independent evidence (D8). `ocr-live` keeps a persistent, range-queryable
+  Moderate from 4.5 on both hosts since 2026-11-15** (user; `live_sg_moderate_from` in `proxmox.ini`) **with the NET rule OFF** (user,
+  2026-11-15 05:03Z, `live_sg_require_types=none`; accepts ~5 benign red/day per host): the teammate's 11-15 react2shell run (up to 19.9)
+  was suppressed by the rule. Tuned on those runs, so not independent evidence (D8). `ocr-live` keeps a persistent, range-queryable
   window history (`src/live/history.py`).
 - Attack target (single-host demo): DVWA on XAMPP on `ws-etw-0` (user, 2026-10-19), its OS-command-injection page
   (`/vulnerabilities/exec/`) as the RCE sink, on :3000, login admin/password, security low. (For the cross-host demo the RCE *entry* is
@@ -223,7 +225,7 @@ history of earlier progress) and, if relevant, this section.
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop` = pull + build → features → train into one
   run folder; `lab train --exclude-file` (leave windows out); `lab compare` (two models on the same replayed windows); `lab promote <run> [--host <vm>]`
   sets the pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that `live_server.py`, `serve.sh`, `rejudge.sh`
-  and `ocr-live` read; `lab hosts <vm> ...` picks the scored VMs; `lab flows` records known traffic between VMs.
+  and `ocr-live` read; `lab hosts <vm> ...` picks the scored VMs.
 - Attack side: `src/atomic-attack-pack/`: one RCE kill chain (`scenarios/rce-killchain.ps1`) delivered from Kali by `tools/launch_exploit.py` (pack
   at `/opt/attack-pack`, role `kali_attack`): DVWA exploit → Discovery → T1046 scan → T1105 real-tool download + run → DB dump → C2 beacon → T1053.005 →
   T1070 cleanup. `LABELING.md`, `tools/build_node_labels.py`.
@@ -231,8 +233,9 @@ history of earlier progress) and, if relevant, this section.
   `experiment.json`); shared client `lokiclient.py`.
 - Host side: `src/pipeline/encode_to_features.py` (§5.1.2 features) → `train_gnn_models.py` (OCRGCN per node type) →
   `score_window.py` (score any edge CSV with the train scaler + relations).
-- Two VMs: one `engine.py` + `loki_source.py` per scored VM (`lab promote --host`, `lab hosts`), then `src/live/correlate.py` (flows
-  between VMs + red windows → link / suspected / confirmed; known traffic from `lab flows`, host IPs from `/etc/nt2102-hosts.json`).
+- Two VMs: one `engine.py` + `loki_source.py` per scored VM (`lab promote --host`, `lab hosts`), then `src/live/correlate.py` (red window
+  → NET nodes in its kept subgraphs → 5-tuple join on raw knet lines → the peer's process + nearby nodes with the peer model's scores →
+  pending / one-sided / corroborated → LLM on both sides; host IPs from `/etc/nt2102-hosts.json`).
 - Live (host): `src/live/loki_source.py` (follows Loki) → `src/live/live_server.py` (FastAPI + SSE UI) → `engine.py` (offsets, event-time
   reorder, windows, scoring thread) → `src/pipeline/alg1.py` (Alg. 1 + SG-Det, also re-judges saved
   sessions) → `src/pipeline/alg2.py` (optional LLM thread: triage verdict + Alg. 2 l.3–15 report on red
@@ -279,8 +282,9 @@ Full entries (what / why / impact / claims limited) live in `docs/DEVIATIONS.md`
   no cross-window dedup. Alg. 1 runs in memory per window with the [AUTHOR CODE] subgraph score (Σ clamped
   min-max prob, not the paper text's "sum of scores"), [PAPER] §7.2.1 level scale (Moderate from 10; [AUTHOR CODE]
   > 10; the [OURS] 30 was retired 2026-11-03), no top-k fallback, [OURS] NET rule (a kept subgraph needs >= 1 anomalous
-  NET node, else suppressed and logged; 2026-11-09). Window history persisted to files (history.jsonl).
-- Two hosts: one model per host (D12); cross-host correlation is [OURS] (D13), the paper leaves lateral movement out of scope.
+  NET node, else suppressed and logged; 2026-11-09; off live since 2026-11-15, still the code default). Window history persisted to files (history.jsonl).
+- Two hosts: one model per host (D12); cross-host follow-up is [OURS] (D13): starts only from a red window's kept subgraph, no
+  known-traffic list; the paper leaves lateral movement out of scope.
 - LLM step: [OURS] triage verdict before the paper's Alg. 2 prompts (the paper never classifies), no RAG,
   Alg. 2 l.16–25 left out, verdict is an overlay and never training data (D9).
 - Process command lines: Sysmon EID 1 (role `win_sysmon`, collector stream `sysmon`) joined to PROCESS nodes by PID + time

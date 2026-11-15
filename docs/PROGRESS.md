@@ -4,6 +4,32 @@ Replace lines in place when status changes; no history. "Verified" = checked in 
 Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is
 **`test-train-with-two-window-vm` @ `6db7b2e`**, clean (2026-11-15 03:11Z, Ansible `--tags project -e repo_branch=…`), not `main`.
 
+## 2026-11-15 Cross-host correlation rebuilt anomaly-first (D13), local only
+
+User: the flow-first layer ("connections between the monitored VMs, found by code") was network monitoring, not anomaly
+detection. `correlate.py` now starts from a **red window**: NET nodes in its kept subgraphs that point at the other VM →
+5-tuple join on the raw knet lines → the peer's socket, owner process and nearby nodes with the **peer model's** scores →
+`pending` / `one-sided` / `corroborated` → LLM on both sides. `link` level, `lab flows` and `flow-baseline.json` removed;
+API `/api/crosshost`, UI panel "Cross-host follow-up".
+- **Verified:** `./selftest.sh` 20/20 (synthetic windows only = "it runs").
+- **Not done:** not committed, not deployed to the trainer; never run on real data; no crossing attack yet.
+
+## 2026-11-15 NET rule OFF live (both hosts, D8)
+
+The teammate's second react2shell run on `ws-etw-1` (11-15 03:35–04:40Z, from VPN client 10.8.0.3: winPEAS, `sc`/`schtasks`
+enumeration, node.exe → cmd → `powershell -enc`) scored 13.4 / 9.9 / 7.2 / 19.9 / 4.66 but stayed green: all suppressed by the NET
+rule (the RCE reused the inbound HTTP socket, a normal-looking NET node). User decision: **rule off, accept some false positives**.
+- **Deployed 2026-11-15 05:03Z:** `live_sg_require_types=none` in `proxmox.ini` (new template var, default `net`), same
+  `--start-at-task "Install the live-server systemd unit"` path. Verified: unit `--sg-moderate-from 4.5 --sg-require-types none`,
+  `/healthz` ok, `/api/status` `require_types = []`, models exp16-ws0 / exp15-ws1, converter `match`.
+- **Re-judge (D8 table):** ws-etw-1 rule off → 7 attack-run windows red (on: 1) + 7 other; ws-etw-0 4 → 9 red. ≈ 5 benign red/day
+  per host; LLM budget raised 15 → 30/day (user, 2026-11-15) so false alarms are less likely to use it up.
+- **Live after restart** (the server re-read the last hour from Loki into `.r3`/`.r4`): ws-etw-1 04:15Z (7.24) and 04:20Z
+  (19.86) now **red**; ws-etw-0 04:30Z (our DVWA test) red. But ws-etw-1 04:40Z re-scored **3.03** (was 4.66 before the
+  restart) and stays green: [INFERENCE] the re-read starts mid-run, so PROCESS/NET nodes lose earlier events (idle gaps,
+  start edges) and the score moves. Same window, different score across restarts = another fragility note.
+- **Not verified yet:** a fresh attack going red live with the rule off (in-sample so far).
+
 ## 2026-11-15 Live SG-Det cut-off lowered 10 → 4.5 (both hosts, D8)
 
 The teammate's react2shell attack on `ws-etw-1` (11-14 18:10–19:00Z, confirmed from Sysmon command lines: encoded-PowerShell reverse
@@ -108,17 +134,16 @@ Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. User decisions 
   `lab promote exp15-ws1 --host ws-etw-1`, `lab hosts ws-etw-0 ws-etw-1`, restart. Both `converter_check: match`.
 - **First check (14:20Z):** both engines follow Loki (`ws-etw-0` lag −1.6 s, `ws-etw-1` caught up from 34 min behind to 3.4 s).
   `ws-etw-1` 12 windows scored, **0 red**, median sg 0.0, max 1.99, no NET-rule suppression; `ws-etw-0` 12 scored, 0 red.
-  `ocr-live` 1.06 GB. Correlation on: 5 `link`, 0 suspected / confirmed (no `lab flows` baseline yet, so benign VM↔VM traffic counts as
-  links). Label source for "0 red": operator assertion that nobody acted on either VM then. Not a soak, not a detection result.
+  `ocr-live` 1.06 GB. Correlation on (then flow-first: 5 benign `link`s; the layer is anomaly-first since 2026-11-15, D13). Label source for "0 red": operator assertion that nobody acted on either VM then. Not a soak, not a detection result.
 - **Rollback:** `lab hosts ws-etw-0 && sudo systemctl restart ocr-live` (assignments stay).
 - **NEXT ACTION (user, 2026-11-13): verify cross-host with the teammate's REAL attack** — `react2shell` (ws-etw-1) → DC (ws-etw-0),
   so the correlation layer (D13) fires on real flows. **Changed 2026-11-13:** the attack is the **teammate's real one, not our injected
   kill chain**, so we do **not** build a synthetic scenario in `src/atomic-attack-pack/` (the old prereq (b) is dropped) and there is
   **no self-logged label oracle** (D6) — ground truth = the teammate's account + time window (operator assertion; blocks any P/R/F1
-  claim). Expected: `ws-etw-1` red (react2shell entry) + a `ws-etw-1 → ws-etw-0` flow (:445/:5985) + `ws-etw-0` red (pivot) →
-  correlation `link → suspected → confirmed`, LLM explains the full flow and cites the real command lines (D14). Prereqs, in order:
-  (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show (user, 2026-11-13); (b) `lab flows` baseline on a clean range first,
-  else benign VM↔VM AD traffic drowns the signal (5 benign links already seen); (c) confirm the attack scores red on **each** host —
+  claim). Expected: `ws-etw-1` red (react2shell entry) with the pivot socket `10.21.3.10:<port>` inside a kept subgraph → followed to the
+  DC's process → `one-sided` or (if the DC's model flags it) `corroborated`, LLM explains both sides and cites the real command lines
+  (D14). Prereqs, in order: (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show (user, 2026-11-13); (b) deploy the
+  anomaly-first `correlate.py` (2026-11-15) to the trainer; (c) confirm the attack scores red on **each** host —
   if react2shell's exploit or the DC pivot does not go red (D6 risk: node server + AD auth are in-distribution), that is a **finding to
   report, not to hide**. Scope honesty: lateral movement with a known lab credential, not credential theft; DCSync/real cred-dump out of
   scope. A network-focused attack-flow note for the teammate is at `docs/notes/cross-host-attack-flow.md` (the user's imagined path).
@@ -224,15 +249,15 @@ Walk-through with the reasoning and repeat commands: `docs/notes/ws-etw-1-retrai
 
 ## 2026-11-07 one model per host + cross-host correlation: built, NOT deployed (selftests + UI check only)
 
-On branch `trainer-monitoring-guard`, not pushed, not on the trainer. Built: `lab promote --host`, `lab hosts`, `lab flows`, one
-engine per VM, `src/live/correlate.py` (D13), multi-host LLM report, UI ("X is trained for Y" line, VM tabs, one timeline row per
+On branch `trainer-monitoring-guard`, not pushed, not on the trainer. Built: `lab promote --host`, `lab hosts`, one
+engine per VM, `src/live/correlate.py` (D13, rebuilt anomaly-first 2026-11-15), multi-host LLM report, UI ("X is trained for Y" line, VM tabs, one timeline row per
 VM, Cross-host activity panel, History VM column). Checked: `./selftest.sh` 19/19; real `live_server.py` startup in one- and
 two-host mode; UI in Playwright on fake data (one-VM, two-VM, no baseline, host not recorded). A selftest confirms a VM's
 windows match a plain engine. Not yet: real two-VM run, trainer memory with two engines, a replay of a saved `ws-etw-0` session
-in both modes, `lab flows` on real data.
+in both modes.
 
 To go live: push, `ansible-playbook -i proxmox.ini ubuntu.yml --tags project -e repo_branch=trainer-monitoring-guard`, then on the
-trainer `lab promote exp08 --host ws-etw-0`, `lab promote exp09-ws1 --host ws-etw-1`, `lab flows --start ... --end ...`,
+trainer `lab promote exp08 --host ws-etw-0`, `lab promote exp09-ws1 --host ws-etw-1`,
 `lab hosts ws-etw-0 ws-etw-1`, `sudo systemctl restart ocr-live`, and watch memory in Grafana during catch-up. Until `lab hosts` is
 run, `ocr-live` stays on exp08 and `ws-etw-0`.
 

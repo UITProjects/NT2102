@@ -33,7 +33,7 @@ flowchart LR
     W1 -- "2 · SMB :445 / WinRM :5985<br/>pivot from the RCE shell" --> W0
     W0 -- "3 · on-DC AD actions<br/>(lateral move, known lab cred)" --> W0
 
-    W1 -. "detector: ws-etw-1 RED (entry)" .-> D1[["D13 correlation<br/>links the ws-etw-1 → ws-etw-0 flow<br/>link → suspected → confirmed"]]
+    W1 -. "detector: ws-etw-1 RED (entry)" .-> D1[["D13 follow-up<br/>red ws-etw-1 window → its socket on ws-etw-0<br/>→ the DC process at the other end<br/>one-sided / corroborated"]]
     W0 -. "detector: ws-etw-0 RED (pivot)" .-> D1
 ```
 
@@ -46,23 +46,23 @@ flowchart LR
    - *Alternative entry I floated:* **`kali → ws-etw-0:3000`** (DVWA command injection). Keep this only as a
      fallback — it enters *on the DC directly* and skips the pivot, so it does **not** exercise cross-host
      correlation. The point of this exercise is the pivot, so prefer entry on `ws-etw-1`.
-2. **`ws-etw-1 → ws-etw-0` pivot** from the RCE shell to the DC, over the network. **Pick the port with care
-   (data-backed, see below): use WinRM `:5985` (`winrs -r:10.21.3.10 …` / PS remoting), NOT SMB `:445`.**
+2. **`ws-etw-1 → ws-etw-0` pivot** from the RCE shell to the DC, over the network. **Preferred: WinRM `:5985`
+   (`winrs -r:10.21.3.10 …` / PS remoting); SMB `:445` also works now, with a caveat below.**
    On-host Windows built-ins are enough. **[?]** which technique + which credential — a known lab admin cred is
    fine (this demonstrates *lateral movement detection*, not credential theft).
 
-   **Why not SMB :445:** a member ↔ DC runs SMB/LDAP/Kerberos/DNS *constantly*, so those flows are in our
-   `lab flows` baseline, and the correlation layer **skips any flow already in the baseline**
-   (`correlate.py:221`). A pivot reusing one of them is invisible to the *flow* layer (both hosts can still go
-   red on their own). Baseline recorded 2026-11-13 (24 h, `src/artifacts/flow-baseline.json`):
+   **How the correlation layer sees the pivot (anomaly-first since 2026-11-15, D13):** it does nothing until a
+   `ws-etw-1` window goes **red**. Then it takes every socket node inside that window's *kept* anomalous subgraph
+   that points at `10.21.3.10`, finds the exact connection in the raw network events, and looks at the process on
+   the DC that owns the other end, scored by the DC's own model. So the pivot is followed only if **the shell
+   process that opens the connection sits in the red subgraph on `ws-etw-1`**. There is no known-traffic list any
+   more, so SMB `:445` is no longer invisible.
 
-   | In the baseline (pivot here = NOT flagged) | Not in the baseline (pivot here = flagged as a new link) |
-   |---|---|
-   | `ws-etw-1→ws-etw-0` tcp/445 SMB, tcp/389 LDAP, udp/389 CLDAP, tcp/88 Kerberos, tcp/135 RPC, udp/53 DNS; `ws-etw-0→ws-etw-1` udp/123 NTP, tcp/dyn | **tcp/5985 WinRM**, tcp/3389 RDP, tcp/22 SSH, any other port |
-
-   So: **WinRM :5985 is the clean choice** — it's a normal admin pivot and it's not in the baseline, so
-   `link → suspected → confirmed` can fire. (This is the D6 "DC auth blends into AD traffic" risk, confirmed at
-   the flow level. If you must pivot over SMB, say so — we'd verify via each host going red, not via the link.)
+   **Why WinRM is still the better choice [INFERENCE]:** a member ↔ DC runs SMB/LDAP/Kerberos/DNS all the time
+   (24 h on 2026-11-13: `ws-etw-1→ws-etw-0` tcp/445, 389, 88, 135, udp/389, 53; `ws-etw-0→ws-etw-1` udp/123,
+   tcp/dyn). On the DC, the process that answers SMB is `System`, which also answers the benign traffic, so the
+   DC's model will probably score it as normal (`one-sided`). A WinRM pivot lands in `wsmprovhost.exe` (PS remoting) or `winrshost.exe` (`winrs`) on the DC,
+   which an idle DC rarely runs, so it has a better chance of being flagged (`corroborated`).
 3. **on `ws-etw-0` (DC)** — the action after landing: enumerate AD / read a share / run a command as the pivoted
    identity. **[?]** what exactly. **Out of scope:** DCSync, real credential dumping (`lsass`), anything we
    can't label honestly.
@@ -71,15 +71,18 @@ flowchart LR
 
 - `ws-etw-1` window goes **RED** on the react2shell exploit; its process rows show the **real command lines**
   (Sysmon EID 1, D14) — e.g. the spawned `cmd`/`powershell` under `node.exe`.
-- A **`ws-etw-1 → ws-etw-0` flow** on :445/:5985 appears that is **not** in the `lab flows` baseline.
-- `ws-etw-0` window goes **RED** on the pivot activity.
-- **Correlation** ties them: `link → suspected → confirmed`, and the LLM campaign document explains the whole
-  path and cites the command lines.
+- That red window's kept subgraph holds a socket `10.21.3.10:5985` (or `:445`), so a **cross-host finding** opens
+  for `ws-etw-1 → ws-etw-0`.
+- On the DC, the process at the other end (`wsmprovhost.exe` / `winrshost.exe` for WinRM) and what it did are pulled in with the
+  DC model's scores: `corroborated` if that model flags any of them, else `one-sided`. `ws-etw-0` may also go red
+  on its own; that red window then joins the same finding.
+- The LLM gets both sides in one document, explains the whole path and cites the command lines.
 - Idle windows around the attack stay **green** on both hosts.
 
 **Honest risks (not hidden):** (a) the react2shell exploit may *not* go red — the node server is in the benign
 baseline, so a single child process might stay under the subgraph cut-off. (b) The DC pivot auth can blend into
-normal AD traffic. If either stays green, that's a **finding we report**, and tells us what to strengthen.
+normal AD traffic (the finding then stays `one-sided`). (c) If the shell process that opens the pivot is not
+inside the red subgraph on `ws-etw-1`, the pivot is not followed at all. If either stays green, that's a **finding we report**, and tells us what to strengthen.
 
 ## What I need from you (the "things I can't think of")
 
@@ -87,7 +90,7 @@ normal AD traffic. If either stays green, that's a **finding we report**, and te
 - **[?]** The pivot you'll use `ws-etw-1 → ws-etw-0` — **please pick WinRM :5985 if you can** (reason above);
   tell me if you must use SMB :445 so I set expectations on the correlation layer.
 - **[?]** The DC action to perform (kept to lateral movement; no DCSync).
-- **[?]** Any port/protocol that differs from the table above, so I can set the `lab flows` baseline correctly.
+- **[?]** Any port/protocol that differs from the ones above, so I know which DC process to expect at the other end.
 
 Once we agree, you run it; I record the start/end time and your account (that's our only ground truth — there's
 no injected label oracle for a real attack), and I check each host + the correlation.

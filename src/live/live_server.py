@@ -8,8 +8,8 @@ live_server.py - HTTP layer around engine.Engine: ingest from Loki or the shippe
     GET  /api/windows         every window of the current session (summary rows); ?host=
     GET  /api/windows/{wid}   one window: top nodes per type, Alg. 1 subgraphs (score, level, kept),
                               LLM verdict + attack report when --llm-provider is set (alg2.py); ?host=
-    GET  /api/campaigns       cross-host links and campaigns (correlate.py), newest first; /api/campaigns/{id}
-    GET  /api/stream          Server-Sent Events: "window", "campaign", "status" (after 2 s idle); ?host=
+    GET  /api/crosshost       cross-host follow-ups of red windows (correlate.py), newest first; /api/crosshost/{id}
+    GET  /api/stream          Server-Sent Events: "window", "crosshost", "status" (after 2 s idle); ?host=
     GET  /healthz             200 {"ok": true} | 503 {"ok": false, "reason"}: engine threads alive and (with
                               --loki-url) a successful Loki poll within 120 s. For monitoring / curl checks.
     GET  /                    the UI (static/index.html)
@@ -19,7 +19,8 @@ Usage (from the repo root): ./serve.sh [live|local] [flags] wraps
     uv run python src/live/live_server.py --selftest      (/healthz + watchdog logic; no model, no Loki)
   The model comes from the current-model pointer (src/artifacts/current.local.json, else current.json;
   `lab promote <run>` sets it). With per-host models (`lab promote <run> --host <vm>`, `lab hosts <vm> ...`) one engine runs
-  per active VM, each with its own model; with >= 2 VMs and /etc/nt2102-hosts.json, correlate.py links them.
+  per active VM, each with its own model; with >= 2 VMs and /etc/nt2102-hosts.json, correlate.py follows a red window's
+  network nodes to the other VM.
   --run-dir / --scaler / --experiment override it, e.g.
     --run-dir src/artifacts/runs/exp01 --scaler src/artifacts/features/self-dataset/feature_scaler.json
     add --llm-provider anthropic|openai|ollama|deepseek|mock for the LLM verdict on red windows (src/live/README.md)
@@ -171,17 +172,17 @@ def create_app(engine: Engine, token: str | None, source=None, members=None, cor
             raise HTTPException(404, "unknown window")
         return d
 
-    # ---- cross-host links and campaigns (correlate.py)
-    @app.get("/api/campaigns")
-    async def campaigns(limit: int = Query(100, ge=1, le=1000)):
+    # ---- cross-host follow-ups of red windows (correlate.py)
+    @app.get("/api/crosshost")
+    async def crosshost(limit: int = Query(100, ge=1, le=1000)):
         return correlator.list(limit) if correlator is not None else []
 
-    @app.get("/api/campaigns/{cid}")
-    async def campaign(cid: str):
-        c = correlator.get(cid) if correlator is not None else None
-        if c is None:
-            raise HTTPException(404, "unknown campaign")
-        return c
+    @app.get("/api/crosshost/{fid}")
+    async def crosshost_one(fid: str):
+        f = correlator.get(fid) if correlator is not None else None
+        if f is None:
+            raise HTTPException(404, "unknown cross-host finding")
+        return f
 
     # ---- persistent history (history.py): every window ever closed, across restarts and session rotations
     @app.get("/api/history")
@@ -274,7 +275,6 @@ def main():
     g.add_argument("--loki-default-host", metavar="VM",
                    help="follow this host when the pointer has no per-host models (without it: newest run of any host)")
     g.add_argument("--hosts-file", default=None, help="{host: ip} for cross-host correlation (default /etc/nt2102-hosts.json)")
-    g.add_argument("--flow-baseline", default=None, help="known flows from `lab flows` (default src/artifacts/flow-baseline.json)")
     g.add_argument("--loki-poll-s", type=float, default=1.0)
     g.add_argument("--loki-lookback-s", type=float, default=3600,
                    help="how far back to look for the newest run (raise it to follow an old replayed run)")
@@ -354,10 +354,8 @@ def main():
     cor = None
     if len(plans) > 1:
         if all(h in hosts_map for h in names):
-            baseline = correlate.load_baseline(a.flow_baseline or correlate.BASELINE_FILE)
-            cor = correlate.Correlator({h: hosts_map[h] for h in names}, a.sessions_dir, int(a.window_min * 60_000), baseline)
-            print(f"[live] correlation on: {cor.ips}, baseline "
-                  + (f"{len(baseline)} known flows" if baseline is not None else "MISSING: every flow is new (lab flows)"))
+            cor = correlate.Correlator({h: hosts_map[h] for h in names}, a.sessions_dir, int(a.window_min * 60_000))
+            print(f"[live] correlation on: {cor.ips} (red windows followed to the other VM)")
         else:
             print(f"[live] correlation OFF: {names} not all in the hosts file ({hosts_map})")
     shared = Store(a.sessions_dir)
@@ -505,7 +503,7 @@ def selftest():
     assert d.status_code == 200 and d.json()["window"]["max_sg_score"] == 12.0, d.text
     assert c.get("/api/history/live-a/nope").status_code == 404
     assert c.get("/api/history/.hidden/w1").status_code == 400
-    # two VMs: ?host= reaches the right engine, an unknown one is a 404, the banner text, history by host, campaigns
+    # two VMs: ?host= reaches the right engine, an unknown one is a 404, the banner text, history by host, crosshost
     eng.ok, src.healthy = True, True
 
     class Eng2(Eng):
@@ -524,13 +522,13 @@ def selftest():
         listeners = []
 
         def status(self):
-            return {"hosts": {}, "baseline": 3, "campaigns": {"link": 1, "suspected": 0, "confirmed": 0}}
+            return {"hosts": {}, "findings": {"pending": 0, "one-sided": 1, "corroborated": 0}}
 
         def list(self, limit):
             return [{"id": "c1"}]
 
-        def get(self, cid):
-            return {"id": cid} if cid == "c1" else None
+        def get(self, fid):
+            return {"id": fid} if fid == "c1" else None
     e0, e1 = Eng2("exp08"), Eng2("exp09-ws1")
     e0.listeners, e1.listeners = [], []
     trained = trained_text([("exp08", ["ws-etw-0"]), ("exp09-ws1", ["ws-etw-1"])])
@@ -540,7 +538,7 @@ def selftest():
     assert st["model"]["run_dir"] == "exp09-ws1" and st["selected_host"] == "ws-etw-1", st
     assert [h["model"] for h in st["hosts"]] == ["exp08", "exp09-ws1"], st["hosts"]
     assert [t["text"] for t in st["trained_for"]] == ["exp08 is trained for ws-etw-0", "exp09-ws1 is trained for ws-etw-1"]
-    assert st["correlation"]["baseline"] == 3
+    assert st["correlation"]["findings"]["one-sided"] == 1
     assert st["server"] == {}                                               # no server facts given -> empty, not missing
     cv = code_version()                                                     # this checkout (or "unknown" without git)
     assert set(cv) == {"sha", "branch", "dirty"} and cv["sha"], cv
@@ -552,9 +550,9 @@ def selftest():
     assert two.get("/api/windows", params={"host": "ws-etw-1"}).json() == [{"window": "w-exp09-ws1"}]
     assert two.get("/api/windows", params={"host": "nope"}).status_code == 404
     assert two.get("/api/stream", params={"host": "nope"}).status_code == 404
-    assert two.get("/api/campaigns").json() == [{"id": "c1"}]
-    assert two.get("/api/campaigns/c1").status_code == 200 and two.get("/api/campaigns/zz").status_code == 404
-    assert c.get("/api/campaigns").json() == [] and c.get("/api/campaigns/c1").status_code == 404   # one VM: none
+    assert two.get("/api/crosshost").json() == [{"id": "c1"}]
+    assert two.get("/api/crosshost/c1").status_code == 200 and two.get("/api/crosshost/zz").status_code == 404
+    assert c.get("/api/crosshost").json() == [] and c.get("/api/crosshost/c1").status_code == 404   # one VM: none
     assert trained_text([("m", None)])[0]["text"] == "m: trained host not recorded"
     assert trained_text([("m", ["a", "b"])])[0]["text"] == "m is trained for a and b"
     # which engines start
@@ -568,7 +566,7 @@ def selftest():
     assert "no model" in plan_hosts(["z"], None, ptr, one, {"a": "x"})
     tmp.cleanup()
     print("[SELFTEST OK] /healthz 200/503, watchdog exits on a dead thread or hung poll, not on Loki being down, "
-          "/api/history range (ISO / ms) + alerts-only + 400/404 + traversal refused, ?host= per VM, trained-for text, campaigns, "
+          "/api/history range (ISO / ms) + alerts-only + 400/404 + traversal refused, ?host= per VM, trained-for text, cross-host findings, "
           "which engines start")
 
 

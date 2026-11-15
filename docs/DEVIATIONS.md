@@ -205,6 +205,25 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     detection; the margin is thin (4.72 vs 4.5) and a rerun may score under it; only 1 of ~10 attack windows is red
     (the winPEAS/recon window 18:15Z scored 1.44); one day of benign is the whole false-alarm sample; no label oracle
     (D6), so no P/R/F1. History rows keep their own `moderate_from` (10 before, 4.5 after).
+  - **NET rule OFF live since 2026-11-15 05:03Z** (user: "I accept sometimes false positive"; inventory
+    `live_sg_require_types=none` → `--sg-require-types none`, both hosts; code default `alg1.REQUIRE_TYPES` stays `net` for
+    offline tools). Why: the teammate's second react2shell run on `ws-etw-1` (11-15 03:35–04:40Z, from VPN client
+    10.8.0.3: winPEAS, `sc query`, `schtasks /query`, `whoami /all`, node.exe → cmd → `powershell -enc`) scored 13.44 /
+    9.93 / 7.24 / 19.86 / 4.66, all ≥ 4.5, and **every window was suppressed** for lacking an anomalous NET node. The
+    commands rode the existing inbound HTTP socket, and that socket's features (one `in_recv`, nothing else) are the most
+    common NET row in exp15-ws1 training (32.9 % of 16,422), so the NET model cannot see it (score −0.65 vs τ −0.17).
+    Re-judge at 4.5 of saved sessions (copies, live folders untouched):
+    | host, sample | rule on: attack-run red | rule on: other red | rule off: attack-run red | rule off: other red |
+    |---|---|---|---|---|
+    | ws-etw-1, 408 windows (11-13 20:10Z → 11-15 04:45Z) | 1 (11-14 18:45) | 0 | 7 (11-14 18:35, 18:45; 11-15 03:35, 03:40, 04:15, 04:20, 04:40) | 7 |
+    | ws-etw-0, 356 windows (11-14 00:45Z → 11-15 04:45Z) | 1 (our DVWA test 11-15 04:30) | 3 | 1 | 8 |
+    The extra red windows look benign from their nodes ([INFERENCE], not confirmed): ws-etw-1 Windows Update
+    (`MoUsoCoreWorker`), WER crash dump, servicing scan (sg 142.9), WMI, one PowerShell + .NET + Defender window
+    (11-14 11:25Z, unplaced); ws-etw-0 svchost, a logon (winlogon/explorer), ngen + TiWorker servicing, two WinRM
+    (`wsmprovhost`) sessions. Expected cost ≈ 5 benign red/day per host. Limits: in-sample, and tuned on the same attack
+    for the second time; "attack-run red" counts windows inside the teammate's reported time range (no oracle, D6); the
+    LLM budget (`--llm-max-per-day`, raised 15 → 30 on 2026-11-15 by the user, shared) can still run out on false alarms before a real attack (the window still goes
+    red, only the verdict is skipped).
   - [OURS] no top-k fallback when nothing reaches Moderate ([AUTHOR CODE] l.433–461); live, it would make every
     window red.
   - [OURS] a partition still above max_e is kept whole (`oversize`), not sampled per edge type.
@@ -313,7 +332,8 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   (`build_experiment.py`, before windowing) and live scoring (`engine._score`). The attack's RCE PowerShell
   never reads those paths, so it is kept. Impact: removes the watchdog from the baseline and from live windows;
   does not address non-watchdog FPs (e.g. TiWorker servicing — addressed by a longer baseline).
-- **[OURS] NET alert rule (user, 2026-11-09; `alg1.REQUIRE_TYPES`, `--sg-require-types`):** a level-kept (≥ Moderate)
+- **[OURS] NET alert rule (user, 2026-11-09; `alg1.REQUIRE_TYPES`, `--sg-require-types`; OFF live since 2026-11-15,
+  see the cut-off entry above; still the code default offline):** a level-kept (≥ Moderate)
   subgraph is alerted, and so sent to the LLM (daily budget unchanged), only if it holds ≥ 1 anomalous NET node. Otherwise
   it stays in the output with `kept = False` and `suppressed = "missing anomalous node type(s): net"`. The window is
   normal, the engine logs the reason, `history.jsonl` keeps `subgraphs_suppressed` / `suppressed_reason`, and the LLM never
@@ -503,25 +523,35 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 
 ## D13. Cross-host correlation (`src/live/correlate.py`)
 - What: [PAPER] §7: "Detecting lateral movement was beyond the scope of this work, as OCR-APT does not process network traffic
-  logs", left to future work. [OURS] (user, 2026-11-07) a stage after per-host SG-Det. Plain code reads raw knet lines, keeps
-  unicast flows between monitored hosts that are not in a known-traffic list (`lab flows`), and joins them with each host's
-  windows on the shared 5-min grid, lookback 3 windows: `link`, `suspected` (one end red at or before the flow), `confirmed`
-  (both ends red). On suspected and confirmed, the LLM gets both hosts' subgraphs and the link as one document: an [OURS]
-  multi-host triage prompt, then the paper's IOC and report prompts.
-- Why: each model only sees its own host's graph, so no model can treat a connection as two ends of one thing. The link is found
-  by code because the LLM runs only on red windows, within a budget, and log text is attacker-controlled (D9).
-- Details: raw lines, because the converter keeps only `daddr:dport`, so a receiving host's NET node is the peer's ephemeral
-  port. Reading them outside the converter keeps its sha256, so exp08 stays valid. Addresses are compared with the host's own IP:
-  verified in Loki, TCP has `saddr` = this host both ways, UDP receive has `daddr` = this host or broadcast. The lower port is
-  taken as the server [INFERENCE]; with both ports dynamic, direction is unknown and the key uses host order.
-- Impact: none on any window or alert: the result is an overlay. The host with no kept subgraph still gives its best subgraph to
-  the LLM document, since a short hop can stay under SG-Det's cut-off. Adds LLM calls to the same daily budget.
-- Limits: validated on synthetic flows only. No attack crossing hosts has been run, so **no claim that real cross-host movement
-  is detected**. The planned first real crossing (user, 2026-11-12) is **react2shell (`ws-etw-1`) → DC (`ws-etw-0`)** over SMB/WinRM;
-  until it runs and is labelled, this no-claim stands, and a `lab flows` baseline must be recorded first (benign AD replication/DNS/SMB
-  between the two VMs is new to the baseline otherwise). Needs a clean baseline, or every flow is new. A `suspected` needs a red window,
-  so a hop from a host that stayed green is only a `link`. Only flows between monitored hosts are seen. Windows on different hosts join by
-  clock: skew between VMs was not measured.
+  logs", left to future work. [OURS] (user, 2026-11-07; **anomaly-first since 2026-11-15**, user) a stage after per-host SG-Det
+  that **starts from an anomaly**: a red window on host A → every NET node in A's **kept** subgraphs (anomalous or connector)
+  whose IP is another monitored host P is a seed → the matching connection is looked up on P → P's nodes around the other end
+  (with P's own model's scores) and A's kept subgraphs go to the LLM as one document: an [OURS] two-host triage prompt, then the
+  paper's IOC and report prompts. Levels: `pending` (P's windows in [t − 1 w, t + 1 w] not closed yet), `one-sided` (P's model
+  scored those nodes as normal), `corroborated` (P's model flagged ≥ 1 of them, or a P kept subgraph holds them). A connection
+  with no red window is never reported, and there is no known-traffic list: the GNN score is the only gate.
+- Why: each model only sees its own host's graph, so no model can treat a connection as two ends of one thing. The earlier
+  flow-first version (every new VM↔VM flow a `link`, red windows only raised it to `suspected` / `confirmed`, a `lab flows`
+  baseline to silence known traffic) was network monitoring, not anomaly detection: it reported flows the GNN never scored and
+  hid an attack that reused a known port (SMB :445 to the DC). The user replaced it (2026-11-15).
+- Details: raw knet lines are still read, but only as a **join index**. The converter keeps `daddr:dport`, and TCP has `saddr` =
+  this host in both directions (verified in Loki), so one connection A:51000 → P:445 is the node `P_ip:445` on A and
+  `A_ip:51000` on P. The 5-tuple from the raw lines maps A's seed to P's NET node and P's PID. Reading them outside the converter
+  keeps its sha256, so trained models stay valid. P's related nodes = matched NET nodes + their owner processes + those processes'
+  1-hop objects + a 2nd hop **only through nodes P's model flagged** [OURS] (a common DLL would otherwise pull in every process),
+  capped at 60 per window. If no raw line matches (collector gap), every P socket that talks to A's IP is used (`join: ip-only`).
+  When P's own red window seeds back to the same connection, it is merged into the first finding, not a mirror one.
+- Impact: none on any window or alert: the result is an overlay. Adds LLM calls (one per finding that resolves or rises) to the
+  same daily budget. The `lab flows` command and `src/artifacts/flow-baseline.json` are removed. The 24 h baseline recorded
+  2026-11-13 showed the benign member↔DC traffic that a seed on these ports competes with: `ws-etw-1→ws-etw-0` tcp/445, 389, 88,
+  135, udp/389, 53; `ws-etw-0→ws-etw-1` udp/123, tcp/dyn.
+- Limits: validated on synthetic windows only. No attack crossing hosts has been run, so **no claim that real cross-host movement
+  is detected**. The planned first real crossing is the teammate's **react2shell (`ws-etw-1`) → DC (`ws-etw-0`)**. A hop is only
+  followed when **A goes red and the socket is inside a kept subgraph**, so SG-Det's cut-off (live Moderate from 4.5) gates it: an
+  attacker process whose subgraph stays under the cut-off is never followed. `one-sided` is not evidence of benign: a short hop can
+  stay normal on P's model. UDP receives (daddr = own IP) cannot seed. Only connections between monitored hosts are seen. Windows on
+  different hosts join by clock: skew between VMs was not measured. A finding still pending at a server restart is closed as
+  `one-sided` with a note (the window table is in memory).
 
 ## D14. Process command lines from Sysmon Event ID 1 (`src/pipeline/cmdlines.py`, role `win_sysmon`)
 - What: [PAPER] §2 lists command-line arguments among a provenance graph's contextual node attributes; §5.1.1 keeps such

@@ -26,7 +26,7 @@
 # current.local.json written by `lab promote` on this host). Each run folder carries its own
 # experiment.json, so nothing has to be copied from the control node.
 
-# Cross-host correlation (src/live/correlate.py) and `lab flows` read host -> IP from here, so no address lives in the code.
+# Cross-host correlation (src/live/correlate.py) reads host -> IP from here, so no address lives in the code.
 - name: Monitored hosts for cross-host correlation
   ansible.builtin.copy:
     dest: /etc/nt2102-hosts.json
