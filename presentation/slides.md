@@ -57,19 +57,11 @@ clicks: 2
 
 # 1 · Bài toán & OCR-APT
 
-<div class="cmp small" style="grid-template-columns: 1fr 1fr 1.25fr; gap:0.8rem">
-<div class="card neutral">
-
-**Vì sao khó**
-- Audit log **khổng lồ**
-- Tấn công **hiếm**, **không nhãn**
-
-</div>
+<div class="cmp small" style="grid-template-columns: 1fr 1.25fr; gap:0.8rem">
 <div v-click="1" class="card atk">
 
 **Cách cũ**
 - Rule → **bỏ sót** kỹ thuật mới
-- Node **vụn** · graph **thô** · không có **câu chuyện**
 
 </div>
 <div v-click="2" class="card det">
@@ -151,38 +143,16 @@ khi gửi ra ngoài → max nghỉ 0.99. Bảng đầy đủ: báo cáo Bảng f
 -->
 
 ---
-clicks: 4
----
-
-# 2 · ③ GNN: message passing
-
-<div class="grid gap-6 mt-1" style="grid-template-columns: 0.6fr 1.6fr">
-<div class="small">
-
-- Node = **vectơ** $h$
-- Cập nhật từ **chính nó + neighbor**
-- **L lớp** = nhìn xa **L bước**
-
-</div>
-<div class="small">
-
-<MessagePassing />
-
-</div>
-</div>
-
-<!--
-Chuyển sang mô hình. ML thường coi mỗi hàng độc lập; đồ thị thì mỗi node có số neighbor khác nhau. GNN
-giải quyết bằng message passing: mỗi lớp, mọi node gộp thông tin từ chính nó và các neighbor rồi cập nhật
-vectơ. Xếp L lớp thì nhìn xa L bước; vectơ sau mỗi lớp là hidden layer, lớp cuối là embedding.
-OCR-APT dùng 3 lớp, exp08 dùng 2 lớp. Ví dụ số: note.txt Q5; vì sao không 10 lớp: Q6; báo cáo §2.3.
--->
-
----
 clicks: 5
 ---
 
 # 2 · ③ RGCN: một trọng số cho mỗi loại edge
+
+<div class="small -mt-2 mb-1">
+
+**R**elational **G**raph **C**onvolutional **N**etwork · GNN cho đồ thị có **nhiều loại edge**
+
+</div>
 
 <RgcnLayer />
 
@@ -193,10 +163,28 @@ clicks: 5
 </div>
 
 <!--
-RGCN = Relational GCN. Mỗi loại edge (Write/Read/Send/Recv/Start/Load) có ma trận trọng số riêng W_r, nên
+RGCN = Relational Graph Convolutional Network: một GNN. Ý tưởng GNN (message passing): mỗi lớp, mọi node gộp
+thông tin từ chính nó và các neighbor rồi cập nhật vectơ; xếp L lớp thì nhìn xa L bước (OCR-APT 3 lớp, exp08 2 lớp).
+"Relational" = đồ thị có nhiều loại edge. Mỗi loại edge (Write/Read/Send/Recv/Start/Load) có ma trận trọng số riêng W_r, nên
 mô hình học mỗi loại "kéo" bao nhiêu. Animation: rundll32 gộp chính nó + 2 file + 1 flow, mỗi loại qua
 trọng số riêng → 0.1. Sau 2–3 lớp, 15 feature thô thành embedding 32 chiều mang cả chuỗi tài liệu →
 powershell → DLL → rundll32 → mạng. Vì sao RGCN chứ không GCN: note.txt Q1; 12 quan hệ: Q3; công thức: báo cáo §2.3.
+-->
+
+---
+clicks: 3
+---
+
+# 2 · ③ Nhiều lớp: nhìn xa L bước
+
+<StackedLayers />
+
+<!--
+Mỗi lớp, mọi node cập nhật vectơ từ chính nó và các neighbor (message passing — RGCN làm đúng việc này, chỉ thêm
+trọng số riêng theo loại edge). Mỗi lớp nhìn xa thêm một bước: A chỉ nhận được màu của E ở lớp 3. Vectơ sau mỗi
+lớp là hidden layer (mô hình tự tính, không có trong log); lớp cuối là embedding, đem vào quả cầu one-class.
+Bài báo dùng 3 lớp; nhóm dùng 2 trên exp08 (nông hơn, bớt nhạy với nhiễu ngữ cảnh). Quá nhiều lớp thì mọi node
+trộn thành một màu xám (over-smoothing): note.txt Q6. Ví dụ số: note.txt Q5.
 -->
 
 ---
@@ -205,32 +193,75 @@ clicks: 2
 
 # 2 · ③ OCRGCN: học "bình thường", gắn cờ cái ở xa
 
-<div class="grid gap-4" style="grid-template-columns: 1.15fr 1fr">
-<div>
+<div class="small -mt-2 mb-1">
+
+**O**ne-**C**lass **R**elational **G**raph **C**onvolutional **N**etwork
+
+</div>
+
 <Hypersphere />
-</div>
-<div class="small">
 
-- Không nhãn → chỉ học **benign**
-- Trong cầu = **quen** · ngoài cầu = **gắn cờ**
-- $s_i = \lVert \mathbf z_i - \mathbf c \rVert^2 - R^2 > \theta$
+<div class="grid gap-4 small mt-1" style="grid-template-columns: 1fr 1fr 1.2fr; text-align:center">
+<div>Không nhãn → chỉ học <b>benign</b></div>
+<div>Trong cầu = <b>quen</b> · ngoài cầu = <b>gắn cờ</b></div>
+<div>
 
-<div v-click="2" class="card det mt-3">
-
-**3 loại node → 3 quả cầu, 3 threshold**<br/>
-process · file · mạng: "bình thường" khác nhau
-
-</div>
+$s_i = \lVert \mathbf z_i - \mathbf c \rVert^2 - R^2 > \theta$
 
 </div>
 </div>
 
 <!--
 Không có nhãn nên chỉ học "bình thường": nhốt benign embedding vào một quả cầu (tâm c, bán kính R), cái
-gì ra ngoài thì nghi ngờ — tinh thần One-Class SVM. OCRGCN = encoder RGCN + loss kiểu Deep SVDD. sᵢ là
+gì ra ngoài thì nghi ngờ — tinh thần One-Class SVM. OCRGCN = One-Class RGCN: bài báo mô tả là "RGCN kết hợp one-class SVM" (§1, §5.1.1) nhưng không viết rõ tên đầy đủ, nên "One-Class RGCN" là cách đọc của nhóm từ mô tả đó. Bản của nhóm = encoder RGCN + loss kiểu Deep SVDD. sᵢ là
 khoảng cách tới tâm trừ bán kính; vượt threshold θ thì gắn cờ. Điểm then chốt: một mô hình cho MỖI loại
 node, vì "bình thường" của process/file/mạng khác nhau. Encoder vẫn nhìn toàn đồ thị; chỉ loss/threshold
 theo loại. β, threshold, Hình 2 bài báo: báo cáo §2.4–2.5.
+-->
+
+---
+
+# 2 · ③ OCRGCN: huấn luyện (Training)
+
+<img src="./images/paper-fig2-train.png" class="fig" style="max-height:300px;object-fit:contain" />
+<div class="src">Hình 2 (trái) của Aly et al., CCS 2025: pha Training</div>
+
+<div class="small mt-2">
+
+- Chỉ **benign** · **mỗi loại node một mô hình** (Process · File · Network Flow)
+- **Estimate Contamination** γ → đặt threshold θ
+- **RGCN** → embedding → **hypersphere** (One-Class SVM)
+
+</div>
+
+<!--
+Pha huấn luyện (Hình 2 trái). Đồ thị chỉ gồm benign node → mã hoá + 15 feature → tách theo loại node.
+Mỗi loại một OCRGCN: ước lượng contamination γ (tỉ lệ điểm huấn luyện được phép vượt threshold; θ = quantile
+1 − γ của điểm huấn luyện; bài báo kẹp γ trong [0.001, 0.05], không nhãn thì 0.001 — nhóm dùng 0.001), qua nhiều
+lớp RGCN ra embedding, rồi học hypersphere (tâm c, bán kính R). Kết quả: 3 mô hình. Encoder vẫn chạy trên toàn
+đồ thị; chỉ loss/hypersphere/threshold tính riêng theo loại. Báo cáo §2.4–2.5 (Hình tsmod).
+-->
+
+---
+
+# 2 · ③ OCRGCN: suy luận (Inference)
+
+<img src="./images/paper-fig2-infer.png" class="fig" style="max-height:300px;object-fit:contain" />
+<div class="src">Hình 2 (phải) của Aly et al., CCS 2025: pha Inference</div>
+
+<div class="small mt-2">
+
+- Đồ thị mới (có thể có tấn công) → **cùng** feature + scaler
+- Mỗi node → mô hình **đúng loại** → khoảng cách tới tâm
+- Ngoài cầu = **anomalous node + score** → bước ④
+
+</div>
+
+<!--
+Pha suy luận (Hình 2 phải). Đồ thị cần kiểm tra đi qua đúng các bước mã hoá + feature (dùng lại scaler của
+lúc train); mỗi node được chấm bởi mô hình của loại mình, sᵢ > θ của loại đó thì là anomalous node. Đầu ra:
+danh sách anomalous node kèm điểm → đưa vào bước ④ dựng subgraph. Khác bài báo: bài báo chấm cả log một lần
+(offline); bản live của nhóm chấm từng window 5 phút (DEVIATIONS: windowed detection).
 -->
 
 ---
@@ -380,8 +411,6 @@ class: text-center
   </div>
 </div>
 
-<div class="tiny muted mt-3">① react2shell RCE → ② <code>powershell -enc</code> → recon → winPEAS → ③ window <b>đỏ</b> trên ws-etw-1 → ④ LLM <code>attack</code></div>
-
 <style scoped>
 .video-ph { width: 76%; margin: 0.5rem auto 0; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden;
   background: #0f172a; box-shadow: 0 6px 24px rgba(15,23,42,0.25); }
@@ -396,49 +425,7 @@ class: text-center
 
 <!--
 Placeholder: video do thành viên quay lần tấn công react2shell vào ws-etw-1 (15-11, 03:35–04:40Z), sẽ thay bằng
-link YouTube. Nếu chưa có video, chuyển thẳng sang slide kết quả sau và giải thích bằng ảnh chụp giao diện.
--->
-
----
-
-# 3 · Kết quả thứ hai: tấn công thật trên ws-etw-1
-
-<div class="grid gap-4 mt-2" style="grid-template-columns: 1fr 1.35fr">
-<div class="small">
-
-<div class="card atk">
-
-**Chuỗi** (thành viên tự làm, không theo kịch bản)
-- Next.js RCE → `powershell -enc`
-- recon.bat · **winPEAS**
-
-</div>
-
-<div class="card det mt-3">
-
-**Kết quả** (exp15-ws1)
-- 04:15Z **7.24** · 04:20Z **19.86** → **đỏ**
-- LLM **attack** 0.85 · 0.95
-
-</div>
-
-<div class="tiny muted mt-3">Mốc 4.5 + tắt luật NET: chỉnh trên chính lần chạy này → <b>in-sample</b></div>
-
-</div>
-<div>
-  <img src="./images/ws1-subgraph.png" class="fig" style="max-height:330px;object-fit:contain" />
-  <div class="src">Giao diện demo, window 04:20Z: subgraph 47 node quanh winpeasx64.exe</div>
-</div>
-</div>
-
-<!--
-Kết quả thứ hai, trên máy khác, mô hình riêng, tấn công không do nhóm viết kịch bản. Thành viên khai thác ứng dụng
-Next.js (react2shell) từ máy mình qua VPN: node.exe → cmd → powershell -EncodedCommand (reverse shell tới
-20.210.106.182:4444) → recon.bat (sc, schtasks, driverquery, whoami /all, netstat) → winPEAS. Hai window đỏ, LLM
-trích đúng các lệnh (nhờ dòng lệnh Sysmon) và đánh attack.
-Trung thực: lần chạy 14-11 giữ xanh ở mốc 10 (đỉnh 4.72) → hạ mốc 4.5; lần 15-11 bị luật NET chặn (RCE dùng lại socket
-HTTP đi vào) → tắt luật. Cả hai chỉnh trên chính tấn công này nên là in-sample; đổi lại ~5 false alarm/ngày/máy.
-Tấn công không đi sang DC ws-etw-0, nên correlation giữa hai host chưa kiểm chứng. Chi tiết: báo cáo R4; note.txt Q13.
+link YouTube. Kết quả (04:15Z 7.24 · 04:20Z 19.86 đỏ, LLM attack 0.85/0.95; mốc 4.5 + tắt luật NET chỉnh trên chính lần chạy này → in-sample) nằm trong báo cáo §R4.
 -->
 
 ---

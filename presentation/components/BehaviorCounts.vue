@@ -114,8 +114,7 @@ const mid = (l: { src: string; dst: string }) => ({
       <div class="lead">Mỗi event: <b>+1</b> vào <code>out_&lt;action&gt;</code> của source, <b>+1</b> vào <code>in_&lt;action&gt;</code> của destination — đây là <b>đúng các feature</b> đem huấn luyện.</div>
       <table class="feat">
         <thead>
-          <tr><th rowspan="2">node</th><th colspan="6" class="g">out_* (node là source)</th><th colspan="6" class="g">in_* (node là destination)</th></tr>
-          <tr><th v-for="a in ACTIONS" :key="'o' + a">{{ a }}</th><th v-for="a in ACTIONS" :key="'i' + a">{{ a }}</th></tr>
+          <tr><th class="n" style="text-align:left">node</th><th v-for="a in ACTIONS" :key="'o' + a" class="fc">out_{{ a }}</th><th v-for="a in ACTIONS" :key="'i' + a" class="fc">in_{{ a }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="id in rowIds" :key="id" :class="{ hl: id === 'rundll32' }">
@@ -149,5 +148,6 @@ const mid = (l: { src: string; dst: string }) => ({
 .lead { margin-bottom: 0.35rem; line-height: 1.35; }
 .foot { margin-top: 0.3rem; font-size: 0.75rem; color: #6b7280; opacity: 0; transition: opacity 0.4s ease; }
 .foot.show { opacity: 1; }
+.feat th.fc { font-size: 0.68rem; padding-left: 0.2rem; padding-right: 0.2rem; white-space: nowrap; }
 /* table.feat visual styling comes from the global styles/index.css (shared with slide ② Kết quả) */
 </style>

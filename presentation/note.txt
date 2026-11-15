@@ -50,7 +50,7 @@ làm khác. Dùng AUTHOR CODE khi bài báo không nói rõ chi tiết (ví dụ
 tính điểm subgraph) và nhóm đã đọc trực tiếp file của tác giả.
 
 
-Q5. Cho ví dụ có số của message passing (slide "③ GNN: message passing")
+Q5. Cho ví dụ có số của message passing (slide "③ RGCN", phần message passing)
 -------------------------------------------------------------
 Mỗi node 1 số cho dễ tính; w_self = 0.5, w_nb = 1.
 A có h_A = 2, neighbor B, C, D = 4, 0, 1 -> mean = 5/3 ≈ 1.67
