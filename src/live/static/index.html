@@ -93,7 +93,7 @@ header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12p
 .sgnav button.on{border-color:var(--anom);color:var(--anom)}
 .sgnav button.dim{opacity:.55;border-style:dashed}
 .alertcard{font:400 .82rem/1.55 var(--mono);border:1px solid var(--anom);border-radius:8px;padding:10px 12px;
-           max-height:440px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+           max-height:440px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 .alertcard b{font-family:var(--sans);color:var(--anom)}
 .tables{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 @media (max-width:1100px){.tables{grid-template-columns:1fr}}
@@ -149,6 +149,53 @@ tr.flag td{color:var(--anom);font-weight:600}
 .pcol tr.grp td{padding-top:6px;font-weight:600;color:var(--ink)}
 .pcol .v{font-family:var(--mono)}
 .ours{color:var(--warn);font-weight:600}
+/* LLM card: verdict pill, tactic chips, collapsible evidence with a hover popover (readable on a projector) */
+.pill{display:inline-block;font:700 .8rem var(--sans);letter-spacing:.03em;border-radius:5px;padding:2px 8px;
+      color:var(--surface);background:var(--muted);vertical-align:middle}
+.pill.attack{background:var(--anom)} .pill.false_positive{background:var(--warn)}
+.pill.big{font-size:1rem;padding:3px 12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{display:inline-flex;gap:6px;align-items:baseline;border:1px solid var(--line);border-radius:999px;padding:1px 10px;
+      font:500 .82rem var(--sans);background:var(--paper)}
+.chip .id{font:400 .74rem var(--mono);color:var(--muted)}
+.chip.ioc{font:400 .78rem var(--mono);border-radius:5px;overflow-wrap:anywhere}
+.llmcard .meta{font-size:.78rem;color:var(--muted);margin:4px 0 8px}
+.llmcard details{margin:6px 0}
+.llmcard details>summary{cursor:pointer;list-style:none}
+.llmcard details>summary::-webkit-details-marker{display:none}
+.llmcard details>summary::before{content:"▸";display:inline-block;width:1.1em;color:var(--muted);transition:transform .15s}
+.llmcard details[open]>summary::before{transform:rotate(90deg)}
+.sgblock{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.sgblock>summary .sghead{font:600 .95rem var(--sans)}
+.sgblock .why{font:400 1.02rem/1.5 var(--sans);margin:4px 0 2px 1.1em}
+.sgblock .body{margin-left:1.1em}
+.sub>summary{font:600 .85rem var(--sans);color:var(--muted)}
+.evrow{position:relative;display:flex;gap:8px;align-items:baseline;padding:3px 6px;border-radius:5px;
+       font:400 .86rem var(--sans);outline:none;min-width:0}
+.evrow:hover,.evrow:focus{background:var(--win-soft)}
+.evrow .who{font:600 .84rem var(--mono);white-space:nowrap}
+.evrow .what{font:400 .8rem var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.evrow .verb{font:700 .72rem var(--sans);color:var(--win);white-space:nowrap}
+.evrow .host{font:600 .7rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 4px;white-space:nowrap}
+.evrow .pop{display:none;position:absolute;left:0;top:100%;z-index:20;width:min(90ch,92vw);max-height:60vh;overflow:auto;
+            background:var(--surface);color:var(--ink);border:1px solid var(--win);border-radius:8px;
+            box-shadow:0 6px 24px rgba(0,0,0,.25);padding:10px 12px;font:400 .95rem/1.5 var(--mono);
+            white-space:pre-wrap;word-break:break-all}
+.evrow:hover .pop,.evrow:focus .pop,.evrow:focus-within .pop{display:block}
+.pop .k{font:600 .78rem var(--sans);color:var(--muted);display:block;margin-top:6px}
+.pop .k:first-child{margin-top:0}
+/* Present mode: bigger text for a projector, diagnostics hidden (toggle in the header) */
+#presentBtn{font:600 .8rem var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);
+            border-radius:6px;padding:4px 10px;cursor:pointer;margin-left:auto}
+html.present #presentBtn{border-color:var(--win);color:var(--win);background:var(--win-soft)}
+html.present{font-size:21px}
+html.present body{font-size:18px}
+html.present .wrap{max-width:1800px}
+html.present #pipelinePanel,html.present #tauTxt{display:none}
+html.present .win{flex-basis:150px}
+html.present #cy{height:560px}
+html.present .hwrap{max-height:260px}
+html.present .alertcard{max-height:560px}
 </style>
 </head>
 <body>
@@ -158,17 +205,17 @@ tr.flag td{color:var(--anom);font-weight:600}
     <span><span class="dot" id="conn"></span> <span id="connTxt" class="muted">connecting…</span></span>
     <span class="mono muted" id="sessionTxt"></span>
     <span class="mono muted" id="modelTxt"></span>
+    <button id="presentBtn" title="Bigger text for a projector; hides the pipeline diagnostics (?present=1 in the URL turns it on)">Present</button>
   </header>
   <div class="trained" id="trained"></div>
 
   <section class="panel" id="paramsPanel">
     <h2>Parameters (as running) <span class="muted" id="paramsSrv"></span></h2>
     <div class="pgrid" id="params"><div class="muted">loading…</div></div>
-    <div class="note"><span class="ours">[OURS]</span> = differs from the paper's default (Alg. 1: [PAPER] §7.2.1; GNN: 3 layers, 32-d, lr 0.005, β 0.5); read
-      from /api/status of each VM's engine, so it is what scoring uses now, not what a config file says.</div>
+    <div class="note"><span class="ours">[OURS]</span> = this project's choice, not the paper's</div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="pipelinePanel">
     <h2>Shipper and pipeline <span class="muted" id="tilesHost"></span></h2>
     <div class="hosttabs" id="hostTabs" hidden></div>
     <div class="tiles" id="tiles"></div>
@@ -238,8 +285,8 @@ tr.flag td{color:var(--anom);font-weight:600}
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   // All displayed times in the lab zone (UTC+7), whatever the viewing browser's zone is.
   const TZ = "Asia/Ho_Chi_Minh";
-  const hm = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", timeZone:TZ});
-  const hms = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit", timeZone:TZ});
+  const hm = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", hour12:false, timeZone:TZ});
+  const hms = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false, timeZone:TZ});
   const num = (v, d=3) => v == null ? "–" : Number(v).toFixed(d);
   const fmt = v => v == null ? "–" : String(Number(v));    // no forced rounding (a 4.5 cut-off must not show as 5)
   const base = p => String(p || "").split(/[\\/]/).pop() || p;
@@ -327,37 +374,28 @@ tr.flag td{color:var(--anom);font-weight:600}
     const c = srv.code;
     $("paramsSrv").innerHTML = c ? `· code <span class="mono">${esc(c.sha)}</span> (${esc(c.branch)}${c.dirty ? ', <span class="ours">uncommitted changes</span>' : ""})`
       + (srv.started_ms ? ` · server started ${esc(dhm(srv.started_ms))}` : "") : "";
-    const v = (x, key) => {                                 // value, tagged [OURS] when it differs from the paper
-      const diff = key in PAPER && x != null && Number(x) !== PAPER[key];
-      return `<span class="v">${esc(fmt(x))}</span>` + (diff ? ` <span class="ours">[OURS]</span> <span class="muted">(paper ${PAPER[key]})</span>` : "");
-    };
+    // Only what is ours: values that differ from the paper, plus the [OURS]-by-design rows. Paper defaults are not
+    // listed (the presenter explains them when asked).
+    const OURS = ' <span class="ours">[OURS]</span>';
     const txt = x => `<span class="v">${esc(x ?? "–")}</span>`;
+    const diffRow = (label, x, key) => x != null && key in PAPER && Number(x) !== PAPER[key]
+      ? [[label, `${txt(fmt(x))}${OURS} <span class="muted">(paper ${PAPER[key]})</span>`]] : [];
     $("params").innerHTML = cols.map(h => {
       const st = paramsBy[h], m = st.model || {}, t = m.train || {}, p = st.params || {}, a = p.alg1 || {}, L = p.llm || {};
       const tf = (st.trained_for || []).find(x => x.model === base(m.run_dir));
-      const cut = a.min_score != null ? `score > ${txt(fmt(a.min_score))} <span class="ours">[OURS]</span>`
-        : a.min_level === "Moderate" ? `Moderate from ${v(a.moderate_from, "moderate_from")}`
-        : `level ≥ ${txt(a.min_level)} <span class="ours">[OURS]</span>`;
-      const rule = a.require_types?.length ? `${txt(a.require_types.join(" + "))} <span class="ours">[OURS]</span> <span class="muted">(D8)</span>`
-        : `${txt("off")} <span class="muted">(paper)</span>`;
+      const cut = a.min_score != null ? [["alert cut-off", `score > ${txt(fmt(a.min_score))}${OURS}`]]
+        : a.min_level !== "Moderate" ? [["alert cut-off", `level ≥ ${txt(a.min_level)}${OURS}`]]
+        : diffRow("Moderate from", a.moderate_from, "moderate_from");
       const rows = [
-        ["Model"],
-        ["run", txt(base(m.run_dir))], ["trained for", txt(tf ? tf.hosts.join(", ") || "not recorded" : "–")],
-        ["layers", v(t.layers, "layers")], ["hidden", v(t.hidden, "hidden")], ["lr", v(t.lr, "lr")], ["β", v(t.beta, "beta")],
-        ["epochs / patience", txt(`${t.epochs ?? "–"} / ${t.patience ?? "–"}`)], ["contamination", txt(t.contamination)],
-        ["seed", txt(t.seed)], ["relations", txt(t.n_relations)],
+        ["model", txt(base(m.run_dir)) + (tf?.hosts?.length ? ` <span class="muted">(trained for ${esc(tf.hosts.join(", "))})</span>` : "")],
         ["τ per type", txt(Object.entries(m.tau || {}).map(([k, x]) => `${k} ${num(x, 4)}`).join(" · "))],
-        ["converter", txt(m.converter_check)], ["benign labels", `<span class="muted">${esc(t.label_source ?? "–")}</span>`],
-        ["Windows"],
-        ["window / stride", txt(`${fmt(p.window_min)} / ${fmt(p.stride_min)} min`)], ["lateness", txt(`${fmt(p.lateness_s)} s`)],
-        ["SG-Det (Alg. 1)"],
-        ["alert cut-off", cut], ["NET rule", rule],
-        ["n_seed", v(a.n_seed, "n_seed")], ["max edges", v(a.max_edges, "max_edges")], ["min nodes", txt(a.min_nodes)],
-        ["LLM"],
-        ...(L.provider ? [["provider / model", txt(`${L.provider} / ${L.model}`)], ["max subgraphs", txt(L.max_subgraphs)],
-             ["reasoning effort", txt(L.reasoning_effort ?? "default")],
-             ["budget today", txt(L.budget ? `${L.budget.used} / ${L.budget.limit ?? "no limit"}` : `max ${L.max_per_day}/day`)]]
-           : [["status", txt("off")]]),
+        ...diffRow("layers", t.layers, "layers"), ...diffRow("hidden", t.hidden, "hidden"),
+        ...diffRow("lr", t.lr, "lr"), ...diffRow("β", t.beta, "beta"),
+        ["window / stride", `${txt(`${fmt(p.window_min)} / ${fmt(p.stride_min)} min`)}${OURS} <span class="muted">(live windows)</span>`],
+        ...cut,
+        ...(a.require_types?.length ? [["NET rule", `${txt(a.require_types.join(" + "))}${OURS}`]] : []),
+        ...diffRow("n_seed", a.n_seed, "n_seed"), ...diffRow("max edges", a.max_edges, "max_edges"),
+        ...(L.provider ? [["LLM triage", `${txt(`${L.provider} / ${L.model}`)}${OURS}`]] : []),
       ];
       return `<div class="pcol"><h3>${esc(h || "this VM")}</h3><table>${rows.map(r => r.length === 1
         ? `<tr class="grp"><td colspan="2">${esc(r[0])}</td></tr>` : `<tr><td>${esc(r[0])}</td><td>${r[1]}</td></tr>`).join("")}</table></div>`;
@@ -420,16 +458,18 @@ tr.flag td{color:var(--anom);font-weight:600}
       || `<div class="muted">${f.level === "pending" ? "waiting for the peer's windows…" : "no node on the peer matched this connection"}</div>`;
     const llm = !L ? '<div class="muted">No LLM step: it runs on every resolved finding when a provider is set.</div>'
       : L.status === "pending" ? '<h3>LLM: waiting for the model…</h3>'
-      : L.error ? `<h3>LLM: ${esc(L.status)}</h3><div class="ev">${esc(L.error)}</div>`
-      : `<h3>LLM verdict on both sides: ${esc(L.status)}${L.confidence != null ? " · confidence " + num(L.confidence, 2) : ""}</h3>
-         <div class="muted">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · not ground truth; the finding stands either way</div>
-         <div>${esc(L.rationale)}</div>${L.note ? `<div class="muted">${esc(L.note)}</div>` : ""}
-         ${(L.tactics || []).length ? `<div class="muted">${L.tactics.map(t => esc(t.id || "") + " " + esc(t.name || "")).join(", ")}</div>` : ""}
-         <div class="ev">${(L.evidence || []).map(esc).join("\n")}</div>
-         ${L.report ? `<div class="report">${md(L.report)}</div>` : ""}
-         ${L.report_error ? `<div class="muted">report failed: ${esc(L.report_error)}</div>` : ""}`;
+      : L.error ? `<h3>LLM ${pill(L.status, null, true)}</h3><div class="meta">${esc(L.error)}</div>`
+      : `<h3>LLM verdict on both sides ${pill(L.status, L.confidence, true)}</h3>
+         <div class="meta">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · not ground truth; the finding stands either way</div>
+         ${tacticChips(L.tactics)}
+         <div class="sgblock" style="border:0"><div class="why" style="margin-left:0">${esc(L.rationale)}</div></div>
+         ${L.note ? `<div class="meta">${esc(L.note)}</div>` : ""}
+         ${(L.evidence || []).length ? `<details class="sub" data-k="x|${esc(f.id)}|ev"><summary>Evidence (${L.evidence.length} lines)</summary>${evList(L.evidence)}</details>` : ""}
+         ${reportBox(`x|${f.id}|rep`, "Attack report (Alg. 2)", L.report)}
+         ${L.report_error ? `<div class="meta">report failed: ${esc(L.report_error)}</div>` : ""}`;
     $("cDetail").innerHTML = `<div class="llmcard ${esc(L?.status || "")}"><h3>${esc(f.origin)} → ${esc(f.peer)} · ${esc(f.level)}</h3>`
       + `${seeds}${conns}${peer}${f.note ? `<div class="muted">${esc(f.note)}</div>` : ""}${llm}</div>`;
+    restoreOpen($("cDetail"));
   }
   $("cTable").addEventListener("click", e => {
     const tr = e.target.closest("tr[data-c]");
@@ -506,7 +546,7 @@ tr.flag td{color:var(--anom);font-weight:600}
   const OFF = 7 * 3600e3;                                     // lab zone UTC+7 (no DST)
   const toInput = ms => new Date(ms + OFF).toISOString().slice(0, 16);
   const fromInput = v => v ? v + ":00+07:00" : "";
-  const dhm = ms => new Date(ms).toLocaleString([], {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZone:TZ});
+  const dhm = ms => new Date(ms).toLocaleString([], {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false, timeZone:TZ});
   const utcHm = ms => new Date(ms).toISOString().slice(11, 16) + "Z";
   let hRows = [];
 
@@ -644,30 +684,93 @@ tr.flag td{color:var(--anom);font-weight:600}
     return out.join("");
   }
 
+  // ---- LLM card pieces (shared by the window card and the cross-host card)
+  const PILL = {attack: "ATTACK", false_positive: "FALSE POSITIVE", benign: "BENIGN", uncertain: "UNCERTAIN",
+                error: "ERROR", pending: "WAITING…", skipped: "BUDGET"};
+  const pill = (v, conf, big) => `<span class="pill ${v === "benign" ? "false_positive" : esc(v)}${big ? " big" : ""}">${esc(PILL[v] || v)}`
+    + `${conf != null ? " " + num(conf, 2) : ""}</span>`;
+  // ATT&CK tactics grouped by tactic: one chip "Discovery T1033 T1082" instead of a long list
+  function tacticChips(list) {
+    const by = new Map();
+    for (const t of list || []) {
+      const k = t.name || t.id || "?";
+      if (!by.has(k)) by.set(k, new Set());
+      if (t.technique_id) by.get(k).add(t.technique_id);
+    }
+    return by.size ? `<div class="chips">${[...by].map(([n, ids]) =>
+      `<span class="chip">${esc(n)}${ids.size ? `<span class="id">${[...ids].map(esc).join(" ")}</span>` : ""}</span>`).join("")}</div>` : "";
+  }
+  // One evidence line (verbatim from the alg2.serialize document) -> one short row; the full line is in a hover
+  // popover (bigger and wrapped, unlike a native title tooltip). Formats (src/pipeline/alg2.py serialize):
+  //   "process <image> (pid N) command line: <cmd> | decoded: <payload> | parent command line: <cmd>"
+  //   "<subject> <ACTION> the <object type> : <object> (N times) on YYYY-MM-DD HH:MM."
+  // An optional "[host] " prefix comes from the cross-host document. Anything else is shown as is.
+  const DEC = " | decoded: ", PAR = " | parent command line: ";
+  function evRow(line) {
+    let s = String(line ?? ""), host = "";
+    const hp = s.match(/^\[([^\]]+)\]\s+/);
+    if (hp) { host = hp[1]; s = s.slice(hp[0].length); }
+    let who = "", verb = "", what = s, pop = [["line", s]];
+    const p = s.match(/^process (.+?)(?: \(pid (\d+)\))? command line: ([\s\S]*)$/);
+    const e = !p && s.match(/^(.+?) ([A-Z]+) the (\w+) : (.+?)(?: \((\d+) times\))? on \d{4}-\d{2}-\d{2} (\d{2}:\d{2})\.?$/);
+    if (p) {
+      let cmd = p[3], dec = "", par = "";
+      const ip = cmd.indexOf(PAR); if (ip >= 0) { par = cmd.slice(ip + PAR.length); cmd = cmd.slice(0, ip); }
+      const id = cmd.indexOf(DEC); if (id >= 0) { dec = cmd.slice(id + DEC.length); cmd = cmd.slice(0, id); }
+      // the row shows the decoded payload when there is one (base64 tells the audience nothing); all of it is in the popover
+      who = base(p[1]) + (p[2] ? ` (pid ${p[2]})` : ""); verb = dec ? "decoded" : "$"; what = dec || cmd;
+      pop = [["process", p[1] + (p[2] ? ` (pid ${p[2]})` : "")], ["command line", cmd]];
+      if (dec) pop.push(["decoded", dec]);
+      if (par) pop.push(["parent command line", par]);
+    } else if (e) {
+      who = base(e[1]); verb = e[2];
+      what = (e[3] === "socket" ? e[4] : base(e[4])) + (e[5] ? ` ×${e[5]}` : "") + ` · ${e[6]}`;
+      pop = [["event", s]];
+    }
+    if (host) pop.unshift(["host", host]);
+    return `<div class="evrow" tabindex="0">${host ? `<span class="host">${esc(host)}</span>` : ""}`
+      + `${who ? `<span class="who">${esc(who)}</span>` : ""}${verb ? `<span class="verb">${esc(verb)}</span>` : ""}`
+      + `<span class="what">${esc(what)}</span>`
+      + `<div class="pop">${pop.map(([k, v]) => `<span class="k">${esc(k)}</span>${esc(v)}`).join("\n")}</div></div>`;
+  }
+  const evList = ev => ev?.length ? `<div class="note">Evidence (${ev.length} lines, hover a line for the full text)</div>${ev.map(evRow).join("")}` : "";
+  const reportBox = (k, title, rep) => rep ? `<details class="sub" data-k="${esc(k)}"><summary>${esc(title)}</summary><div class="report">${md(rep)}</div></details>` : "";
+  // open/closed state of the collapsible parts survives re-renders (SSE updates, subgraph clicks)
+  const openState = new Map();
+  const restoreOpen = root => root.querySelectorAll("details[data-k]").forEach(d => {
+    if (openState.has(d.dataset.k)) d.open = openState.get(d.dataset.k);
+  });
+  ["llm", "cDetail"].forEach(id => $(id).addEventListener("toggle", e => {   // toggle does not bubble: capture it
+    if (e.target.dataset?.k) openState.set(e.target.dataset.k, e.target.open);
+  }, true));
+
   function renderLLM(w) {
     const st = w.llm?.status, L = detail.llm;
     if (!st) { $("llm").innerHTML = ""; return; }
     if (!L) {
-      $("llm").innerHTML = `<div class="llmcard"><h3>LLM verdict: ${esc(st === "pending" ? "waiting for the model…" : st)}</h3>
-        ${w.llm.error ? `<div class="ev">${esc(w.llm.error)}</div>` : ""}</div>`;
+      $("llm").innerHTML = `<div class="llmcard"><h3>LLM verdict ${pill(st, null, true)}</h3>
+        ${w.llm.error ? `<div class="meta">${esc(w.llm.error)}</div>` : ""}</div>`;
       return;
     }
-    const head = {attack: "attack (report below)", false_positive: "false positive (GNN alert kept)",
-                  uncertain: "uncertain (stays an alert)"}[L.verdict] || L.verdict;
-    const tac = t => `${esc(t.id || "")} ${esc(t.name || "")}${t.technique_id ? " / " + esc(t.technique_id) : ""}`;
-    const per = L.subgraphs.map(g => `<div><b>subgraph #${g.id + 1}</b>: ${esc(g.verdict)}${g.confidence != null ? " (" + num(g.confidence, 2) + ")" : ""}
-        ${g.attack_tactics?.length ? " · " + g.attack_tactics.map(tac).join(", ") : ""}
-        ${g.note ? `<div class="muted">${esc(g.note)}</div>` : ""}
-        <div>${esc(g.rationale)}</div>
-        <div class="ev">${g.evidence.map(esc).join("\n")}</div>
-        ${g.iocs ? `<div class="muted">IOCs kept after the hallucination filter: ${g.iocs.map(esc).join(", ") || "none"}</div>` : ""}
-        ${g.report ? `<div class="report">${md(g.report)}</div>` : ""}
-        ${g.report_error ? `<div class="muted">report failed: ${esc(g.report_error)}</div>` : ""}</div>`).join("<hr>");
-    $("llm").innerHTML = `<div class="llmcard ${esc(L.verdict)}"><h3>LLM verdict: ${esc(head)}${L.confidence != null ? " · confidence " + num(L.confidence, 2) : ""}</h3>
-      <div class="muted">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · triage is ours (neutral prompt, ATT&CK);
-        the report uses the paper's Alg. 2 prompts. Not ground truth.</div>
-      ${per}
-      ${L.comprehensive ? `<h3 style="margin-top:10px">Comprehensive report</h3><div class="report">${md(L.comprehensive)}</div>` : ""}</div>`;
+    const key = `${w.host || ""}|${w.window}`;
+    // Summary (always visible) = verdict + tactics + rationale; evidence, IOCs and the report are collapsed.
+    const sg = g => `<details class="sgblock" data-k="${esc(key)}|sg${g.id}">
+      <summary><span class="sghead">Subgraph #${g.id + 1}</span> ${pill(g.verdict, g.confidence)}
+        ${tacticChips(g.attack_tactics)}
+        ${g.rationale ? `<div class="why">${esc(g.rationale)}</div>` : ""}
+        ${g.note ? `<div class="why muted" style="font-size:.85rem">${esc(g.note)}</div>` : ""}</summary>
+      <div class="body">
+        ${evList(g.evidence)}
+        ${g.iocs?.length ? `<div class="note">IOCs (hallucination-filtered)</div><div class="chips">${g.iocs.map(x => `<span class="chip ioc">${esc(x)}</span>`).join("")}</div>` : ""}
+        ${reportBox(`${key}|rep${g.id}`, "Attack report (Alg. 2)", g.report)}
+        ${g.report_error ? `<div class="meta">report failed: ${esc(g.report_error)}</div>` : ""}
+      </div></details>`;
+    $("llm").innerHTML = `<div class="llmcard ${esc(L.verdict)}"><h3>LLM verdict ${pill(L.verdict, L.confidence, true)}</h3>
+      <div class="meta">${esc(L.model)} · ${L.llm_calls} calls · ${(L.ms / 1000).toFixed(1)} s · triage is ours (ATT&CK), report = paper Alg. 2
+        ${L.verdict === "false_positive" ? " · the GNN alert stays red" : ""} · not ground truth</div>
+      ${[...L.subgraphs].sort((a, b) => a.id - b.id).map(sg).join("")}
+      ${reportBox(`${key}|comp`, "Comprehensive report (Alg. 2, all subgraphs)", L.comprehensive)}</div>`;
+    restoreOpen($("llm"));
   }
   $("sgnav").addEventListener("click", e => {
     const b = e.target.closest("button[data-i]");
@@ -682,6 +785,8 @@ tr.flag td{color:var(--anom);font-weight:600}
       return;
     }
     $("cy").innerHTML = "";
+    const big = document.documentElement.classList.contains("present");   // Present mode: bigger labels and nodes
+    const fs = big ? 15 : 10, ns = big ? 36 : 26;
     const shape = {process: "ellipse", file: "round-rectangle", net: "diamond"};
     const els = g.nodes.map(n => ({data: {id: n.id, label: base(n.attr) || n.id, shape: shape[n.type] || "ellipse",
                                           role: n.role, tip: `${n.type} ${full(n)}${cmdText(n)}\nscore ${num(n.score,4)}  τ ${num(n.tau,4)}  prob ${num(n.prob,3)}`}}))
@@ -692,12 +797,12 @@ tr.flag td{color:var(--anom);font-weight:600}
       layout: {name: g.nodes.length > 2 ? "cose" : "grid", animate: false, padding: 30},
       style: [
         {selector: "node", style: {"shape": "data(shape)", "background-color": css("--surface"), "border-width": 1.5,
-          "border-color": css("--ink"), "label": "data(label)", "color": css("--ink"), "font-size": 10,
-          "text-valign": "bottom", "text-margin-y": 4, "width": 26, "height": 26}},
+          "border-color": css("--ink"), "label": "data(label)", "color": css("--ink"), "font-size": fs,
+          "text-valign": "bottom", "text-margin-y": 4, "width": ns, "height": ns}},
         {selector: "node[role = 'anomalous']", style: {"border-width": 4, "border-color": css("--anom")}},
         {selector: "node[role = 'connector']", style: {"border-width": 2.5, "border-style": "dashed", "border-color": css("--win")}},
         {selector: "edge", style: {"width": 1.4, "line-color": css("--muted"), "target-arrow-color": css("--muted"),
-          "target-arrow-shape": "triangle", "curve-style": "bezier", "label": "data(label)", "font-size": 9,
+          "target-arrow-shape": "triangle", "curve-style": "bezier", "label": "data(label)", "font-size": fs - 1,
           "color": css("--muted"), "text-rotation": "autorotate", "text-background-color": css("--paper"),
           "text-background-opacity": 1}},
       ],
@@ -786,6 +891,18 @@ tr.flag td{color:var(--anom);font-weight:600}
     });
     es.onerror = () => { $("conn").className = "dot off"; $("connTxt").textContent = "UI lost the server, retrying…"; };
   }
+  // ------------------------------------------------------------- Present mode (projector): bigger text, diagnostics hidden
+  function setPresent(on) {
+    document.documentElement.classList.toggle("present", on);
+    try { localStorage.setItem("ocr-live-present", on ? "1" : "0"); } catch (e) {}
+    if (detail && !$("detail").hidden) drawSubgraph((detail.subgraphs || [])[sgIdx]);   // node labels are sized at draw time
+  }
+  let present = false;
+  try { present = localStorage.getItem("ocr-live-present") === "1"; } catch (e) {}
+  if (/(^|[?&#])present=1(&|$)/.test(location.search) || /(^|[#&])present=1(&|$)/.test(location.hash)) present = true;
+  setPresent(present);
+  $("presentBtn").addEventListener("click", () => setPresent(!document.documentElement.classList.contains("present")));
+
   connect();
   initHistory();
 })();
