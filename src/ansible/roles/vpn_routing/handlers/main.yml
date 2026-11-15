@@ -1,0 +1,11 @@
+---
+# Drops connected tunnels for a few seconds; clients reconnect on their own (keepalive 10 120).
+- name: Restart OpenVPN
+  ansible.builtin.systemd_service:
+    name: "{{ vpn_service }}"
+    state: restarted
+
+# Writes /etc/iptables/rules.v4, which netfilter-persistent restores on boot.
+- name: Save iptables
+  ansible.builtin.command: netfilter-persistent save
+  changed_when: true

@@ -544,9 +544,12 @@ idle model — Moderate, not Significant. **Cleanup DONE** (user ran it from RDP
 task deleted, tools dir + legacy marker removed, PSEXESVC/tool processes stopped). Repo selftests 17/17; attack-pack +
 ansible + docs changes committed signed (handed to the user). See [[live-detector-benign-fp]], DEVIATIONS D6/D8.
 
-**nt2102-vpn (2026-11-04):** VM 2105 at 10.21.3.50, OpenVPN running since 11-02, team client certs in use. External TCP 2102 → home
-router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194, verified over TCP. The VM rule
-and the DNAT comment now say TCP (were UDP): needs `terraform apply` + a `proxmox-firewall.yml` re-run.
+**nt2102-vpn (2026-11-15):** VM 2105 at 10.21.3.50, OpenVPN (hand-installed 11-02), team client certs in use. External TCP 2102 → home
+router → pve-master DNAT (`src/ansible/proxmox-firewall.yml`) → 10.21.3.50:1194. **Verified 2026-11-15:** clients get the Kali route
+(`10.21.4.0/24`, teammate SSH to `kali` works) and keep their real `10.8.0.x` source to the lab + Kali (no SNAT; pve-master return
+route + `nt2102:` FORWARD accepts; `vpn.yml` role `vpn_routing`), checked by the user from a client and by the trainer sshd log.
+GNN scores unaffected (features carry no IPs); the LLM/IOC/correlation now see the client IP. The pve-master route is lost on reboot/SDN
+apply → re-run `proxmox-firewall.yml`. Baselines exp15/exp16 saw admin RDP from `10.21.3.50`; new sessions show `10.8.0.x`.
 
 **ubuntu-etw (2026-11-02):** third Proxmox VM, VM 2104 at 10.21.3.11 (Ubuntu 24.04 cloud image + cloud-init, like
 the trainer), direct SSH over the routed path. auditd → `auditship` (`src/audit-python`) → trainer Loki

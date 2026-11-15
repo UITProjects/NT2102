@@ -130,8 +130,15 @@ from any source** (OpenVPN clients come from outside the lab subnet, DNAT'd as T
 `input_policy` is ACCEPT today, so this rule is what keeps the VPN reachable if that policy is ever set to DROP;
 OpenVPN must listen on TCP (`proto tcp-server`), not the default UDP.
 
-- **OpenVPN is not installed yet.** Terraform builds only the bare VM. The server, PKI and NAT/forwarding
-  come in a later step.
+- **OpenVPN** was installed by hand on 2026-11-02 (`/etc/openvpn/server/server.conf`: TCP 1194, clients in
+  `10.8.0.0/24`, PKI under `/etc/openvpn/easy-rsa`). Ansible (`src/ansible/vpn.yml`, role `vpn_routing`) manages only
+  the routes pushed to clients (lab `10.21.3.0/24` + Kali `10.21.4.0/24`) and the NAT.
+- **No SNAT to the lab (2026-11-15):** VPN client traffic to `10.21.3.0/24` / `10.21.4.0/24` keeps its real `10.8.0.x`
+  source (iptables RETURN above the MASQUERADE, saved in `/etc/iptables/rules.v4`), so lab VMs and Loki see who connected,
+  not `10.21.3.50`. Replies find their way back through a pve-master route `10.8.0.0/24 via 10.21.3.50 dev it2102` plus
+  `nt2102:` FORWARD accepts (`src/ansible/proxmox-firewall.yml`). The route is **not persistent** by choice: after a
+  pve-master reboot or an SDN apply, re-run `proxmox-firewall.yml` (symptom: VPN clients connect but can't reach any VM).
+  Run `proxmox-firewall.yml` before `vpn.yml --tags nat`.
 - Clients on the internet reach it on **external TCP 2102**: the home router forwards TCP 2102 → pve-master
   `192.168.1.120:2102`, and pve-master DNATs that to `10.21.3.50:1194`
   (`src/ansible/proxmox-firewall.yml`, iptables rules saved with `netfilter-persistent`). Client configs use `remote <public-ip> 2102`.

@@ -1,9 +1,18 @@
-- name: Forward TCP 2102 on pve-master to nt2102-vpn:1194
+# pve-master: DNAT the external OpenVPN port to nt2102-vpn, and route VPN clients' real 10.8.0.x source back
+# through nt2102-vpn (it no longer SNATs traffic to the lab subnets: role vpn_routing, tag nat).
+# Run this BEFORE `vpn.yml --tags nat`, or replies from the lab never reach the VPN clients.
+#   ansible-playbook -i proxmox.ini proxmox-firewall.yml --diff
+- name: pve-master DNAT to nt2102-vpn + VPN client return route
   hosts: pve
   become: true
   gather_facts: false
   vars:
     vpn_ip: "{{ hostvars['nt2102-vpn'].private_ip }}"
+    vpn_client_cidr: 10.8.0.0/24
+    lab_bridge: it2102           # SDN VNet bridge where nt2102-vpn lives
+    vpn_routed_cidrs:            # subnets VPN clients reach without SNAT (same as vpn_routing's vpn_no_snat_cidrs)
+      - { cidr: 10.21.3.0/24, name: lab }
+      - { cidr: 10.21.4.0/24, name: kali subnet }
 
   tasks:
     - name: Install netfilter-persistent
@@ -41,7 +50,47 @@
         comment: "it2102: DNAT OpenVPN: ext 2102/tcp -> {{ vpn_ip }}:1194"
       register: vpn_dnat
 
+    # Not persistent by choice (user, 2026-11-15): a reboot or an SDN apply (ifreload) drops it, and re-running
+    # this playbook brings it back. `ip route replace` is idempotent; the check keeps changed=0 on a re-run.
+    - name: Check the return route for VPN clients
+      ansible.builtin.command: ip route show {{ vpn_client_cidr }}
+      register: vpn_route
+      changed_when: false
+
+    - name: Route VPN clients ({{ vpn_client_cidr }}) back via nt2102-vpn ({{ vpn_ip }})
+      ansible.builtin.command: ip route replace {{ vpn_client_cidr }} via {{ vpn_ip }} dev {{ lab_bridge }}
+      when: ("via " ~ vpn_ip ~ " dev " ~ lab_bridge) not in vpn_route.stdout
+      changed_when: true
+
+    # Requests go nt2102-vpn -> VM directly, replies go VM -> pve-master -> nt2102-vpn, so the host only sees
+    # one direction. Accept both directions explicitly so a conntrack INVALID drop can't kill the replies.
+    - name: Accept forwarded VPN client -> subnet traffic
+      ansible.builtin.iptables:
+        chain: FORWARD
+        source: "{{ vpn_client_cidr }}"
+        destination: "{{ item.cidr }}"
+        jump: ACCEPT
+        action: insert
+        rule_num: "1"
+        state: present
+        comment: "nt2102: VPN clients -> {{ item.name }} (no SNAT)"
+      loop: "{{ vpn_routed_cidrs }}"
+      register: vpn_fwd_in
+
+    - name: Accept forwarded subnet -> VPN client replies
+      ansible.builtin.iptables:
+        chain: FORWARD
+        source: "{{ item.cidr }}"
+        destination: "{{ vpn_client_cidr }}"
+        jump: ACCEPT
+        action: insert
+        rule_num: "1"
+        state: present
+        comment: "nt2102: {{ item.name }} -> VPN clients (via nt2102-vpn)"
+      loop: "{{ vpn_routed_cidrs }}"
+      register: vpn_fwd_out
+
     - name: Save iptables rules persistently
       ansible.builtin.command: netfilter-persistent save
-      when: vpn_dnat.changed or vpn_dnat_old.changed
+      when: vpn_dnat.changed or vpn_dnat_old.changed or vpn_fwd_in.changed or vpn_fwd_out.changed
       changed_when: true

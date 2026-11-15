@@ -1,0 +1,17 @@
+---
+# nt2102-vpn (OpenVPN server, set up by hand on 2026-11-02). This role manages only what VPN clients can reach
+# and how their traffic is forwarded; OpenVPN itself, the PKI and client certs stay manual.
+vpn_server_conf: /etc/openvpn/server/server.conf
+vpn_service: openvpn-server@server
+# Subnets pushed to clients as routes into the tunnel: the lab (ws-etw-*, trainer) and Kali's own subnet.
+vpn_push_routes:
+  - { network: 10.21.3.0, netmask: 255.255.255.0 }   # it2102  (lab)
+  - { network: 10.21.4.0, netmask: 255.255.255.0 }   # it2102k (kali)
+
+# No SNAT for VPN clients going to these subnets: lab VMs see the real 10.8.0.x source. Needs the return
+# route 10.8.0.0/24 via this server on pve-master FIRST (added by hand, see infrastructure/README.md),
+# or replies from the lab never reach the clients. Other destinations stay MASQUERADEd.
+vpn_client_cidr: 10.8.0.0/24
+vpn_no_snat_cidrs:
+  - 10.21.3.0/24   # it2102  (lab)
+  - 10.21.4.0/24   # it2102k (kali)

@@ -218,7 +218,8 @@ history of earlier progress) and, if relevant, this section.
 - Proxmox infrastructure: `infrastructure/` (`main.tf` SDN zone/VNet/subnet, ws-etw-0 and ws-etw-1 from the Server 2022
   eval ISO with manual install, ubuntu-trainer and nt2102-vpn from a cloud image + cloud-init, per-VM
   firewall rules prefixed `it2102:`; `README.md`). Then Ansible with `-i proxmox.ini`; `proxmox-firewall.yml`
-  adds the pve-master DNAT (TCP 2102 → nt2102-vpn:1194).
+  adds the pve-master DNAT (TCP 2102 → nt2102-vpn:1194) + the `10.8.0.0/24` return route (not persistent) and `nt2102:` FORWARD
+  accepts; `vpn.yml` (role `vpn_routing`) pushes the lab + Kali routes and keeps VPN clients' real `10.8.0.x` source (no SNAT to the lab).
 - Improve loop: `lab` CLI (`src/lab/cli.py`, console script; `source .venv/bin/activate`): `lab loop` = pull + build → features → train into one
   run folder; `lab train --exclude-file` (leave windows out); `lab compare` (two models on the same replayed windows); `lab promote <run> [--host <vm>]`
   sets the pointer (`src/artifacts/current.json`, overridden per machine by `current.local.json`) that `live_server.py`, `serve.sh`, `rejudge.sh`

@@ -1,0 +1,10 @@
+---
+# nt2102-vpn (group `vpn`): routes pushed to VPN clients (and, next, forwarding/NAT). Not part of site.yml.
+#   ansible-playbook -i proxmox.ini vpn.yml --diff
+# Restarting OpenVPN drops connected clients briefly; don't run it mid-demo.
+- name: Configure the OpenVPN server's routing
+  hosts: vpn
+  become: true
+  gather_facts: false
+  roles:
+    - { role: vpn_routing, tags: [vpn] }
