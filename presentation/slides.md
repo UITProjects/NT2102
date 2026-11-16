@@ -353,9 +353,14 @@ layout: center
 class: text-center
 ---
 
-<h1 v-motion :initial="{ scale: 0.9, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 600 } }" style="font-size:4rem;color:#1e3a8a">3 · Demo</h1>
+<h1 v-motion :initial="{ scale: 0.9, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 600 } }" style="font-size:2.4rem;color:#1e3a8a;margin-bottom:0.6rem">3 · Demo</h1>
+
+<img src="./images/ws1-attack-flow.png" class="mx-auto" style="max-height:380px;object-fit:contain;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.25)" v-motion :initial="{ y: 20, opacity: 0 }" :enter="{ y: 0, opacity: 1, transition: { duration: 600, delay: 200 } }" />
 
 <!--
+Hình: kịch bản tấn công của thành viên (react2shell trên ws-etw-1 10.21.3.11 → C2 → leo quyền → LDAP tới DC
+ws-etw-0 10.21.3.10 → ADCS ESC1 → Administrator). Đây là sơ đồ kịch bản, không phải kết quả phát hiện:
+phần cross-host (bước 07–09) chưa được kiểm chứng là đỏ trên DC.
 Demo 1 (ws-etw-0, exp08): video đã quay sẵn (YouTube: https://www.youtube.com/watch?v=Jzv03v82bNo). Cần mạng để phát;
 nếu mất mạng, mô tả bằng lời: ① idle xanh → ② tấn công chạy → ③ window đỏ + subgraph → ④ kết luận LLM.
 Kết quả đo được (exp08: window tấn công 05-11 17:10Z 70.17 / LLM attack 0.85; 24 h: 288 window, 7 alert, 3 false alarm)
