@@ -131,7 +131,7 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
 - **Deliverables (slides + demo):** the main recorded demo is ONE Windows VM (`ws-etw-0`, exp08). **Since 2026-11-15 (user)** the deck
   and report also show the teammate's real react2shell attack on `ws-etw-1` (exp15-ws1, 11-15 04:15Z 7.24 / 04:20Z 19.86 red, LLM
   attack 0.85/0.95) as a **second result**, flagged in-sample (4.5 cut-off + NET rule off were tuned on it). Cross-host correlation stays
-  future work. Deck: 16 slides (GNN message-passing slide cut 2026-11-15, folded into RGCN notes; "Nhiều lớp: nhìn xa L bước" StackedLayers slide restored between RGCN and OCRGCN; + 2 paper-Figure-2 slides "OCRGCN: Training / Inference" after OCRGCN) incl. a "Video demo 2" placeholder (teammate fills the YouTube id); the "Kết quả thứ hai" slide was removed 2026-11-15 (user: placeholder is enough; result lives in report §R4 + note.txt);
+  future work. Deck: 14 slides (GNN message-passing slide cut 2026-11-15, folded into RGCN notes; "Nhiều lớp: nhìn xa L bước" StackedLayers slide restored between RGCN and OCRGCN; + 2 paper-Figure-2 slides "OCRGCN: Training / Inference" after OCRGCN); **since 2026-11-16 (user)** the RCE kill-chain slide is cut and both video slides are one text-only "3 · Demo" slide (the team adds the YouTube videos by hand; links in its speaker notes); the "Kết quả thứ hai" slide was removed 2026-11-15 (user: placeholder is enough; result lives in report §R4 + note.txt);
   report: new §R4 (`sec:res-ws1`), D12/D14 appendix. Submission files for the course form are built into gitignored `submit/` by the project skill `sync-submit` (`.claude/skills/sync-submit/`).
 - The Slidev deck (`presentation/`) was redesigned to the user's structure on 2026-11-08 (committed), then **compacted to 13 slides (15 since 2026-11-15: + video 2 placeholder + second-result slide; 14 after the GNN message-passing cut, 17 with the restored layer slide + the Figure-2 Training/Inference slides, 16 after the second-result slide was cut, same day; cap raised to 20),
   keywords only, appendix, results and limits slides removed; demo goes straight to thanks** (user, 2026-11-08): details live in the report (`latex/`) and Q&A in `note.txt`.
@@ -257,12 +257,12 @@ history of earlier progress) and, if relevant, this section.
     `latexmk -pdf main.tex`).
   - Slides: `presentation/` (Slidev; published to GitHub Pages on push to `main` by `.github/workflows/slides.yml`, images in `images/` referenced as `./images/...` so the `/NT2102/` base applies; `slides.md`; Vue diagrams in `components/`: `MessagePassing` (unused since 2026-11-15),
     `StackedLayers`, `RgcnLayer` (one-layer animation), `HiddenLayers`, `Hypersphere`, `OurPipeline`, `Windows`, `AttackGraph`,
-    `BehaviorCounts` (graph + exact out_/in_ feature table), `LabInfra`, `KillChain`; Q&A backup in `note.txt`). `HiddenLayers` and `Windows` are kept
+    `BehaviorCounts` (graph + exact out_/in_ feature table), `LabInfra`, `KillChain` (unused since 2026-11-16); Q&A backup in `note.txt`). `HiddenLayers` and `Windows` are kept
     but unused since the 15-slide cut. `npm run dev` /
-    `npx slidev build`; check layout with `npx slidev export --format png [--range N] [--with-clicks]`. Max 20 slides (user, 2026-11-15; currently 16), keywords only;
+    `npx slidev build`; check layout with `npx slidev export --format png [--range N] [--with-clicks]`. Max 20 slides (user, 2026-11-15; currently 14), keywords only;
     explanations go to the report and speaker notes. Deck redesigned
     2026-11-08 (user structure: intro → core concept → demo → thanks; results + limits live in the report; one Windows VM; no source-tag chips; ≤3 bullets/group;
-    video placeholder on the "3 · Video demo" slide for the user to fill). Slides cross-reference by name ("slide ② Behavior feature"), not number.
+    one text-only "3 · Demo" slide, videos added by hand). Slides cross-reference by name ("slide ② Behavior feature"), not number.
 - Root shortcuts: `selftest.sh`, `serve.sh`, `replay.sh`, `rejudge.sh` (wrap the documented commands).
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.

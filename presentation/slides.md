@@ -349,82 +349,19 @@ phân loại và viết báo cáo; giao diện web hiện window xanh/đỏ. Cù
 -->
 
 ---
-clicks: 8
----
-
-# 3 · Kịch bản tấn công: RCE kill chain
-
-<KillChain />
-
-<div class="tiny muted mt-1">Kali → DVWA trên ws-etw-0 · nhãn tự ghi (self-log) làm oracle</div>
-
-<!--
-Một chuỗi tấn công duy nhất, chạy lại được, từ Kali. Click qua từng giai đoạn: khai thác DVWA command
-injection → RCE (httpd→cmd→powershell) → discovery → quét mạng → tải & chạy tool thật (PsExec, rclone)
-→ dump MySQL → C2 beacon → scheduled task → xoá log (T1070). Lab cô lập, Defender tắt, VM dùng một lần.
-Script: src/atomic-attack-pack/scenarios/rce-killchain.ps1.
--->
-
----
 layout: center
 class: text-center
 ---
 
-# 3 · Video demo
-
-<div class="video-ph" v-motion :initial="{ scale: 0.95, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 500 } }">
-  <iframe src="https://www.youtube-nocookie.com/embed/Jzv03v82bNo?rel=0"
-    title="Video demo" frameborder="0" allowfullscreen
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" />
-</div>
-
-<div class="tiny muted mt-3">① idle <b>xanh</b> → ② kill chain chạy → ③ window <b>đỏ</b> + subgraph → ④ kết luận LLM · <a href="https://www.youtube.com/watch?v=Jzv03v82bNo" target="_blank">youtu.be/Jzv03v82bNo</a></div>
-
-<style scoped>
-.video-ph { width: 76%; margin: 0.5rem auto 0; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden;
-  background: #0f172a; box-shadow: 0 6px 24px rgba(15,23,42,0.25); }
-.video-ph iframe { width: 100%; height: 100%; display: block; }
-</style>
+<h1 v-motion :initial="{ scale: 0.9, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 600 } }" style="font-size:4rem;color:#1e3a8a">3 · Demo</h1>
 
 <!--
-Video demo đã quay sẵn (YouTube: https://www.youtube.com/watch?v=Jzv03v82bNo). Cần mạng để phát;
-nếu mất mạng, mô tả bằng lời theo bốn bước dưới khung.
+Demo 1 (ws-etw-0, exp08): video đã quay sẵn (YouTube: https://www.youtube.com/watch?v=Jzv03v82bNo). Cần mạng để phát;
+nếu mất mạng, mô tả bằng lời: ① idle xanh → ② tấn công chạy → ③ window đỏ + subgraph → ④ kết luận LLM.
 Kết quả đo được (exp08: window tấn công 05-11 17:10Z 70.17 / LLM attack 0.85; 24 h: 288 window, 7 alert, 3 false alarm)
-và giới hạn nằm trong báo cáo §3–4; nếu được hỏi: note.txt Q7. Slide sau: video 2 (tấn công thật trên ws-etw-1).
--->
-
----
-layout: center
-class: text-center
----
-
-# 3 · Video demo 2: tấn công thật trên ws-etw-1
-
-<div class="video-ph" v-motion :initial="{ scale: 0.95, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 500 } }">
-  <!-- TODO (thành viên): thay khối placeholder này bằng iframe YouTube, giống slide "3 · Video demo":
-  <iframe src="https://www.youtube-nocookie.com/embed/<VIDEO_ID>?rel=0" title="Video demo 2" frameborder="0" allowfullscreen
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" /> -->
-  <div class="ph">
-    <div class="ph-i"><span class="tri"></span></div>
-    <div>Video demo 2 · đang cập nhật</div>
-  </div>
-</div>
-
-<style scoped>
-.video-ph { width: 76%; margin: 0.5rem auto 0; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden;
-  background: #0f172a; box-shadow: 0 6px 24px rgba(15,23,42,0.25); }
-.video-ph iframe { width: 100%; height: 100%; display: block; }
-.ph { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 0.6rem; color: #cbd5e1; font-size: 1rem; }
-.ph-i { width: 64px; height: 64px; border-radius: 50%; border: 2px solid #cbd5e1; display: flex; align-items: center;
-  justify-content: center; }
-.tri { width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent;
-  border-left: 20px solid #cbd5e1; margin-left: 5px; }
-</style>
-
-<!--
-Placeholder: video do thành viên quay lần tấn công react2shell vào ws-etw-1 (15-11, 03:35–04:40Z), sẽ thay bằng
-link YouTube. Kết quả (04:15Z 7.24 · 04:20Z 19.86 đỏ, LLM attack 0.85/0.95, mốc Moderate 4.5) nằm trong báo cáo §R4.
+và giới hạn nằm trong báo cáo §3–4; nếu được hỏi: note.txt Q7.
+Demo 2 (ws-etw-1, exp15-ws1): video thành viên quay lần tấn công react2shell (15-11, 03:35–04:40Z). Kết quả
+(04:15Z 7.24 · 04:20Z 19.86 đỏ, LLM attack 0.85/0.95, mốc Moderate 4.5) nằm trong báo cáo §R4.
 -->
 
 ---
@@ -435,17 +372,5 @@ transition: fade
 
 <img src="./images/logo-uit.jpg" class="h-20 mx-auto mb-6" v-motion :initial="{ scale: 0.6, opacity: 0 }" :enter="{ scale: 1, opacity: 1, transition: { duration: 600 } }" />
 
-<h1 v-motion :initial="{ y: 30, opacity: 0 }" :enter="{ y: 0, opacity: 1, transition: { duration: 700, delay: 200 } }" style="font-size:2.6rem;color:#1e3a8a">Cảm ơn thầy/cô và các bạn đã lắng nghe!</h1>
+<h1 v-motion :initial="{ y: 30, opacity: 0 }" :enter="{ y: 0, opacity: 1, transition: { duration: 700, delay: 200 } }" style="font-size:2.6rem;color:#1e3a8a">Cảm ơn thầy và các bạn đã lắng nghe!</h1>
 
-<div v-motion :initial="{ y: 30, opacity: 0 }" :enter="{ y: 0, opacity: 1, transition: { duration: 700, delay: 500 } }" class="text-xl mt-2">Hỏi & Đáp</div>
-
-<div class="small muted mt-10">
-
-Kết quả, giới hạn, công thức, bảng sai khác: báo cáo <code>latex/</code> · <code>docs/DEVIATIONS.md</code>
-
-</div>
-
-<!--
-Cảm ơn. Câu hỏi thường gặp đã chuẩn bị trong note.txt (RGCN vs GCN, 12 quan hệ, vì sao benign idle, kết
-quả demo, công thức điểm subgraph, mốc Moderate 4.5...). Công thức RGCN, điểm subgraph và bảng sai khác đầy đủ nằm trong báo cáo.
--->
