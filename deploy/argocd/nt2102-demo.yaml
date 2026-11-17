@@ -1,0 +1,27 @@
+# Apply once, manual sync, tracks deploy/k8s on main. Don't also enable the home-lab app-of-app template.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nt2102-demo
+  namespace: argocd
+  labels:
+    applicationType: stateless
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    namespace: nt2102-demo
+    name: in-cluster
+  syncPolicy:
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+    automated:
+      enabled: true
+  source:
+    repoURL: https://github.com/UITProjects/NT2102.git
+    targetRevision: main
+    path: deploy/k8s
+    directory:
+      recurse: false

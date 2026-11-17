@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nt2102-demo
+  labels:
+    app: nt2102-demo
+spec:
+  type: ClusterIP
+  selector:
+    app: nt2102-demo
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http

@@ -1,0 +1,14 @@
+# Whitelist: only what the Dockerfile copies.
+*
+!deploy/docker/requirements.txt
+!deploy/snapshot/nt2102-snapshot.tar.gz
+!src/live/live_server.py
+!src/live/repository.py
+!src/live/history.py
+!src/live/file_store.py
+!src/live/snapshot.py
+!src/live/playback.py
+!src/live/static/index.html
+!src/pipeline/alg1.py
+!src/pipeline/alg2.py
+!src/pipeline/cmdlines.py

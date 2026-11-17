@@ -1,0 +1,8 @@
+# Demo image runtime (no torch / PyG / LLM SDKs).
+# Versions match uv.lock; regenerate requirements.txt with:
+#   uv export --format requirements-txt --no-hashes --no-emit-project > /tmp/lock.txt
+#   uv pip compile deploy/docker/requirements.in -c /tmp/lock.txt --python-version 3.12 --python-platform x86_64-unknown-linux-gnu --generate-hashes -o deploy/docker/requirements.txt
+fastapi==0.143.0
+uvicorn==0.54.0
+pandas==3.0.6
+networkx==3.7

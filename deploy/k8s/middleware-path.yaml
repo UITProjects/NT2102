@@ -1,0 +1,19 @@
+# /nt2102 -> /nt2102/ (UI uses relative URLs), then strip /nt2102.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: slash
+spec:
+  redirectRegex:
+    regex: ^(https?://[^/]+/nt2102)$
+    replacement: ${1}/
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip
+spec:
+  stripPrefix:
+    prefixes:
+    - /nt2102

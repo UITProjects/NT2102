@@ -148,6 +148,13 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   scores red on each host before any claim (D6 risk: DC auth blends into legit AD traffic). Network-flow note for the teammate (the
   user's imagined path): `docs/notes/cross-host-attack-flow.md`. Also owed: `ws-etw-1` D14 rollout, merge the branch to `main`, 24 h
   two-VM soak. Details: PROGRESS top. Then concepts 2–4.
+- **Project done (user, 2026-11-16) → CV phase: a public, read-only demo for employers** on the user's k8s homelab
+  (`projects.datrollout.dev/nt2102/`, path-routed on the shared host `projects.datrollout.dev`, few and rare visitors). Built 2026-11-16 on branch `things-need-to-close-project`, **uncommitted, pending the user's
+  review** (NT2102 + the `/home/akira/code/home-lab` repo): repository-layer refactor of `src/live/`, recorded snapshot
+  `deploy/snapshot/nt2102-snapshot.tar.gz`, snapshot mode of `live_server.py`, image + CI, `deploy/k8s/`. Verified locally: all 24
+  `./selftest.sh` steps pass, the container serves the snapshot, 30-user load test OK, manifests pass a server-side dry run on the cluster.
+  **Not yet deployed.** User steps left: commit + merge to `main` → tag `v1.0.0` → make the GHCR package public → `terraform apply` (DNS) →
+  Argo sync → cluster load test, then fill the cluster numbers into `deploy/README.md`. Decisions: section 9 "Public demo"; guide: `deploy/README.md`.
 - SG-Det: code default = the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1. **Live `ocr-live` runs [OURS]
   Moderate from 4.5 on both hosts since 2026-11-15** (user; `live_sg_moderate_from` in `proxmox.ini`) **with the NET rule OFF** (user,
   2026-11-15 05:03Z, `live_sg_require_types=none`; accepts ~5 benign red/day per host): the teammate's 11-15 react2shell run (up to 19.9)
@@ -167,8 +174,51 @@ history of earlier progress) and, if relevant, this section.
 ## 9. Decisions already made (with rationale)
 
 - Environment: Python deps are managed with uv (`pyproject.toml` + `uv.lock`), not containers. Docker is used only on the Ubuntu trainer,
-  for Loki + Grafana and the Prometheus monitoring stack (installed by Ansible). No RDF / GraphDB (user, 2026-10-17): edges stay CSV and
-  Alg. 1 runs in memory.
+  for Loki + Grafana and the Prometheus monitoring stack (installed by Ansible). The one exception is the public demo image
+  (`deploy/docker/`, see "Public demo" below). No RDF / GraphDB (user, 2026-10-17): edges stay CSV and Alg. 1 runs in memory.
+- Persistence behind repository ports (user, 2026-11-16, for the CV demo): `src/live/repository.py` defines three ABCs, used like Spring Data
+  interfaces. `HistoryRepository` holds window history + detail; its shared query/dedup/detail-merge logic and path guard live in the base.
+  `CrosshostRepository` holds cross-host findings. `SessionStore` holds the engine's session/window files + the daily LLM budget.
+  `open_repositories("files"|"snapshot")` is the only place an implementation is picked. The file implementations
+  (`history.FileHistoryRepository`, alias `HistoryStore`; `file_store.py`) write the same bytes as before the refactor.
+  `engine.py`, `correlate.py` and `live_server.py` persist only through the ports (constructor args `store=`, `history=`, `repo=`). Why:
+  the same HTTP/UI code serves live data and a read-only snapshot, and the user wanted the abstraction for the CV.
+- **Public demo (user, 2026-11-16)**, all of it [OURS] engineering, not a method change:
+  - **Snapshot, not live scoring.** The container replays recorded results. Why: the raw ETW of 11-15 afternoon is gone (12 h retention),
+    so it cannot be re-scored, and a recorded snapshot needs no torch, no Loki and no LLM key. Every score / level / verdict shown is the
+    one computed live at the time, with that session's model + settings. The UI banner says so, and also that the 4.5 cut-off + NET rule
+    off were tuned on the 11-15 react2shell run (in-sample, D8). Never present the demo as fresh detection.
+  - **Range (user):** "from start to the last real LLM attack + 3 windows". That is 2026-11-02 23:10Z (first `history.jsonl` row) →
+    2026-11-15 20:15Z: the last LLM `attack` verdict is ws-etw-1 19:55Z (teammate's enumeration), followed by 20:00/20:05/20:10Z.
+    Result: 4,658 windows, 63 red, 17 LLM `attack`.
+  - **Snapshot content:** only the History winner per (host, window start); `.rN` restart duplicates and replays are left out. Per window
+    only `detail.json` is kept, rebuilt from `scores.csv` when missing; it already carries top nodes, Sysmon command lines and the LLM
+    summary + report. Also each `session.json` (paths cut to names), `history.jsonl` and `crosshost.jsonl`. No raw, edges, features or
+    `calls.jsonl`. Redaction covers the `proxmox.ini` passwords, `$LAB_TOKEN` and password-like arguments, followed by a re-scan that
+    fails the build. The tar.gz is deterministic, with a sha256 per file in `manifest.json`.
+  - **Compressed in the image, unpacked at start (user):** 5.6 MB archive committed in git → `SnapshotArchive.open` extracts with tarfile
+    `filter="data"` into an emptyDir and verifies every sha256 before serving (~1 s). Built with `lab snapshot build` (`src/live/snapshot.py`).
+    The committed one was built on the trainer from a scratch copy of the builder, because the trainer runs `main`.
+  - **Playback, no torch (user):** `live_server.py --snapshot` imports no `engine`/torch. `playback.SnapshotMember` stands in for `Engine`
+    behind the same routes, and `Player` replays 2026-11-15 15:10Z → 20:15Z, one window per 3 s, looping. History covers the whole
+    range. `POST /ingest` returns 403, and History presets use the snapshot end as "now".
+  - **Image:** `python:3.12.16-slim-trixie` with fastapi/uvicorn/pandas/networkx only, hash-pinned in `deploy/docker/requirements.txt`
+    (constrained by `uv.lock`); 239 MB, uid 10001, read-only rootfs. CI `.github/workflows/demo-image.yml` runs the snapshot selftests
+    → builds → pushes `ghcr.io/uitprojects/nt2102-demo` (`:sha-*`/`:edge` on main, `:X.Y.Z` on a `vX.Y.Z` tag) → smoke test.
+    `deploy/k8s/deployment.yaml` pins `:1.0.0`.
+  - **Homelab fit:** plain YAML in `deploy/k8s/`, deployed by an Argo Application `nt2102-demo` kept in this repo (`deploy/argocd/`, applied with kubectl; no home-lab change, user 2026-11-17; manual sync,
+    `CreateNamespace`, namespace `nt2102-demo`). The Ingress uses the `traefik` class, websecure + `letsencrypt` resolver, and middlewares
+    `traefik-crowdsec`, no rate limit (user, 2026-11-17). Path routing (user, 2026-11-17): every project demo lives on the shared host
+    `projects.datrollout.dev`, this one at `/nt2102/`; Traefik redirects `/nt2102` → `/nt2102/` and strips the prefix, so the app stays
+    prefix-agnostic as long as its UI uses relative URLs (`deploy/k8s/middleware-path.yaml`); `/` is 404 for now.
+    The VN geo filter is deliberately off, since employers may be abroad. DNS `projects`
+    is a CNAME **not proxied**, so crowdsec sees visitor IPs (the websecure entrypoint trusts no forwarded headers; Traefik
+    runs with `externalTrafficPolicy: Local`). No Grafana dashboard (user, 2026-11-17: not needed).
+  - **Sizing from the local load test** (`deploy/loadtest.py`, 30 users: 61 req/s, 0 errors, p95 ≤ 56 ms, 0.57 core, RSS 134 MiB flat):
+    requests 50m / 160Mi, limits 1 CPU / 256Mi. Cluster numbers are still owed.
+  - **Cluster access:** `~/.kube/merged_kubeconfig` fails to load because the `it2003-admin` client key is corrupt (not our file to fix).
+    For kubectl, extract only the `kubernetes-super-admin@cluster.local` context into a temp file (mode 600) and delete it after.
+    On 2026-11-16 `master-nodes-2` and `worker-nodes-2` were NotReady.
 - Log transport: our collector (`src/etw-python`, `etwcollect`) pushes SilkETW-format JSON lines to Loki (Docker, host network) on the trainer,
   from its own run files with saved offsets. Labels: job (`silketw`, it names the line format), host, split, run, provider; event/pid/process
   as structured metadata. Training pulls from Loki by run or time range (`loki_pull.py`); the live server follows Loki (`--loki-url`). All
@@ -263,6 +313,11 @@ history of earlier progress) and, if relevant, this section.
     explanations go to the report and speaker notes. Deck redesigned
     2026-11-08 (user structure: intro → core concept → demo → thanks; results + limits live in the report; one Windows VM; no source-tag chips; ≤3 bullets/group;
     one "3 · Demo" slide with the teammate's attack-flow diagram, videos added by hand). Slides cross-reference by name ("slide ② Behavior feature"), not number.
+- Persistence (2026-11-16): `src/live/repository.py` ABCs (`HistoryRepository`, `CrosshostRepository`, `SessionStore`) +
+  `open_repositories("files"|"snapshot")`; files = `history.FileHistoryRepository` / `file_store.py`, snapshot = `snapshot.py` (read-only).
+- Public demo (2026-11-16): `lab snapshot build` → `deploy/snapshot/*.tar.gz` → `live_server.py --snapshot` + `playback.py` (no torch)
+  → `deploy/docker/Dockerfile` (CI `.github/workflows/demo-image.yml`, `ghcr.io/uitprojects/nt2102-demo`) → `deploy/k8s/` (Argo app
+  `deploy/argocd/nt2102-demo.yaml`, `projects.datrollout.dev/nt2102/`). Guide: `deploy/README.md`.
 - Root shortcuts: `selftest.sh`, `serve.sh`, `replay.sh`, `rejudge.sh` (wrap the documented commands).
 - Root `README.md`: front door (project, quick start, layout, references). `src/README.md`: map of
   `src/` and the new-member start path.
