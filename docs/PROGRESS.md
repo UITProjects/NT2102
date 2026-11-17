@@ -1,10 +1,27 @@
-# PROGRESS (status as of 2026-11-15)
+# PROGRESS (status as of 2026-11-16)
 
 Replace lines in place when status changes; no history. "Verified" = checked in code/data.
 Branch: **`test-train-with-two-window-vm`** (from `main`). All work on the Proxmox VMs. The trainer checkout is
 **`test-train-with-two-window-vm` @ `4aaafbc`**, clean (2026-11-15 ~11:02Z, Ansible `--tags project -e repo_branch=…`), not `main`.
 This deploy also brought `a788fc8` live: anomaly-first `correlate.py` (`/api/crosshost` 200) and the projector-friendly UI
 (collapsible LLM card, Present toggle / `#present=1`, Parameters = [OURS] + τ only).
+
+## 2026-11-16 CV demo: repository layer + recorded snapshot + container + k8s (branch `things-need-to-close-project`, uncommitted)
+
+User: project done; publish a read-only demo for employers on the k8s homelab. Details: `deploy/README.md`.
+- **Repository refactor (verified, selftests pass):** `src/live/repository.py` = 3 ABCs (`HistoryRepository`, `CrosshostRepository`,
+  `SessionStore`) + `open_repositories()`; file implementations in `history.py` / `file_store.py` (same bytes on disk); `engine.py`,
+  `correlate.py`, `live_server.py` now persist only through them. `HistoryStore` kept as an alias.
+- **Snapshot (verified):** `deploy/snapshot/nt2102-snapshot.tar.gz` (5.6 MB) built on the trainer 2026-11-16 from a scratch copy of the
+  builder: 11-02 23:10Z → 11-15 20:15Z (last real LLM `attack` = ws-etw-1 19:55Z + 3 windows), 4,658 windows, 63 red, 17 LLM attack,
+  redaction scan clean. `lab snapshot build` / `src/live/snapshot.py`.
+- **Snapshot mode (verified locally):** `live_server.py --snapshot` (no torch import) + `playback.py` replays 11-15 15:10Z → 20:15Z;
+  UI banner + in-sample note. Image `deploy/docker/Dockerfile` 239 MB; 30-user load test: 0 errors, p95 ≤ 56 ms, 0.57 core, RSS 134 MiB.
+- **k8s (`deploy/k8s/`, server dry-run OK on the homelab):** Deployment/Service/Ingress (`projects.datrollout.dev/nt2102/`, path-routed: slash redirect + StripPrefix, crowdsec, no rate limit). CI `.github/workflows/demo-image.yml` → `ghcr.io/uitprojects/nt2102-demo`. home-lab repo (uncommitted, optional): Argo app
+  `nt2102-demo`, `nt2102Demo.enabled`; its DNS `nt2102` record is not needed.
+- **Committed `things-need-to-close-project` (2026-11-17).** Not done: push + merge to `main`; tag `v1.0.0` (CI builds
+  `:1.0.0`); make the GHCR package public; `kubectl apply -f deploy/argocd/nt2102-demo.yaml` + manual Argo sync (Application
+  kept in this repo, no home-lab change: user 2026-11-17); cluster load test. DNS needs nothing: `projects.datrollout.dev` already resolves. `master-nodes-2` NotReady (11-17).
 
 ## 2026-11-15 False-positive review + `ws-etw-0` retrain → `exp17-ws0` (LIVE)
 

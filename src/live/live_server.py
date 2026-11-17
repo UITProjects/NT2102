@@ -14,6 +14,11 @@ live_server.py - HTTP layer around engine.Engine: ingest from Loki or the shippe
                               --loki-url) a successful Loki poll within 120 s. For monitoring / curl checks.
     GET  /                    the UI (static/index.html)
 
+Snapshot mode (public demo, deploy/README.md): --snapshot <archive.tar.gz> --data-dir <dir> serves a recorded,
+read-only snapshot (snapshot.py) through the same API: no model, no torch, no Loki, no LLM; POST /ingest is 403.
+playback.py replays the recorded windows of --playback-from/--playback-to over SSE, one 5-min window every
+--playback-interval-s seconds, in a loop. Every score and LLM verdict shown is the one recorded at the time.
+
 Usage (from the repo root): ./serve.sh [live|local] [flags] wraps
     uv run python src/live/live_server.py --bind 127.0.0.1 [--loki-url http://127.0.0.1:3100]
     uv run python src/live/live_server.py --selftest      (/healthz + watchdog logic; no model, no Loki)
@@ -45,9 +50,11 @@ from starlette.concurrency import run_in_threadpool
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))          # src/: the `lab` package (current-model pointer)
-from engine import Engine  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "pipeline"))
+# no `engine` import here: it pulls in torch, which snapshot mode must not need (main() imports it for live mode)
 from history import HistoryStore, parse_time_ms  # noqa: E402
-import alg1  # noqa: E402  (engine put src/pipeline on sys.path; default level scale)
+from repository import open_repositories  # noqa: E402
+import alg1  # noqa: E402  (default level scale)
 import alg2  # noqa: E402  (provider list + reasoning efforts)
 
 
@@ -106,11 +113,14 @@ def code_version(repo: str | None = None) -> dict:
         return {"sha": "unknown", "branch": "unknown", "dirty": None}
 
 
-def create_app(engine: Engine, token: str | None, source=None, members=None, correlator=None, trained=None,
-               server=None) -> FastAPI:
-    """members = [{"host", "engine", "source"}], one per scored VM; without it, one member from engine + source.
-    server = server-wide facts for the UI Parameters panel (code version, start time, flags not per engine)."""
-    app = FastAPI(title="OCR-APT live")
+def create_app(engine, token: str | None, source=None, members=None, correlator=None, trained=None,
+               server=None, snapshot=None) -> FastAPI:
+    """engine: an engine.Engine, or playback.SnapshotMember in snapshot mode (same read interface).
+    members = [{"host", "engine", "source"}], one per scored VM; without it, one member from engine + source.
+    server = server-wide facts for the UI Parameters panel (code version, start time, flags not per engine).
+    snapshot = what a recorded snapshot holds (snapshot mode only): the UI shows it, /ingest is refused and the
+    History default range ends at the snapshot's end instead of now."""
+    app = FastAPI(title="OCR-APT live" if snapshot is None else "OCR-APT demo (recorded snapshot)")
     clients: set[tuple] = set()                  # (event loop, asyncio.Queue) per open SSE connection
     members = members or [{"host": None, "engine": engine, "source": source}]
 
@@ -144,10 +154,13 @@ def create_app(engine: Engine, token: str | None, source=None, members=None, cor
         if m["source"] is not None:
             st["source"] = m["source"].status()
         return {**st, "selected_host": m["host"], "hosts": [summary(x) for x in members], "trained_for": trained or [],
-                "correlation": correlator.status() if correlator is not None else None, "server": server or {}}
+                "correlation": correlator.status() if correlator is not None else None, "server": server or {},
+                "snapshot": snapshot}
 
     @app.post("/ingest")
     async def ingest(request: Request):
+        if snapshot is not None:
+            raise HTTPException(403, "read-only recorded snapshot: nothing is ingested")
         if token and request.headers.get("x-lab-token") != token:
             raise HTTPException(401, "bad token")
         body = await request.body()
@@ -191,7 +204,7 @@ def create_app(engine: Engine, token: str | None, source=None, members=None, cor
                       host: str | None = None):
         """Windows overlapping [from, to); from/to = ISO-8601 (naive = UTC) or epoch ms; default the last 24 h."""
         try:
-            to_ms = parse_time_ms(end) or int(time.time() * 1000)
+            to_ms = parse_time_ms(end) or (snapshot or {}).get("to_ms") or int(time.time() * 1000)
             from_ms = parse_time_ms(start) or to_ms - 24 * 3600 * 1000
         except ValueError as e:
             raise HTTPException(400, f"bad time: {e}")
@@ -320,7 +333,17 @@ def main():
                         "Count kept in <sessions-dir>/llm_budget.json, so restarts do not reset it")
     ap.add_argument("--watchdog-s", type=float, default=300,
                     help="exit (for systemd to restart) when a worker thread died or the Loki poll hangs this long; 0 = off")
+    g = ap.add_argument_group("snapshot mode (public demo; snapshot.py, playback.py): no model, no Loki, read-only")
+    g.add_argument("--snapshot", metavar="TAR_GZ", help="serve this recorded snapshot instead of scoring live data")
+    g.add_argument("--data-dir", metavar="DIR", help="where the snapshot is unpacked (e.g. a k8s emptyDir)")
+    g.add_argument("--playback-from", metavar="TIME", help="ISO or epoch ms; default: 6 h before the snapshot end")
+    g.add_argument("--playback-to", metavar="TIME", help="default: the snapshot end")
+    g.add_argument("--playback-interval-s", type=float, default=3.0, help="seconds per recorded 5-min window")
+    g.add_argument("--playback-pause-s", type=float, default=30.0, help="pause at the end of a loop")
     a = ap.parse_args()
+    if a.snapshot:
+        return snapshot_main(a)
+    from engine import Engine
     from lab import current, live_models, trained_hosts
     cur = current()
     explicit = a.run_dir is not None
@@ -348,17 +371,18 @@ def main():
         print(f"[live] WARNING window {a.window_min} min: the models were trained on 5-min windows "
               f"(see experiment.json windowing.window_min); features will be off-distribution")
     import correlate
-    from history import HistoryStore as Store
+    # persistence: the sessions/ folder implementations of the repository ports (repository.py)
+    repos = open_repositories("files", a.sessions_dir)
     hosts_map = correlate.load_hosts(a.hosts_file or correlate.HOSTS_FILE)
     names = [p["host"] for p in plans]
     cor = None
     if len(plans) > 1:
         if all(h in hosts_map for h in names):
-            cor = correlate.Correlator({h: hosts_map[h] for h in names}, a.sessions_dir, int(a.window_min * 60_000))
+            cor = correlate.Correlator({h: hosts_map[h] for h in names}, a.sessions_dir, int(a.window_min * 60_000),
+                                       repo=repos.crosshost)
             print(f"[live] correlation on: {cor.ips} (red windows followed to the other VM)")
         else:
             print(f"[live] correlation OFF: {names} not all in the hosts file ({hosts_map})")
-    shared = Store(a.sessions_dir)
     members = []
     for p in plans:
         engine = Engine(p["run_dir"], p["scaler"], a.sessions_dir, a.window_min, a.stride_min, a.lateness_s,
@@ -369,8 +393,8 @@ def main():
                         llm_provider=a.llm_provider,
                         llm_model=a.llm_model, llm_base_url=a.llm_base_url, llm_api_key=a.llm_api_key,
                         llm_max_subgraphs=a.llm_max_subgraphs, llm_reasoning_effort=a.llm_reasoning_effort,
-                        llm_debug=a.llm_debug, llm_max_per_day=a.llm_max_per_day, host=p["host"], history=shared,
-                        flow_sink=cor.add_line if cor else None)
+                        llm_debug=a.llm_debug, llm_max_per_day=a.llm_max_per_day, host=p["host"], history=repos.history,
+                        flow_sink=cor.add_line if cor else None, store=repos.sessions)
         print(f"[live] {p['host'] or 'any host'}: model {engine.run_dir}  tau={engine.run.tau}")
         print(f"[live] converter sha256 {engine.conv_sha} ({engine.conv_check})")
         if cor:
@@ -407,6 +431,37 @@ def main():
     print(f"[live] code {server['code']}")
     uvicorn.run(create_app(first, a.token, members[0]["source"], members, cor, trained, server), host=a.bind, port=a.port,
                 log_level="warning")
+
+
+def snapshot_main(a):
+    """--snapshot: unpack + verify the archive, then serve it read-only with playback (no torch import)."""
+    import playback
+    repos = open_repositories("snapshot", a.snapshot, a.data_dir)
+    man = repos.manifest
+    try:
+        play_to = parse_time_ms(a.playback_to) or man["to_ms"]
+        play_from = parse_time_ms(a.playback_from) or play_to - 6 * 3600 * 1000
+    except ValueError as e:
+        raise SystemExit(f"--playback-from/--playback-to: {e}")
+    members, player, cor, info = playback.build_members(repos, play_from, play_to, a.playback_interval_s,
+                                                        a.playback_pause_s)
+    if not player.slots:
+        raise SystemExit("no recorded window in the playback range")
+    print(f"[demo] snapshot {man['counts']} {len(member_hosts := [m.host for m in members])} host(s) {member_hosts}; "
+          f"playback {len(player.slots)} slots every {a.playback_interval_s:g}s")
+    player.start()
+    # the models of the replayed sessions (History can show older ones; each row's session.json names its model)
+    mh = man.get("model_hosts") or {}
+    runs = sorted({repos.sessions.session_meta(r["sdir"]).get("run_dir") for _, rows in player.slots for r in rows} - {None})
+    trained = trained_text([(run, mh.get(run)) for run in runs])
+    # the container has no .git: CI passes the commit as NT2102_CODE_SHA (deploy/docker/Dockerfile)
+    sha = os.environ.get("NT2102_CODE_SHA") or code_version()["sha"]
+    server = {"code": {"sha": sha[:12], "branch": "snapshot", "dirty": False},
+              "started_ms": int(time.time() * 1000), "snapshot": True}
+    app = create_app(members[0], None, None, [{"host": m.host, "engine": m, "source": None} for m in members], cor,
+                     trained, server, info)
+    print(f"[demo] UI: http://{a.bind}:{a.port}/   health: /healthz")
+    uvicorn.run(app, host=a.bind, port=a.port, log_level="warning")
 
 
 def plan_hosts(loki_hosts, default_host, pointer_models, single, assigned) -> list | str:
@@ -565,9 +620,70 @@ def selftest():
     assert "repeated" in plan_hosts(["a", "a"], None, None, one, {})
     assert "no model" in plan_hosts(["z"], None, ptr, one, {"a": "x"})
     tmp.cleanup()
+    selftest_snapshot()
     print("[SELFTEST OK] /healthz 200/503, watchdog exits on a dead thread or hung poll, not on Loki being down, "
           "/api/history range (ISO / ms) + alerts-only + 400/404 + traversal refused, ?host= per VM, trained-for text, cross-host findings, "
           "which engines start")
+
+
+def selftest_snapshot():
+    """Snapshot mode end to end through HTTP: a recorded two-host snapshot, playback, read-only, no torch."""
+    import subprocess
+    import tempfile
+    from fastapi.testclient import TestClient
+    from file_store import FileSessionStore
+    import playback
+    import snapshot
+    base, m5 = 1_794_700_000_000, 300_000
+    with tempfile.TemporaryDirectory() as d:
+        sess = os.path.join(d, "sessions")
+        h, st = HistoryStore(sess), FileSessionStore(sess)
+        for host in ("ws-etw-0", "ws-etw-1"):
+            sdir = f"live-a-{host}"
+            os.makedirs(os.path.join(sess, sdir))
+            json.dump({"run_dir": f"/r/model-{host}", "host": host, "alg1": {"moderate_from": 4.5}},
+                      open(os.path.join(sess, sdir, "session.json"), "w"))
+            for k in range(4):
+                red = host == "ws-etw-1" and k == 2
+                row = {"sdir": sdir, "session": "live-a", "mode": "loki", "moderate_from": 4.5, "window": f"w{k}",
+                       "host": host, "start_ms": base + k * m5, "end_ms": base + (k + 1) * m5, "status": "scored",
+                       "alert": red, "max_sg_score": 19.86 if red else 1.0,
+                       **({"llm": {"status": "attack", "confidence": 0.95}} if red else {})}
+                h.append(row)
+                st.save_detail(sdir, f"w{k}", {"window": row, "top": {},
+                                               **({"llm": {"verdict": "attack", "subgraphs": []}} if red else {})})
+        arc = os.path.join(d, "s.tar.gz")
+        snapshot.build(sess, base + 4 * m5, arc, log=lambda *_: None)
+        repos = open_repositories("snapshot", arc, os.path.join(d, "data"))
+        members, player, cor, info = playback.build_members(repos, base + m5, base + 4 * m5, 0, 0)
+        player.sleep = lambda s: None
+        app = create_app(members[0], None, None, [{"host": m.host, "engine": m, "source": None} for m in members],
+                         cor, trained_text([("model-ws-etw-1", ["ws-etw-1"])]), {}, info)
+        c = TestClient(app)
+        s = c.get("/api/status").json()
+        assert s["snapshot"]["to_ms"] == base + 4 * m5 and [x["host"] for x in s["hosts"]] == ["ws-etw-0", "ws-etw-1"]
+        assert c.post("/ingest", content=b"{}").status_code == 403, "a snapshot must refuse ingest"
+        assert c.get("/healthz").status_code == 200
+        q = c.get("/api/history").json()                      # default range ends at the snapshot end, not now
+        assert q["total"] == 8 and q["to_ms"] == base + 4 * m5, q
+        assert c.get("/api/history", params={"alert": True}).json()["windows"][0]["max_sg_score"] == 19.86
+        det = c.get("/api/history/live-a-ws-etw-1/w2").json()
+        assert det["llm"]["verdict"] == "attack" and det["history"]["sdir"] == "live-a-ws-etw-1", det
+        assert c.get("/api/history/..%2F..%2Fetc/w2").status_code in (400, 404)
+        assert c.get("/api/windows", params={"host": "ws-etw-1"}).json() == [], "nothing played yet"
+        player.run_once()                                      # playback range starts at w1: w1, w2, w3
+        ws = c.get("/api/windows", params={"host": "ws-etw-1"}).json()
+        assert [w["window"] for w in ws] == ["w1", "w2", "w3"] and ws[1]["alert"], ws
+        assert c.get("/api/windows/w2", params={"host": "ws-etw-1"}).json()["llm"]["verdict"] == "attack"
+        assert c.get("/api/status", params={"host": "ws-etw-1"}).json()["session"]["played_llm_attack"] == 1
+    # snapshot mode must run without torch: importing the snapshot path pulls in none of it
+    code = ("import sys; sys.path.insert(0, 'src/live'); import live_server, playback, snapshot; "
+            "assert 'torch' not in sys.modules, 'torch imported'")
+    repo = os.path.dirname(os.path.dirname(HERE))
+    r = subprocess.run([sys.executable, "-c", code], cwd=repo, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    print("[live_server] snapshot mode OK (status + snapshot info, ingest 403, history default = snapshot end, detail "
+          "with LLM verdict, traversal refused, playback windows over HTTP, no torch import)")
 
 
 if __name__ == "__main__":

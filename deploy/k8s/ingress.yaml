@@ -1,0 +1,25 @@
+# https://projects.datrollout.dev/nt2102/ — crowdsec, slash redirect, strip prefix. No geo filter.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nt2102-demo
+  labels:
+    app: nt2102-demo
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: "traefik-crowdsec@kubernetescrd,nt2102-demo-slash@kubernetescrd,nt2102-demo-strip@kubernetescrd"
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: projects.datrollout.dev
+    http:
+      paths:
+      - path: /nt2102
+        pathType: Prefix
+        backend:
+          service:
+            name: nt2102-demo
+            port:
+              name: http

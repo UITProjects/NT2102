@@ -146,10 +146,14 @@ def _kept_subgraphs(wdir: str) -> list:
 
 
 class Correlator:
-    def __init__(self, ips: dict, sessions_dir: str, window_ms: int = 300_000, llm=None, take_budget=None, log=print):
+    def __init__(self, ips: dict, sessions_dir: str, window_ms: int = 300_000, llm=None, take_budget=None, log=print,
+                 repo=None):
+        """sessions_dir: where the window folders are read from; repo: where findings are kept
+        (repository.CrosshostRepository, default sessions/crosshost.jsonl)."""
+        from file_store import FileCrosshostRepository
         self.ips, self.dir, self.w_ms = ips, sessions_dir, int(window_ms)
         self.llm, self.take_budget, self.log = llm, take_budget, log
-        self.path = os.path.join(sessions_dir, "crosshost.jsonl")
+        self.repo = repo or FileCrosshostRepository(sessions_dir)
         self.lock = threading.Lock()
         self.conns: dict[int, dict] = {}              # window start -> {5-tuple: connection record}
         self.wins: dict[str, dict] = {h: {} for h in ips}   # host -> {window start: state}
@@ -163,23 +167,14 @@ class Correlator:
 
     # ---------------------------------------------------------------- persistence
     def _load(self):
-        if not os.path.exists(self.path):
-            return
-        with open(self.path, encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    f = json.loads(line)
-                    self.findings[f["id"]] = f
-                except (ValueError, KeyError):
-                    pass                              # a line torn by a crash
+        self.findings.update(self.repo.load())
         for f in self.findings.values():              # the window table is gone: a pending one cannot finish
             f.pop("dirty", None)
             if f["level"] == "pending":
                 f["level"], f["note"] = "one-sided", "server restarted before the peer windows closed; peer side not read"
 
     def _save(self, f: dict):
-        with open(self.path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(f) + "\n")
+        self.repo.append(f)
 
     def _emit(self, f: dict):
         for cb in list(self.listeners):

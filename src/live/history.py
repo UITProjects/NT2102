@@ -30,18 +30,17 @@ import csv
 import json
 import math
 import os
-import re
 import sys
-import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "pipeline"))
 import alg2  # noqa: E402  (display_attr: NET ints -> ip:port for the UI)
 
+sys.path.insert(0, HERE)
+from repository import (META_KEYS, SAFE_NAME, STATUS_RANK, HistoryRepository, check_name,  # noqa: E402,F401
+                        restart_n as _restart_n)
+
 HISTORY_FILE = "history.jsonl"
-SAFE_NAME = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]*$")      # session folder / window id: no '/', no leading '.'
-STATUS_RANK = {"scored": 4, "error": 3, "empty": 2, "partial": 1}
-META_KEYS = ("sdir", "session", "mode", "moderate_from")
 
 
 # --------------------------------------------------------------------------- detail (shared with engine.py)
@@ -90,6 +89,26 @@ def write_json_atomic(path: str, obj) -> None:
     os.replace(tmp, path)                                    # a reader never sees half a file
 
 
+TRAIN_KEYS = ("layers", "hidden", "lr", "beta", "epochs", "dropout", "contamination", "patience", "tnr_tolerance",
+              "seed", "val_split")
+
+
+def train_summary(run_dir: str) -> dict:
+    """The training hyperparameters of a run, from its train_meta.json (train_gnn_models.py writes `args`).
+    Keys a run does not record are left out (older runs); a missing / unreadable file gives {}."""
+    try:
+        meta = json.load(open(os.path.join(run_dir, "train_meta.json")))
+    except (OSError, ValueError):
+        return {}
+    args = meta.get("args") or {}
+    out = {k: args[k] for k in TRAIN_KEYS if k in args}
+    if "relations" in meta:
+        out["n_relations"] = len(meta["relations"])
+    if "label_source" in meta:
+        out["label_source"] = meta["label_source"]
+    return out
+
+
 def parse_time_ms(v: str | int | None) -> int | None:
     """'1793704800000' (epoch ms) or ISO-8601 ('2026-11-03T17:30:00Z', '2026-11-03T17:30+07:00'); naive = UTC."""
     if v is None or v == "":
@@ -104,18 +123,15 @@ def parse_time_ms(v: str | int | None) -> int | None:
     return int(d.timestamp() * 1000)
 
 
-def _restart_n(sdir: str) -> int:
-    m = re.search(r"\.r(\d+)$", sdir)
-    return int(m.group(1)) if m else 1
-
-
 # --------------------------------------------------------------------------- store
-class HistoryStore:
+class FileHistoryRepository(HistoryRepository):
+    """HistoryRepository on the sessions/ folder: history.jsonl (append-only) + per-window detail.json.
+    get / query / detail merge come from the base class (repository.py)."""
+
     def __init__(self, sessions_dir: str):
+        super().__init__()
         self.dir = sessions_dir
         self.path = os.path.join(sessions_dir, HISTORY_FILE)
-        self.lock = threading.Lock()
-        self.rows: dict[tuple[str, str], dict] = {}          # (sdir, window id) -> latest row
         self.bad_lines = 0
         self.backfilled = 0
         os.makedirs(sessions_dir, exist_ok=True)
@@ -194,56 +210,18 @@ class HistoryStore:
         print(f"[history] backfilled {len(rows)} windows from {len({r['sdir'] for r in rows})} session folder(s) "
               f"-> {self.path}")
 
-    def get(self, sdir: str, wid: str) -> dict | None:
-        with self.lock:
-            r = self.rows.get((sdir, wid))
-            return dict(r) if r else None
-
-    def query(self, from_ms: int, to_ms: int, alert_only: bool = False, include_replay: bool = False,
-              limit: int = 2000, host: str | None = None) -> dict:
-        """Live sessions (mode 'loki' from Loki, 'live' from the HTTP shipper) by default; replays re-use past
-        timestamps, so they are left out unless include_replay. host = only that host's windows; rows written
-        before two-host scoring have no host and match no host filter."""
-        with self.lock:
-            cand = [r for r in self.rows.values()
-                    if isinstance(r.get("start_ms"), int) and r["start_ms"] < to_ms and r.get("end_ms", 0) > from_ms
-                    and (include_replay or r.get("mode") != "replay")
-                    and (host is None or r.get("host") == host)]
-        best: dict[tuple, tuple] = {}
-        dups = 0
-        for r in cand:
-            k = (r.get("host") or "", r["start_ms"])         # two hosts share the window grid
-            rank = (STATUS_RANK.get(r.get("status"), 0), _restart_n(r["sdir"]), r["sdir"])
-            if k in best:
-                dups += 1
-                if rank <= best[k][0]:
-                    continue
-            best[k] = (rank, r)
-        rows = [r for _, r in sorted(best.values(), key=lambda x: (x[1]["start_ms"], x[1].get("host") or ""))]
-        if alert_only:
-            rows = [r for r in rows if r.get("alert")]
-        return {"from_ms": from_ms, "to_ms": to_ms, "total": len(rows), "duplicates_hidden": dups,
-                "truncated": len(rows) > limit, "windows": rows[-limit:] if limit else rows}
-
     # ---------------------------------------------------------------- detail
     def window_dir(self, sdir: str, wid: str) -> str:
         """Path of one window folder; refuses anything that is not a plain folder name (path traversal)."""
-        if not (SAFE_NAME.match(sdir) and SAFE_NAME.match(wid)):
-            raise ValueError("bad session or window name")
+        check_name(sdir, wid)
         return os.path.join(self.dir, sdir, "windows", wid)
 
-    def detail(self, sdir: str, wid: str) -> dict | None:
+    def _read_detail(self, sdir: str, wid: str) -> dict | None:
         wdir = self.window_dir(sdir, wid)
-        row = self.get(sdir, wid)
         try:
-            d = json.load(open(os.path.join(wdir, "detail.json")))
+            return json.load(open(os.path.join(wdir, "detail.json")))
         except (OSError, ValueError):
-            d = self._rebuild(wdir)
-        if d is None and row is None:
-            return None
-        d = d or {}
-        win = {k: v for k, v in (row or d.get("window") or {}).items() if k not in META_KEYS}
-        return {**d, "window": win, "history": {k: (row or {}).get(k) for k in META_KEYS}}
+            return self._rebuild(wdir)
 
     @staticmethod
     def _rebuild(wdir: str) -> dict | None:
@@ -261,6 +239,9 @@ class HistoryStore:
         except (OSError, ValueError):
             sg = {}
         return make_detail(nodes, sg.get("subgraphs", []), sg.get("stats", {}), sg.get("truncated", False))
+
+
+HistoryStore = FileHistoryRepository      # the name every caller used before the repository refactor
 
 
 # --------------------------------------------------------------------------- selftest

@@ -20,6 +20,7 @@ Commands (`lab <command> -h` shows every option with examples):
   lab hosts [VM ...]                  show or set which VMs are scored live: one VM or both
   lab compare                         two models on the same replayed windows: red counts per label
   lab current                         print the current model's paths
+  lab snapshot build --until T --out F    recorded live history -> read-only demo snapshot (deploy/README.md)
   lab selftest                        prove the plumbing runs (fake Loki, tiny model)
 
 Typical session on the trainer:
@@ -957,6 +958,17 @@ def build_parser():
                 "Print which model the live server loads (used by serve.sh and rejudge.sh).")
     c.add_argument("--field", choices=["run", "run_dir", "scaler", "experiment"], help="print just this path")
 
+    sn = _parser(sub, "snapshot", "live history -> read-only demo snapshot (.tar.gz)",
+                 "Pack the live server's recorded windows (history.jsonl + each window's detail.json + session.json\n"
+                 "+ cross-host findings) up to --until into one deterministic, redacted .tar.gz that\n"
+                 "`live_server.py --snapshot` serves without a model (src/live/snapshot.py, deploy/README.md).",
+                 "example:\n  lab snapshot build --until 2026-11-15T20:15Z --out deploy/snapshot/nt2102-snapshot.tar.gz")
+    sn.add_argument("action", choices=["build"])
+    sn.add_argument("--until", required=True, metavar="TIME", help="keep windows that end by this time (naive = UTC)")
+    sn.add_argument("--from", dest="start", metavar="TIME", help="first window (default: the first recorded)")
+    sn.add_argument("--out", required=True, metavar="TAR_GZ")
+    sn.add_argument("--sessions-dir", default=os.path.join(SRC, "live", "sessions"))
+
     _parser(sub, "selftest", "prove the plumbing runs (fake Loki, tiny model)",
             "Fake Loki <- synthetic capture -> pull -> train (1 seed, 3 epochs) -> promote. Proves it RUNS,\n"
             "not that it detects attacks.")
@@ -1010,6 +1022,9 @@ def main(argv=None):
             return 1
         print(cur.get(a.field) or "" if a.field else json.dumps(cur, indent=1))
         return 0
+    if a.cmd == "snapshot":
+        return run([os.path.join(SRC, "live", "snapshot.py"), "build", "--sessions-dir", a.sessions_dir,
+                    "--until", a.until, "--out", os.path.abspath(a.out), *(["--from", a.start] if a.start else [])])
     if a.cmd == "selftest":
         return selftest()
     return 1

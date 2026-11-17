@@ -1,0 +1,84 @@
+# Snapshot-mode server, stateless. Sizing: deploy/README.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nt2102-demo
+  labels:
+    app: nt2102-demo
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: nt2102-demo
+  template:
+    metadata:
+      labels:
+        app: nt2102-demo
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: demo
+        # CI builds :X.Y.Z from tag vX.Y.Z
+        image: ghcr.io/uitprojects/nt2102-demo:1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+        env:
+        - name: TZ
+          value: Asia/Ho_Chi_Minh
+        resources:
+          requests:
+            cpu: 50m
+            memory: 160Mi
+          limits:
+            cpu: "1"
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        startupProbe:              # snapshot unpack + sha256 check
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 2
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 20
+          failureThreshold: 3
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: data                 # unpacked snapshot, ~75 MB
+        emptyDir:
+          sizeLimit: 256Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 16Mi

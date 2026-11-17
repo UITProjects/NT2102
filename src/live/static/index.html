@@ -125,6 +125,10 @@ tr.flag td{color:var(--anom);font-weight:600}
 .trained span{border:1px solid var(--win);color:var(--win);background:var(--win-soft);border-radius:6px;padding:3px 10px;font-weight:600}
 .trained span.unknown{border-color:var(--warn);color:var(--warn);background:none}
 .hosttabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+/* snapshot mode (public demo): recorded data, read-only */
+.snapbanner{border:1px solid var(--win);background:var(--win-soft);border-radius:10px;padding:10px 14px;margin-bottom:12px}
+.snapbanner b{color:var(--win)}
+.snapbanner .muted{display:block;margin-top:4px}
 .hosttabs button{font:600 .85rem var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--line);
   border-radius:6px;padding:5px 12px;cursor:pointer}
 .hosttabs button.on{border-color:var(--win);color:var(--win);background:var(--win-soft)}
@@ -207,6 +211,7 @@ html.present .alertcard{max-height:560px}
     <span class="mono muted" id="modelTxt"></span>
     <button id="presentBtn" title="Bigger text for a projector; hides the pipeline diagnostics (?present=1 in the URL turns it on)">Present</button>
   </header>
+  <div class="snapbanner" id="snapBanner" hidden></div>
   <div class="trained" id="trained"></div>
 
   <section class="panel" id="paramsPanel">
@@ -252,7 +257,7 @@ html.present .alertcard{max-height:560px}
       <label><input type="checkbox" id="hAlert"> alerts only</label>
       <label id="hHostL" hidden>VM <select id="hHost"></select></label>
       <button class="go" id="hGo">Query</button>
-      <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24">24 h</button><button data-h="168">7 d</button>
+      <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24">24 h</button><button data-h="168">7 d</button><button data-h="all" id="hAll" hidden>all</button>
       <span class="muted" id="hInfo"></span>
     </div>
     <div class="hwrap"><table id="hTable"></table></div>
@@ -309,10 +314,25 @@ html.present .alertcard{max-height:560px}
   let status = null, selected = null, pinned = false, cy = null, detail = null, sgIdx = 0;
   let histSel = null;            // {sdir, wid} when the detail panel shows a window picked from History
 
+  // snapshot mode (live_server.py --snapshot): "now" is the end of the recorded data, not the wall clock
+  const snap = () => status?.snapshot || null;
+  const nowMs = () => snap()?.to_ms ?? Date.now();
+  function renderSnapshot() {
+    const sn = snap();
+    $("snapBanner").hidden = !sn; $("hAll").hidden = !sn;
+    if (!sn) return;
+    const pb = sn.playback || {}, c = sn.counts || {};
+    $("snapBanner").innerHTML = `<b>Recorded snapshot · read-only demo.</b> ${esc(dhm(sn.from_ms))} → ${esc(dhm(sn.to_ms))} (lab time),
+      ${esc(c.windows)} windows, ${esc(c.red)} red, ${esc(c.llm_attack)} with an LLM <i>attack</i> verdict.
+      The live panels replay ${esc(dhm(pb.from_ms))} → ${esc(hm(pb.to_ms))} at one 5-min window every ${esc(pb.interval_s)} s, in a loop;
+      History holds the whole range.<span class="muted">${esc(sn.note || "")}</span>`;
+  }
+
   // ------------------------------------------------------------- status tiles
   function renderStatus() {
     const s = status?.session;
     renderHosts();
+    renderSnapshot();
     $("modelTxt").textContent = status ? "model " + base(status.model.run_dir) + " · converter " + status.model.converter_check : "";
     const p = status?.params;
     if (p) $("winParams").textContent = `w = ${p.window_min} min, s = ${p.stride_min} min, lateness ${p.lateness_s} s`;
@@ -323,6 +343,21 @@ html.present .alertcard{max-height:560px}
     if (status) $("tauTxt").textContent = "τ per type: " + Object.entries(status.model.tau).map(([k,v]) => `${k} ${num(v,5)}`).join(" · ");
     if (!s) { $("tiles").innerHTML = '<div class="muted">waiting for data (shipper or Loki)…</div>'; return; }
     $("sessionTxt").textContent = `session ${s.id} (${s.mode}${s.host ? ", " + s.host : ""})`;
+    if (snap()) {                               // playback: no shipper, no Loki; show what is being replayed
+      $("conn").className = "dot on";
+      $("connTxt").textContent = "playback of recorded data";
+      const played = [...curWins().values()];
+      $("tiles").innerHTML = [
+        ["recorded clock (lab time)", s.clock_ms ? dhm(s.clock_ms) : "–"],
+        ["windows played (this loop)", s.windows],
+        ["red windows (this loop)", s.played_red ?? played.filter(w => w.alert).length, (s.played_red ?? 0) ? "bad" : ""],
+        ["LLM attack verdicts (this loop)", s.played_llm_attack ?? 0],
+        ["loop", s.loop ?? 1],
+        ["snapshot built (lab time)", snap().generated_utc ? dhm(Date.parse(snap().generated_utc)) : "–"],
+      ].map(([k,v,c]) => `<div class="tile ${c||""}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
+      renderTimeline();
+      return;
+    }
     const ago = s.last_seen_s_ago;
     $("conn").className = "dot " + (ago == null ? "" : ago < 5 ? "on" : ago < 30 ? "stale" : "off");
     const src = status.source;
@@ -586,13 +621,15 @@ html.present .alertcard{max-height:560px}
   });
   $("hGo").addEventListener("click", queryHistory);
   document.querySelectorAll("[data-h]").forEach(b => b.addEventListener("click", () => {
-    const now = Date.now();
-    $("hTo").value = toInput(now); $("hFrom").value = toInput(now - Number(b.dataset.h) * 3600e3);
+    const now = nowMs();
+    $("hTo").value = toInput(now);
+    $("hFrom").value = toInput(b.dataset.h === "all" ? (snap()?.from_ms ?? now - 168 * 3600e3) : now - Number(b.dataset.h) * 3600e3);
     queryHistory();
   }));
-  function initHistory() {
+  async function initHistory() {
     const h = new URLSearchParams(location.hash.slice(1));
-    const now = Date.now();
+    if (!status) { try { status = await (await fetch("api/status")).json(); renderSnapshot(); } catch (e) {} }
+    const now = nowMs();
     const parse = v => { const t = Date.parse(v); return Number.isNaN(t) ? null : t; };
     $("hTo").value = toInput(parse(h.get("to")) ?? now);
     $("hFrom").value = toInput(parse(h.get("from")) ?? now - 6 * 3600e3);
