@@ -142,6 +142,9 @@ OpenVPN must listen on TCP (`proto tcp-server`), not the default UDP.
 - Clients on the internet reach it on **external TCP 2102**: the home router forwards TCP 2102 → pve-master
   `192.168.1.120:2102`, and pve-master DNATs that to `10.21.3.50:1194`
   (`src/ansible/proxmox-firewall.yml`, iptables rules saved with `netfilter-persistent`). Client configs use `remote <public-ip> 2102`.
+- **Teardown:** pve-master outlives `terraform destroy`, and `rules.v4` would bring the DNAT + FORWARD rules back on boot.
+  Run `src/ansible/proxmox-firewall-teardown.yml` first (removes them + the return route, re-saves `rules.v4`; keeps
+  iptables-persistent), remove the router's TCP 2102 forward by hand, then `terraform destroy`.
 - The shared OUT DROP to `192.168.1.0/24` also applies to traffic this VM forwards for VPN clients.
   Through the tunnel they reach the lab subnet, not the home LAN.
 

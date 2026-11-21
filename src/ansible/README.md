@@ -180,6 +180,8 @@ ansible-playbook -i proxmox.ini proxmox-firewall.yml --diff  # pve-master (root 
                                               # 10.8.0.0/24 return route (not persistent) + nt2102: FORWARD accepts
 ansible-playbook -i proxmox.ini vpn.yml --diff  # nt2102-vpn: push lab + Kali routes, no SNAT to the lab
                                               # (run AFTER proxmox-firewall.yml; a route change restarts OpenVPN)
+ansible-playbook -i proxmox.ini proxmox-firewall-teardown.yml --diff  # lab teardown, BEFORE terraform destroy:
+                                              # removes the pve-master DNAT, FORWARD accepts + route, re-saves rules.v4
 
 # any other cloud (the vault supplies the Windows + Grafana creds):
 ansible-playbook -i inventory.cloud.ini site.yml -e @group_vars/vault.yml --ask-vault-pass
