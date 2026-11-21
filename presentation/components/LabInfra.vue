@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // The lab: Proxmox VMs on two SDN VNets. Two scored Windows hosts, one model each (D12):
-// ws-etw-0 (DVWA, main recorded demo, exp08; Domain Controller since 11-09) and ws-etw-1 (teammate's react2shell Next.js app, exp15-ws1).
+// ws-etw-0 (DVWA, main recorded demo, exp08; Domain Controller since 11-09) and ws-etw-1 (react2shell Next.js app, exp15-ws1).
 // The Demo UI is drawn inside ubuntu-trainer (ocr-live serves it); the VPN VM itself is left out, only the VPN attacker is shown.
-// Static (no clicks): ① Kali exploits DVWA · ② ETW logs ship to Loki · ③ ocr-live serves the alert UI · ④ teammate's real attack over VPN.
+// Static (no clicks): ① Kali exploits DVWA · ② ETW logs ship to Loki · ③ ocr-live serves the alert UI · ④ real react2shell attack over VPN.
 // Each box = name + one short description; implementation details live in the speaker notes and the report.
 </script>
 
@@ -58,7 +58,7 @@
       <text x="115" y="314" class="vm-s">kịch bản của nhóm</text>
     </g>
 
-    <!-- teammate attacking over the VPN (outside the lab VNets) -->
+    <!-- remote attacker over the VPN (outside the lab VNets) -->
     <g class="vm atk vpn">
       <rect x="216" y="252" width="150" height="86" rx="8" />
       <text x="291" y="278" class="vm-t">thành viên (VPN)</text>
@@ -71,7 +71,7 @@
       <path d="M 115 248 L 115 188" fill="none" marker-end="url(#li-atk)" />
       <text x="125" y="214" class="fl" text-anchor="start">① exploit DVWA</text>
     </g>
-    <!-- flow 4: teammate -> ws-etw-1 -->
+    <!-- flow 4: remote attacker -> ws-etw-1 -->
     <g class="flow atk">
       <path d="M 291 252 L 291 188" fill="none" marker-end="url(#li-atk)" />
       <text x="301" y="214" class="fl" text-anchor="start">④ react2shell RCE</text>

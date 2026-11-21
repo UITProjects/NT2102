@@ -45,7 +45,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   session stays logged on); all 7 LLM-judged were `false_positive`. Impact: idle means no one logged on. Sign out after RDP, and
   exclude logon → sign-out from training. A retrain does not fix this. Loki retention raised 72 h → 90 d so a baseline can cover
   more than 3 days. Details: `docs/notes/logged-on-session-fp-lesson.md`.
-- `ws-etw-1` is **not idle-only** (user, 2026-11-12, exp15-ws1): its baseline 11-06 20:30Z → 11-12 12:15Z *includes* the
+- `ws-etw-1` is **not idle-only** (exp15-ws1): its baseline 11-06 20:30Z → 11-12 12:15Z *includes* the
   teammate's setup and admin work (account creation, `icacls`, git clone, Node/npm installs, Edge) and **all their RDP sessions**,
   plus the VM's current state (react2shell `node` server, a SYSTEM task running `powershell → whoami` every minute, the NetBIOS
   broadcast). Excluded only: our 6-h rotation canaries and the teammate's exploit / enumeration runs (react2shell RCE children of
@@ -53,7 +53,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   `src/artifacts/exclusions/ws-etw-1-20261112.json`. Why: the user's choice, so the model matches how `ws-etw-1` is really used.
   Impact: on `ws-etw-1` a human RDP session and the teammate's tools used for setup (`net user`, `icacls`, `runas`) are normal, so
   they will not raise alerts there (and, since `exp16-ws0`, on `ws-etw-0` too — see next bullet); `whoami` under `powershell` is normal too.
-- `ws-etw-0` is **now a Domain Controller and no longer idle-only** (user, 2026-11-12, exp16-ws0): it was promoted to the `nt2102.lab` DC
+- `ws-etw-0` is **now a Domain Controller and no longer idle-only** (exp16-ws0): it was promoted to the `nt2102.lab` DC
   at 11-09 10:41Z (verified by Loki + WinRM), so its baseline 11-09 16:49Z → 11-12 15:08Z *includes* all DC steady-state work
   (ADWS/DFSR/DNS/NTDS, replication) **and admin RDP/console sessions**, excluding only our rotation canaries and the 11-10 14:49–15:05Z
   DVWA→RCE kill chain (`src/artifacts/exclusions/ws-etw-0-20261112.json`, 67 of 2107 windows). This **supersedes the logged-on-session
@@ -123,7 +123,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   documented and intentional OS-command sink, so the exploited RCE is faithful. (Earlier: 10 Atomic/custom
   scenarios run on the VM.)
 - [OURS] attack realism, to raise the signal **honestly** (not by detector tuning): the chain is
-  deliberately high-volume (user, 2026-11-04) and the **T1105 phase downloads and EXECUTES real benign
+  high-volume and the **T1105 phase downloads and EXECUTES real benign
   signed tools** — Sysinternals **PsExec** (as SYSTEM: `PsExec64.exe → PSEXESVC.exe → cmd.exe → whoami`)
   and **rclone** (`copyurl` fetch from the C2), with **nmap/ncat best-effort** (staged on Kali by
   `roles/kali_attack`, default-off, falling back to the PowerShell TcpClient sweep). Rationale: the graph
@@ -152,7 +152,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     the training converter (`src/pipeline/etw2nodlink.py`, same sha256), cuts clock-aligned tumbling
     5-min windows, and scores each window with the frozen train scaler, train relation list and per-type
     models.
-  - Transport (user decision, 2026-10-17): Grafana Alloy on the VM ships every line, unchanged, to Loki
+  - Transport: Grafana Alloy on the VM ships every line, unchanged, to Loki
     on the trainer. `live_server.py --loki-url` follows the newest test run there
     (`src/live/loki_source.py`). Training pulls the same store (`loki_pull.py` → `build_experiment.py`).
     The HTTP shipper (`etwship.py`) remains only for `--replay` / `compare_replay.py`.
@@ -174,7 +174,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     `Prediction_probability`, 'linear'); [PAPER] §5.2 only says "sum of the scores", but raw scores
     differ in scale per type (NET is negative). train_min/max from `train_scores.csv` (split = train);
     the saved model reproduces that file to 1.3e-5.
-  - Level scale = [PAPER] §7.2.1 since 2026-11-03 (user decision: "exactly the paper"): ≤ 1 Negligible
+  - Level scale = [PAPER] §7.2.1 since 2026-11-03: ≤ 1 Negligible
     ([AUTHOR CODE] only), < 10 Minor, 10–100 Moderate, ≤ 1000 Significant, else Critical. A score of exactly 10 is
     Moderate as the paper text reads ("between 10 and 100"); [AUTHOR CODE] l.394 says `<= 10` Minor, so the two
     differ only at 10.0 (clamped probs often sum to whole numbers). `--sg-moderate-from` (default 10; `10.0001` =
@@ -184,7 +184,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     11-03T15:25Z): **6 red at ≥ 10 vs 1 red at ≥ 30** (16, 25, 13, 12, 15 + the 129.0 Significant window that is
     red on both). The exp06 attack windows of 2026-11-02 (max 9.0 / 2.0) stay **Minor (green) at 10 as well**.
     More red windows also use more of the daily LLM budget (`--llm-max-per-day`, D9).
-  - **[OURS] live cut-off 4.5 since 2026-11-15 ~02:55Z** (user decision; inventory `live_sg_moderate_from=4.5` in
+  - **[OURS] live cut-off 4.5 since 2026-11-15 ~02:55Z** (inventory `live_sg_moderate_from=4.5` in
     `src/ansible/proxmox.ini`; the code default stays 10). Why: the teammate's real react2shell run on `ws-etw-1`
     (11-14 18:10–19:00Z: `node server.js` → `cmd /d /s /c powershell -EncodedCommand` reverse shell → `tar evil.zip`,
     `winPEASx64.exe`, `recon.bat` → `RanSim.ps1` encrypt; Sysmon command lines, D14) stayed green at 10: its best
@@ -209,7 +209,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     detection; the margin is thin (4.72 vs 4.5) and a rerun may score under it; only 1 of ~10 attack windows is red
     (the winPEAS/recon window 18:15Z scored 1.44); one day of benign is the whole false-alarm sample; no label oracle
     (D6), so no P/R/F1. History rows keep their own `moderate_from` (10 before, 4.5 after).
-  - **NET rule OFF live since 2026-11-15 05:03Z** (user: "I accept sometimes false positive"; inventory
+  - **NET rule OFF live since 2026-11-15 05:03Z** (inventory
     `live_sg_require_types=none` → `--sg-require-types none`, both hosts; code default `alg1.REQUIRE_TYPES` stays `net` for
     offline tools). Why: the teammate's second react2shell run on `ws-etw-1` (11-15 03:35–04:40Z, from VPN client
     10.8.0.3: winPEAS, `sc query`, `schtasks /query`, `whoami /all`, node.exe → cmd → `powershell -enc`) scored 13.44 /
@@ -336,7 +336,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   (`build_experiment.py`, before windowing) and live scoring (`engine._score`). The attack's RCE PowerShell
   never reads those paths, so it is kept. Impact: removes the watchdog from the baseline and from live windows;
   does not address non-watchdog FPs (e.g. TiWorker servicing — addressed by a longer baseline).
-- **[OURS] NET alert rule (user, 2026-11-09; `alg1.REQUIRE_TYPES`, `--sg-require-types`; OFF live since 2026-11-15,
+- **[OURS] NET alert rule (`alg1.REQUIRE_TYPES`, `--sg-require-types`; OFF live since 2026-11-15,
   see the cut-off entry above; still the code default offline):** a level-kept (≥ Moderate)
   subgraph is alerted, and so sent to the LLM (daily budget unchanged), only if it holds ≥ 1 anomalous NET node. Otherwise
   it stays in the output with `kept = False` and `suppressed = "missing anomalous node type(s): net"`. The window is
@@ -377,7 +377,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   - Provider is pluggable (`--llm-provider anthropic|openai|ollama|deepseek|mock`). [PAPER] used GPT-4o-mini
     (temperature 0) and LLaMA3-8B. The Anthropic backend sends no temperature (current models reject it),
     so its output is not deterministic. `mock` is a keyword rule for UI tests, not an LLM.
-  - Provider choice (user, 2026-10-22): **any OpenAI-compatible endpoint** — `--llm-provider openai
+  - Provider choice: **any OpenAI-compatible endpoint** — `--llm-provider openai
     --llm-base-url <url>/v1 [--llm-model NAME] [--llm-api-key KEY]`. The key falls back to
     `$OPENAI_API_KEY`; a keyless endpoint used with a custom `--llm-base-url` gets a harmless dummy key so
     the SDK is satisfied ([OURS] `_resolve_openai_key`). Same flags on `live_server.py`, `rejudge.sh` and
@@ -388,7 +388,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     replay of the session gave the same verdict (0.9, then 0.95 on a second replay: not bit-reproducible).
     The attack path (triage `attack` → IOCs → report) has **not** run live: the GNN produced no attack
     subgraph (D8 correction). One window = one data point.
-  - Model choice (user, 2026-10-25): [OURS] DeepSeek API `deepseek-flash` (= DeepSeek-V4.1-Flash-1017,
+  - Model choice: [OURS] DeepSeek API `deepseek-flash` (= DeepSeek-V4.1-Flash-1017,
     `--llm-provider deepseek`, OpenAI-compatible endpoint), not the paper's GPT-4o-mini / LLaMA3-8B. (Cloudflare
     Workers AI was tried first and dropped: the account's Free plan refuses this model.) By default DeepSeek
     thinks (effort high), and in thinking mode temperature has no effect, so verdicts and reports are not
@@ -401,7 +401,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - Impact: the GNN alert is never removed. An LLM `false_positive` shows as a struck-through badge on a
   still-red window. Each red window costs 1 call (benign) or 3 calls (attack) per subgraph, plus 9 when
   ≥ 2 subgraphs are attacks. It runs on its own thread, so scoring is not delayed.
-- Daily budget (user, 2026-11-02, [OURS]): at most `--llm-max-per-day` (default 10) red windows investigated
+- Daily budget ([OURS]): at most `--llm-max-per-day` (default 10) red windows investigated
   per local day, to cap token spend on a 24/7 server. Windows over the budget keep their red GNN alert and get
   `skipped` instead of a verdict. Impact: on a busy day, later alerts have no LLM report; it limits nothing
   about the GNN detection. Budget counter in `sessions/llm_budget.json`.
@@ -428,7 +428,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 ## D10. Own Python ETW collector (`src/etw-python`, `etwcollect`) instead of SilkETW + Alloy
 - What: [PAPER] the paper consumes existing audit datasets and names no collector. Until 2026-10-26 we used
   SilkETW/SilkService v0.8 (Mandiant, archived) writing JSON lines to files, shipped to Loki by Grafana
-  Alloy. [OURS] (user decision 2026-10-26) one Python process, stdlib + ctypes only, run as the SYSTEM
+  Alloy. [OURS] one Python process, stdlib + ctypes only, run as the SYSTEM
   task `etwlab-collector`:
   - one real-time ETW session with the same 3 providers and keywords (Kernel-Process 0x50, Kernel-File
     0x380, Kernel-Network 0x30); payload decoded via TDH schemas cached per event type;
@@ -469,10 +469,10 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   every kernel event (`EventsLost` is reported, not prevented).
 
 ## D11. Linux endpoint `ubuntu-etw`: auditd + own Python shipper (`src/audit-python`, `auditship`), raw logs only
-- RETIRED (user, 2026-11-06): the VM is replaced by a second Windows VM `ws-etw-1` (D12). The code stays in the repo
+- RETIRED: the VM is replaced by a second Windows VM `ws-etw-1` (D12). The code stays in the repo
   unused; the text below is the record of what it was.
 - What: [PAPER] the paper evaluates Linux hosts only through existing datasets (DARPA TC3 / OpTC
-  provenance records); it runs no collector. [OURS] (user decision 2026-11-02) a second endpoint VM on the
+  provenance records); it runs no collector. [OURS] a second endpoint VM on the
   Proxmox lab, `ubuntu-etw` 10.21.3.11, records syscalls with **auditd** and ships every record unchanged to the
   trainer's Loki as `{job="auditd", host="ubuntu-etw"}` (structured metadata `type`, `key`; entry time = the
   record's own `audit(<epoch>.<ms>:<serial>)` time). Roles `linux_auditd` + `linux_auditship`, playbook
@@ -495,7 +495,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   64-bit connects, writes under the watched dirs), not a full provenance graph.
 
 ## D12. Two Windows hosts: one model per host, each scored live
-- What: [PAPER] evaluates each host separately. [OURS] (user, 2026-11-07, replacing the pooled plan of 2026-11-06) `ws-etw-0` and
+- What: [PAPER] evaluates each host separately. [OURS] (replacing the pooled plan of 2026-11-06) `ws-etw-0` and
   `ws-etw-1` push to one Loki and each has its own model: `lab promote <model> --host <vm>`, `lab hosts <vm> ...`. One
   `Engine` + `LokiSource` runs per scored VM, with its own model, scaler and clock; history and LLM budget are shared.
 - Why: matches the paper, keeps `ws-etw-0` on exp08 with no retrain, and avoids one baseline for two different machines
@@ -512,15 +512,15 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   passed by tolerating those nodes; never deployed.
 - `ws-etw-1` model, live since 2026-11-12 ~14:10Z: **`exp15-ws1`**, 11-06 20:30Z → 11-12 12:15Z (teammate setup + RDP included, attack
   runs excluded, D2), tol 0.01 like `ws-etw-0`. Gate (seed 360 = the deployed model): best_ep 99 on FILE / NET / PROCESS, val_fpr
-  0.0004 / 0.0000 / 0.0020. Deployed in two-VM mode (`lab hosts ws-etw-0 ws-etw-1`) by user decision, who allowed deployment even if the
+  0.0004 / 0.0000 / 0.0020. Deployed in two-VM mode (`lab hosts ws-etw-0 ws-etw-1`); deployment was allowed even if the
   gate failed.
 - `ws-etw-0` model, history: `exp10` (≈63 h idle, 11-06 19:40Z → 11-09 10:25Z) was trained **16 min before** the DC promotion
   (11-09 10:41:41Z), so it was blind to all AD services — the live red=0 under it was steady-state luck, not a covered baseline. Retired
   from live use 2026-11-12. **`exp16-ws0`** live since 2026-11-12 ~16:05Z: DC-era benign 11-09 16:49Z → 11-12 15:08Z (DC steady-state +
   admin sessions, D2), tol 0.01 like `ws-etw-1`. Gate (seed 360 = deployed): best_ep 99 on FILE / NET / PROCESS, val_fpr
   0.0002 / 0.0000 / 0.0023; the NET gate — the DC risk — is the strongest (2,130 val nodes) now that the DC's NET is in training.
-  Deployed two-VM by user decision (deploy allowed even on gate failure). First check: 0 red on both hosts.
-  **`exp17-ws0`** live since 2026-11-15 ~13:43Z (user decision), replacing exp16-ws0: all DC-era data to 11-15 11:20Z, same settings.
+  Deployed two-VM (allowed even on gate failure). First check: 0 red on both hosts.
+  **`exp17-ws0`** live since 2026-11-15 ~13:43Z, replacing exp16-ws0: all DC-era data to 11-15 11:20Z, same settings.
   Gate pass: best_ep 99 ×3, val_fpr 0.0048 / 0.0067 / 0.0026. Re-score of the same 819 saved live windows at 4.5, NET rule off:
   benign red 24 → 9 (mostly in-sample), our DVWA attack windows 51–53 → 7.3–7.9 (still red, but below benign GPO-editor windows at
   14–15; one 4.55 tail window lost). [INFERENCE] The ngen burst in training makes the attack's 45 short-lived `mysql.exe` look normal.
@@ -533,7 +533,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 
 ## D13. Cross-host correlation (`src/live/correlate.py`)
 - What: [PAPER] §7: "Detecting lateral movement was beyond the scope of this work, as OCR-APT does not process network traffic
-  logs", left to future work. [OURS] (user, 2026-11-07; **anomaly-first since 2026-11-15**, user) a stage after per-host SG-Det
+  logs", left to future work. [OURS] (**anomaly-first since 2026-11-15**) a stage after per-host SG-Det
   that **starts from an anomaly**: a red window on host A → every NET node in A's **kept** subgraphs (anomalous or connector)
   whose IP is another monitored host P is a seed → the matching connection is looked up on P → P's nodes around the other end
   (with P's own model's scores) and A's kept subgraphs go to the LLM as one document: an [OURS] two-host triage prompt, then the
@@ -567,7 +567,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
 - What: [PAPER] §2 lists command-line arguments among a provenance graph's contextual node attributes; §5.1.1 keeps such
   attributes **out of the OCRGCN input** (spurious correlations) but "retained for the investigation phase". Our ETW
   `Microsoft-Windows-Kernel-Process` ProcessStart event has **no CommandLine field** (only ProcessID, ParentProcessID, SessionID,
-  Flags, ImageName), so the UI and the LLM document showed only `powershell.exe` / `cmd.exe`. [OURS] (user, 2026-11-13) Sysmon is
+  Flags, ImageName), so the UI and the LLM document showed only `powershell.exe` / `cmd.exe`. [OURS] Sysmon is
   installed with an **Event ID 1 (ProcessCreate) only** config and read by `etwcollect` as a 4th, optional ETW provider (stem / Loki
   `provider` = `sysmon`). A join module maps each PROCESS node `p<pid>_<t>` to the Sysmon record with the same PID and the latest
   start ≤ t + 2 s. The live engine shows it under the process in the UI tables, the graph tooltip and the alert card, writes

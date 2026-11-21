@@ -37,7 +37,7 @@
 # The Windows capture is always on (win_shipper watchdog) and every live session keeps a raw copy of it
 # (~2 GB/h under load), so the raw copies are pruned hourly. Only <session>/raw/ goes, once NO file in it
 # changed for live_raw_keep_hours: the window results (windows/, windows.csv, sessions/history.jsonl) are the
-# persistent, range-queryable history and are kept (2026-11-03). replay-* and other folders are never touched;
+# persistent, range-queryable history and are kept. replay-* and other folders are never touched;
 # a session holding a .keep file keeps its raw copy too (touch <session>/.keep).
 - name: Hourly cleanup of old live raw copies (window results are kept)
   become: false

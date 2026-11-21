@@ -1,7 +1,7 @@
 # Cross-host attack flow — network view (proposal, 2026-11-13)
 
 **Status: HYPOTHESIS / my imagination.** This is the attack path I want us to run end-to-end so the detector's
-cross-host correlation (D13) fires on a *real* flow, not a synthetic one. It is network-focused on purpose.
+cross-host correlation (D13) fires on a *real* flow, not a synthetic one. It is network-focused.
 Nothing here is a detection claim. Open questions for you are marked **[?]** — fill them with what
 `react2shell` actually allows.
 

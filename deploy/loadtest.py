@@ -5,7 +5,7 @@ loadtest.py - a small, realistic load on the demo (a handful of employers browsi
 Each virtual user does what a visitor does in the UI: opens the page, keeps ONE SSE stream open (the live panels),
 then loops: status, the window list of both hosts, a History query (6 h, then 7 d alerts-only), and 3 window
 details picked from the History result, with a 2-5 s think time. Reports latency percentiles per request type,
-errors, and HTTP 429s (none expected: the Ingress has no rate limit since 2026-11-17).
+errors, and HTTP 429s (none expected: the Ingress has no rate limit).
 
     python deploy/loadtest.py --url http://localhost:8766 --users 10 --duration 300
     python deploy/loadtest.py --url https://projects.datrollout.dev/nt2102 --users 10 --duration 300

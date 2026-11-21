@@ -129,7 +129,7 @@ VERDICTS = ("attack", "benign", "uncertain")
 DEFAULT_MODELS = {"openai": "gpt-4o-mini",          # [PAPER] §7.5 main model
                   "ollama": "llama3:8b",            # [PAPER] §7.5 local model
                   "anthropic": "claude-opus-5-5",
-                  # [OURS] user choice 2026-10-25: DeepSeek API, alias served by DeepSeek-V4.1-Flash-1017
+                  # [OURS] DeepSeek API, alias served by DeepSeek-V4.1-Flash-1017
                   "deepseek": "deepseek-flash",
                   "mock": "rule-mock"}
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"        # OpenAI format (api-docs.deepseek.com)
@@ -241,7 +241,7 @@ def _resolve_openai_key(api_key: str | None, base_url: str | None) -> str | None
 
 
 # --------------------------------------------------------------------------- saved credentials [OURS]
-# Project-prefixed env vars (user, 2026-10-25): a user's own DEEPSEEK_API_KEY etc. (~/.bashrc) are never read.
+# Project-prefixed env vars: a user's own DEEPSEEK_API_KEY etc. (~/.bashrc) are never read.
 DEEPSEEK_ENV = "NT2102_DEEPSEEK_API_KEY"
 
 

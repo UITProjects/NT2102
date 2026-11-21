@@ -21,12 +21,12 @@ User: project done; publish a read-only demo for employers on the k8s homelab. D
   `nt2102-demo`, `nt2102Demo.enabled`; its DNS `nt2102` record is not needed.
 - **Committed `things-need-to-close-project` (2026-11-17).** Not done: push + merge to `main`; tag `v1.0.0` (CI builds
   `:1.0.0`); make the GHCR package public; `kubectl apply -f deploy/argocd/nt2102-demo.yaml` + manual Argo sync (Application
-  kept in this repo, no home-lab change: user 2026-11-17); cluster load test. DNS needs nothing: `projects.datrollout.dev` already resolves. `master-nodes-2` NotReady (11-17).
+  kept in this repo, no home-lab change); cluster load test. DNS needs nothing: `projects.datrollout.dev` already resolves. `master-nodes-2` NotReady (11-17).
 
 ## 2026-11-15 False-positive review + `ws-etw-0` retrain → `exp17-ws0` (LIVE)
 
 Details: `docs/notes/fp-review-20261115.md`. Plan: `~/.claude/plans/i-need-to-check-wondrous-chipmunk.md`.
-- **Live since ~13:43Z (user decision):** `ws-etw-0` = **exp17-ws0** (all DC-era data 11-09 16:49Z → 11-15 11:20Z, 198 of 4,153 windows
+- **Live since ~13:43Z:** `ws-etw-0` = **exp17-ws0** (all DC-era data 11-09 16:49Z → 11-15 11:20Z, 198 of 4,153 windows
   excluded, gate pass). `ws-etw-1` stays **exp15-ws1**: its retrain was aborted by the user (few false positives there). Verified:
   `/healthz` ok, `/api/status` exp17-ws0 converter `match`, 4.5, NET rule off. Rollback: `lab promote exp16-ws0 --host ws-etw-0`, then restart.
 - **Re-score of the same 819 ws-etw-0 windows (4.5, rule off):** benign red 24 → 9 (≈8 → 3/day, mostly in-sample); DVWA attack windows
@@ -73,7 +73,7 @@ rule (the RCE reused the inbound HTTP socket, a normal-looking NET node). User d
   `--start-at-task "Install the live-server systemd unit"` path. Verified: unit `--sg-moderate-from 4.5 --sg-require-types none`,
   `/healthz` ok, `/api/status` `require_types = []`, models exp16-ws0 / exp15-ws1, converter `match`.
 - **Re-judge (D8 table):** ws-etw-1 rule off → 7 attack-run windows red (on: 1) + 7 other; ws-etw-0 4 → 9 red. ≈ 5 benign red/day
-  per host; LLM budget raised 15 → 30/day (user, 2026-11-15) so false alarms are less likely to use it up.
+  per host; LLM budget raised 15 → 30/day so false alarms are less likely to use it up.
 - **Live after restart** (the server re-read the last hour from Loki into `.r3`/`.r4`): ws-etw-1 04:15Z (7.24) and 04:20Z
   (19.86) now **red**; ws-etw-0 04:30Z (our DVWA test) red. But ws-etw-1 04:40Z re-scored **3.03** (was 4.66 before the
   restart) and stays green: [INFERENCE] the re-read starts mid-run, so PROCESS/NET nodes lose earlier events (idle gaps,
@@ -127,7 +127,7 @@ are the **reverse** of our earlier records, with a change we never captured:
   out-of-distribution. red=0 under exp10 was steady-state luck, not a covered baseline — same failure mode as the ws-etw-1 NetBIOS
   broadcast, larger surface.
 
-**Fix = `exp16-ws0`** (user decisions 2026-11-12): retrain ws-etw-0 on its current DC state; benign **includes DC steady-state + admin
+**Fix = `exp16-ws0`**: retrain ws-etw-0 on its current DC state; benign **includes DC steady-state + admin
 RDP/console sessions** (a D2 variant), exclude only canaries + attack bursts; deploy even if the gate fails.
 - **Data:** `range-20261109T164900Z-ws-etw-0` — start = the first clean dos-map run (`live-20261109T164916Z`) **after** the
   promotion/reboot burst, sidestepping the one-time 10:45Z dcpromo churn (60k kproc in 15 min). 2107 windows, **67 excluded**
@@ -186,13 +186,13 @@ Plan: `~/.claude/plans/hmm-forget-the-alert-async-wigderson.md`. User decisions 
   `ws-etw-1` 12 windows scored, **0 red**, median sg 0.0, max 1.99, no NET-rule suppression; `ws-etw-0` 12 scored, 0 red.
   `ocr-live` 1.06 GB. Correlation on (then flow-first: 5 benign `link`s; the layer is anomaly-first since 2026-11-15, D13). Label source for "0 red": operator assertion that nobody acted on either VM then. Not a soak, not a detection result.
 - **Rollback:** `lab hosts ws-etw-0 && sudo systemctl restart ocr-live` (assignments stay).
-- **NEXT ACTION (user, 2026-11-13): verify cross-host with the teammate's REAL attack** — `react2shell` (ws-etw-1) → DC (ws-etw-0),
+- **NEXT ACTION: verify cross-host with the teammate's REAL attack** — `react2shell` (ws-etw-1) → DC (ws-etw-0),
   so the correlation layer (D13) fires on real flows. **Changed 2026-11-13:** the attack is the **teammate's real one, not our injected
   kill chain**, so we do **not** build a synthetic scenario in `src/atomic-attack-pack/` (the old prereq (b) is dropped) and there is
   **no self-logged label oracle** (D6) — ground truth = the teammate's account + time window (operator assertion; blocks any P/R/F1
   claim). Expected: `ws-etw-1` red (react2shell entry) with the pivot socket `10.21.3.10:<port>` inside a kept subgraph → followed to the
   DC's process → `one-sided` or (if the DC's model flags it) `corroborated`, LLM explains both sides and cites the real command lines
-  (D14). Prereqs, in order: (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show (user, 2026-11-13); (b) deploy the
+  (D14). Prereqs, in order: (a) roll Sysmon/D14 out to `ws-etw-1` so its entry commands show; (b) deploy the
   anomaly-first `correlate.py` (2026-11-15) to the trainer; (c) confirm the attack scores red on **each** host —
   if react2shell's exploit or the DC pivot does not go red (D6 risk: node server + AD auth are in-distribution), that is a **finding to
   report, not to hide**. Scope honesty: lateral movement with a known lab credential, not credential theft; DCSync/real cred-dump out of
@@ -237,7 +237,7 @@ Walk-through with the reasoning and repeat commands: `docs/notes/ws-etw-1-retrai
   models the same 2 nodes are over on every seed: one peer, `23.41.37.42:443`, the Defender signature download of 11-08 14:40Z, copied
   into 3 overlapping windows. In the final model the 2 are the NetBIOS broadcast node `10.21.3.255:138`. The host has 585 distinct NET
   peers in 62 h and 473 of them appear in ≤ 3 windows, so a validation tail always holds a peer never seen in training. More idle
-  data does not fix this. **Open decision (user): a stopping-rule setting for this host, or leave `ws-etw-1` unscored.** Not tuned.
+  data does not fix this. **Open decision: a stopping-rule setting for this host, or leave `ws-etw-1` unscored.** Not tuned.
 - **Held-out idle** (3 models `exp11v-ws1-s360/361/362` trained without 11-08 21:00Z → 11-09 10:10Z, replayed on those windows, NET rule
   on, Moderate from 10, vs exp09-ws1; `lab compare`, output in `src/out/etw/eval/ws1-holdout/`): 156 windows scored by all four
   models, 152 idle + 4 canary. **Idle red: exp09-ws1 2 (22:05Z sg 16.9, 04:15Z sg 67.7); held-out models 0 / 0 / 0 (0.0 ± 0.0).**
@@ -260,10 +260,10 @@ Walk-through with the reasoning and repeat commands: `docs/notes/ws-etw-1-retrai
 - **Not done:** Phase 3 (deploy from `main`, `lab promote --host`, `lab hosts ws-etw-0 ws-etw-1`, 24 h soak). Blocked on the two open
   items above. Models and eval output live only on the trainer (`src/artifacts/runs/exp11*`, `src/out/etw/eval/ws1-*`).
 
-## Next action (user, 2026-11-09)
+## Next action
 
 **Deliverables (slides + recorded demo) commit to ONE Windows VM** (`ws-etw-0`, exp08). The second VM and cross-host correlation are
-**nice-to-have**, future-work only unless time allows (user, 2026-11-08).
+**nice-to-have**, future-work only unless time allows.
 
 - **Slides (`presentation/`) compacted to 13 keyword-only slides — DONE** (2026-11-08): intro → core concept (5 steps) → demo
   (lab, data path, kill chain, video) → thanks. Appendix, results and limits slides removed; their content lives in the report
@@ -274,7 +274,7 @@ Walk-through with the reasoning and repeat commands: `docs/notes/ws-etw-1-retrai
   deviations in Appendix A. One VM (`ws-etw-0`, exp08, 2 layers), benign = idle 3-day, Moderate from 10, exp08 results filled (R2
   70.17/54.42 Moderate, LLM `attack` 0.85/0.9; 288 win / 7 alerts / 3 benign FP), D1–D13. Builds clean (`latexmk -pdf main.tex`, 21 pp).
   Remaining `\todoval`: demo screenshots + LLM-provider name only. (`report.docx` untracked, left alone.)
-- **NOW (user, 2026-11-09): exp08 false-alarm burst (RDP/WinRM + a session left logged on) → Loki retention 90 d → retrain `ws-etw-0` as exp10**
+- **NOW: exp08 false-alarm burst (RDP/WinRM + a session left logged on) → Loki retention 90 d → retrain `ws-etw-0` as exp10**
   on all idle data in Loki (≈ 11-06 → 11-09, attacks/RDP/Ansible/canaries excluded, exp08 settings). 8 alerts 10:30–14:10Z, all 7
   LLM-judged `false_positive` (servicing after WinRM, `ping`/`ipconfig`, `dsregcmd` hourly after the 10:46Z logon). Lesson:
   `docs/notes/logged-on-session-fp-lesson.md`. Retention 90 d: **DONE, verified** (`/config` shows `retention_period: 90d`).
@@ -291,7 +291,7 @@ Walk-through with the reasoning and repeat commands: `docs/notes/ws-etw-1-retrai
   Unit `/etc/systemd/system/ocr-live.service` edited by hand: `--loki-host` → `--loki-default-host` (what the PR #14 template renders;
   backup `/root/ocr-live.service.bak-20261109`). `/etc/nt2102-hosts.json` not written (no correlation in one-VM mode). A later Ansible
   `--tags project` run from a pushed branch reconciles both. Selftests on the trainer: alg1, engine, history, live_server, correlate OK.
-- **[OURS] NET alert rule (user, 2026-11-09): LIVE since 16:08Z (with exp10).** A ≥ Moderate subgraph alerts (and goes to the LLM, budget
+- **[OURS] NET alert rule: LIVE since 16:08Z (with exp10).** A ≥ Moderate subgraph alerts (and goes to the LLM, budget
   unchanged) only if it holds ≥ 1 anomalous NET node; otherwise suppressed and logged with the reason (D8). Offline re-judge
   (exp08, 10 sessions since 11-05): alert windows 19 → 8, attack windows 5/5, false alarms 14 → 3 (all human sessions). Replaced
   the first three-type version, which lost the 00:50Z C2 window.
@@ -313,7 +313,7 @@ run, `ocr-live` stays on exp08 and `ws-etw-0`.
 
 ## 2026-11-07 exp09-ws1 trained for `ws-etw-1`: PROVISIONAL, not promoted (verified on the trainer)
 
-One model per host (user, 2026-11-07): `ws-etw-0` keeps exp08, `ws-etw-1` gets its own. Experiment
+One model per host: `ws-etw-0` keeps exp08, `ws-etw-1` gets its own. Experiment
 `range-20261106T170000Z-ws-etw-1`, 11-06 17:00Z to 11-07 03:00Z, 298 windows, 20 excluded (the two 6-h rotation canaries:
 `src/artifacts/exclusions/ws-etw-1-20261107.json`). Label source: operator assertion, backed by a scan of all 495 process
 starts: no RDP, WinRM, installer or choco; the 19:05Z kfile burst is Defender (`MpCmdRun`), kept as normal OS work.
@@ -544,7 +544,7 @@ User cut training scope 48 h → **3 h** and set a hard 04:00 +07 (21:00Z) auto-
 
 ## Current focus
 
-**Move training + attack to the home Proxmox lab (user, 2026-11-01).** Infrastructure verified: `infrastructure/`
+**Move training + attack to the home Proxmox lab.** Infrastructure verified: `infrastructure/`
 (Terraform) built ws-etw 10.21.3.10 + ubuntu-trainer 10.21.3.20 on VNet `it2102`; `src/ansible/proxmox.ini`
 provisioned both (ubuntu.yml + windows.yml with vulnlab: first run failed=0, re-runs `changed=0`, verify-windows
 passes, DVWA :3000 = 200, Grafana = 200, Loki receives kproc/kfile/knet from ws-etw, collector 0 lost events).
@@ -559,11 +559,11 @@ for a newly added VNet). The cross-subnet attack path is opened by an `IN ACCEPT
 to `it2102_rules` (ws-etw accepts the DVWA exploit; Kali accepts the callback via the existing 10.21.3.0/24
 accept). The 7 base resources are now in state (user ran `apply`). **Fix pending apply:** creating `it2102k`
 gave pve-master a new IP `10.21.4.1`, so every VM could reach the node UI/SSH there, bypassing the existing
-`10.21.3.1` drop — added an `OUT DROP → 10.21.4.1` to the shared `it2102_rules` (user, 2026-11-03). `plan` =
+`10.21.3.1` drop — added an `OUT DROP → 10.21.4.1` to the shared `it2102_rules`. `plan` =
 **0 add / 5 change / 0 destroy** (the drop added to all 5 VMs' rules; still **pending user `terraform apply`**).
 Ansible (branch `provision-kali-ansible`): `proxmox.ini` `[attacker]` group + `kali.yml` + `kali_attack` role
 (copies `src/atomic-attack-pack` → `/opt/attack-pack`, launcher selftest). Auth = Kali's public default
-`kali` / `kali` hardcoded in `proxmox.ini` (user, 2026-11-04; not a secret on the lab subnet, like
+`kali` / `kali` hardcoded in `proxmox.ini` (not a secret on the lab subnet, like
 vagrant/vagrant), no vault. **Kali VERIFIED (2026-11-04):** ping ok, `kali.yml` first run failed=0 / re-run
 changed=0, pack in place, selftest passes on the VM; Kali→DVWA on ws-etw:3000 = 200 (cross-subnet path works).
 
@@ -637,7 +637,7 @@ watchdog exit + `Restart=always`; a restart appended a 2nd raw copy into the sam
 `<run>.rN` folder; an unbounded catch-up read (≤ 1 h backlog in one step, OOM risk on the 6 GB trainer) → ≤ 20k
 lines/provider/poll with the clock held for the lagging provider; the UI never re-synced after a reconnect →
 re-fetch on every SSE open. Added `/healthz`, `OOMScoreAdjust=500`, per-event converter guard, and the [OURS]
-**daily LLM budget** `--llm-max-per-day 10` (user, 2026-11-02; D9). `./selftest.sh` 16/16. src/live/README §5.
+**daily LLM budget** `--llm-max-per-day 10` (D9). `./selftest.sh` 16/16. src/live/README §5.
 Deployed on the Proxmox trainer (`7dadd1a`, `-e repo_branch=provide-infrastructure -e live_llm_args=`; the LLM
 was turned on later: DeepSeek key saved, then `ubuntu.yml --tags project` with the inventory's `live_llm_args`) and
 verified there: `/healthz` 200; deploy restart → `.r2`, SIGKILL → systemd restart → `.r3`, both 0 duplicate raw
@@ -699,7 +699,7 @@ OPEN (the real limitation):
 - **exp03 vs new data**: exp03 was trained on SilkService captures (wrong NET owners, `N/A` process names,
   thinned kfile). On etwcollect data every live window is red (sg 62–96 during generated DLL-hashing load, not
   a detection result). Needs a new benign capture + `exp04` (Next 3 steps).
-- Live engine vs Loki push outages (left as is, user 2026-11-02): after a ws-etw → Loki push stall longer than `--loki-idle-s`, the backlog reaches the engine
+- Live engine vs Loki push outages (left as is): after a ws-etw → Loki push stall longer than `--loki-idle-s`, the backlog reaches the engine
   after its windows closed and is dropped as late (522k lines after a 2-min outage on 2026-10-26). Files and
   Loki keep every line, so a re-build/replay is complete; only the live windows of the outage are thin.
 - etwcollect lag values go to −3.6 s over 32 min: ETW event timestamps run a few seconds ahead of the system
@@ -769,7 +769,7 @@ OPEN (the real limitation):
   Runs on its own thread in `engine.py`, `--llm-provider` in `live_server.py`, badge + report card in the UI.
   Plumbing verified with the keyword mock on a replay of `live-20261011T112141Z` (before the scale
   change; now needs `--sg-moderate-from 10.0001`): 1 red window (11:25 `updater`), verdict attached,
-  `llm/` files written. Provider chosen (user, 2026-10-25): DeepSeek API `deepseek-flash`
+  `llm/` files written. Provider chosen: DeepSeek API `deepseek-flash`
   (`--llm-provider deepseek`, replaces the dropped Cloudflare attempt); code + offline selftest done.
   First real run (user-verified 2026-10-25): re-judged replay `live-20261011T112141Z` 11:25 `updater` window
   → `false_positive` (conf 0.88, 1 call, 3.1 s, 2159 tokens, default thinking). One benign window = one data
@@ -896,13 +896,13 @@ Repo hygiene:
    --benign-split test --model exp06` → gate → `lab promote exp06`. Check that idle stays green live.
 2. **Attack on Proxmox:** add a Kali VM on it2102 (planned 10.21.3.30; Terraform + attack pack delivery),
    run the DVWA→RCE chain live, expect red + an LLM verdict.
-3. **Real tool download + execution** in the T1105 phase (user, 2026-11-04; implement next session):
+3. **Real tool download + execution** in the T1105 phase (implement next session):
    download + RUN benign real tools (nmap `-sT` / ncat / PsExec; rclone optional) so tool processes +
    sockets generate new flagged nodes — the signal is execution, not file content. Done: see D6. Branch `provision-kali-ansible`.
 
 Earlier backlog (2026-10-31, after the exp05 demo win):
 
-1. **Live UI: render the LLM report as HTML** (user, 2026-10-31). The web UI currently shows the Alg. 2
+1. **Live UI: render the LLM report as HTML**. The web UI currently shows the Alg. 2
    report (`sg3_report.md`) as raw markdown text — add markdown→HTML rendering in `src/live/` (the UI /
    `live_server.py`).
 2. **Steady the idle baseline:** exp05's idle set is thin (net `val_fpr=1.0`, 6 net train nodes). Pull a

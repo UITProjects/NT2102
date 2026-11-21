@@ -194,7 +194,7 @@ raw sg 117.0 suppressed by the NET rule, so 0-idle-red is partly load-bearing on
 is why its gate passes at tol 0.01. The "new peers" idea does not hold: `ws-etw-0` meets as many unseen peers (18 % of its validation
 NET nodes) and flags none; the features describe behaviour (send/recv counts, idle times), not addresses.
 
-**Fix:** put the VM's current behaviour into training. By user decision the teammate's setup and RDP sessions are included; only our
+**Fix:** put the VM's current behaviour into training. The teammate's setup and RDP sessions are included; only our
 rotation canaries and the teammate's exploit / enumeration runs are excluded (bursts from Loki ProcessStart: `node.exe` descendants =
 react2shell RCE, and winPEAS / `systeminfo` / `netsh` / `runas`+`whoami` / `icacls` in user sessions, first start − 5 min → last + 5 min).
 The 11-09 10:19–10:33Z burst also used `net user`, `icacls`, `runas`, but for setup (account, ACLs, git clone, Node/npm install), so it

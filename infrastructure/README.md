@@ -1,207 +1,34 @@
-# infrastructure/: Proxmox VE lab VMs (Terraform)
+# infrastructure/: Proxmox lab (Terraform)
 
-Creates on one Proxmox node:
+The lab's network and VMs on one Proxmox VE node, `bpg/proxmox` provider. Torn down; the config and the
+committed state (no secrets in it) remain as the record.
 
-- SDN Simple zone `nt2102` → VNet **`it2102`** → subnet `10.21.3.0/24` (gateway `10.21.3.1` on the node,
-  SNAT for internet).
-- The Windows Server 2022 ISO, downloaded by PVE from `iso_url`.
-- One VM (`ws-etw-0` by default): q35, UEFI (OVMF, Secure Boot keys), TPM 2.0, SATA disk, e1000e NIC on
-  `it2102`, booting the ISO. **Install Windows by hand from the console.**
+## Outcome
 
-Provider: `bpg/proxmox` pinned to `0.119.0`. SDN and ISO use the current `proxmox_sdn_*` /
-`proxmox_download_file` names (the `proxmox_virtual_environment_*` ones are deprecated there); the VM stays
-`proxmox_virtual_environment_vm` (not deprecated; its successor `proxmox_vm` is experimental).
+- One `terraform apply` builds every VM and network; only Windows and Kali need a manual OS install from ISO.
+- The lab subnets cannot reach the home LAN or the Proxmox node; attack traffic stays inside the lab.
 
-## Credentials (the only variables, `variables.tf`)
+## Architecture
 
-All lab settings are hardcoded in the `locals` block of `main.tf`. The provider logs in as `root@pam`
-(`versions.tf`, like `~/code/home-lab/tf/proxmox`) and uses the node SSH key
-`~/OneDrive/credentials/ssh/proxmox/id_ed25519` via the SSH agent. Only the endpoint and password are
-variables, with no values in git:
-
-```bash
-export TF_VAR_proxmox_endpoint="https://<pve-host>:8006/"
-export TF_VAR_proxmox_root_password='<root password>'
+```
+SDN zone nt2102
+├── VNet it2102   10.21.3.0/24   ws-etw-0 .10  Windows Server 2022: DC of nt2102.lab + DVWA target
+│                                ws-etw-1 .11  Windows Server 2022: react2shell web app
+│                                ubuntu-trainer .20  Loki, Grafana, training, live server (cloud image)
+│                                nt2102-vpn .50  OpenVPN for remote access (cloud image)
+└── VNet it2102k  10.21.4.0/24   kali .30  attacker
 ```
 
-## State
+- Per-VM Proxmox firewall (`it2102:` rules): out to the home LAN and the node dropped; in only from the two lab subnets (plus TCP 1194 on nt2102-vpn).
+- VPN: pve-master DNATs external TCP 2102 to nt2102-vpn:1194, and clients keep their real 10.8.0.x source in the lab.
+- Ubuntu VMs: cloud image + cloud-init (rebuilt with no manual work). Windows and Kali: ISO + manual install.
 
-`terraform.tfstate` is committed to git (user, 2026-10-31): no secrets in it (no password/token/private key),
-but it does hold the lab topology, MACs and the it2102-vms public key, and the repo is public. Commit it
-after every apply, and never run apply from two machines at once (git state has no locking).
+## Key files
 
-## Use
-
-```bash
-# set local.iso_url in main.tf first (placeholder)
-terraform init
-terraform plan
-terraform apply
-```
-
-## Install notes
-
-- The disk is empty, so the firmware falls through to the CD. In the noVNC console, **press a key at
-  "Press any key to boot from CD or DVD"** or setup is skipped.
-- No VirtIO drivers are needed (SATA + e1000e). The VM resource allows only one CD-ROM, so a virtio-win ISO can't
-  be attached as well. After install, you can switch to VirtIO with drivers installed (`disk_interface`, `nic_model`).
-- No DHCP on `it2102`. Set a static IP in Windows: `10.21.3.10/24`, gateway `10.21.3.1`, DNS e.g. `1.1.1.1`
-  (output `suggested_static_ip`).
-- The SDN gateway lives on the Proxmox node, not your laptop. To reach the VM from elsewhere, route
-  `10.21.3.0/24` via the node or use the console.
-
-## Firewall (VM 2102, Proxmox VM-level)
-
-The rules sit on the VM's NIC (`network_device.firewall = true`). They work only while the **datacenter
-firewall stays enabled**: it is enabled on `pve-master` (`policy_in: ACCEPT`) and is deliberately not
-managed here, because the home-lab VMs share it. First match wins:
-
-1. OUT DROP → `192.168.1.0/24` (home LAN), logged
-2. OUT DROP → `10.21.3.1` (the node via the it2102 VNet gateway: UI :8006, SSH :22), logged. Routing to
-   the internet through the gateway still works.
-3. OUT DROP → `10.21.4.1` (the node via the **it2102k** VNet gateway), logged. The node has an IP on the
-   Kali VNet too, so without this a VM could reach the UI/SSH at `10.21.4.1` and bypass rule 2.
-4. IN ACCEPT ← `10.21.3.0/24` (lab subnet: RDP, DVWA)
-5. IN ACCEPT ← `10.21.4.0/24` (Kali attacker subnet: cross-subnet DVWA exploit + RCE callback)
-6. Defaults: input DROP, output ACCEPT. Replies to the VM's own connections pass via connection tracking.
-
-Check from PowerShell inside the VM:
-
-- `Test-NetConnection 192.168.1.1 -Port 80` → `TcpTestSucceeded : False` (LAN blocked)
-- `Test-NetConnection 10.21.3.1 -Port 8006` → `False` (node UI blocked)
-- `Test-NetConnection 10.21.4.1 -Port 8006` → `False` (node UI via the Kali-VNet gateway also blocked)
-- `Test-NetConnection 1.1.1.1 -Port 443` → `True`, and `Resolve-DnsName microsoft.com` resolves (internet + DNS)
-
-Drops appear in the Proxmox UI under VM 2102 → Firewall → Log.
-
-## ubuntu-trainer (VM 2103)
-
-Ubuntu 24.04 cloud image (pinned `noble/20261017`), 4 cores, 6 GB RAM, 200 GB disk (Loki keeps 72 h at
-~2 GB/h), static `10.21.3.20/24` via cloud-init, user `it2102` with the `it2102-vms` key. It gets the same
-`it2102:` firewall rules as ws-etw-0 (`local.it2102_rules`): no LAN, no node, inbound only from the lab subnet.
-
-## Reaching the lab from the workstation (routed path)
-
-The workstation reaches `10.21.3.0/24` **directly**: the home router routes the subnet to `pve-master`, which
-is the it2102 gateway (`10.21.3.1`). The VM firewall only drops traffic the VMs *start* toward the LAN; your
-inbound SSH passes, and its replies pass through connection tracking. Verified 2026-11-02 (`ssh` to
-a lab VM with no jump):
-
-```bash
-ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.20   # ubuntu-trainer
-```
-
-The first connection asks to trust the host key (cloud-init generates a new one on every rebuild; after a
-`destroy`/`apply`, run `ssh-keygen -R <ip>` first). The Ansible inventory `src/ansible/proxmox.ini` uses the
-same route (`ansible_host = private_ip`).
-
-Fallback when the route is missing (e.g. away from home): jump through the node, which sits on it2102 as
-10.21.3.1:
-
-```bash
-ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa -J root@<pve-master-LAN-IP> it2102@10.21.3.20
-```
-
-## ws-etw-1 (VM 2107)
-
-Second Windows Server 2022 VM, built like `ws-etw-0`: same shared ISO, q35, UEFI, TPM 2.0, SATA disk, e1000e NIC,
-4 cores, 8 GB RAM, 256 GB disk, same `it2102:` firewall rules. It takes over 10.21.3.11 from the removed
-`ubuntu-etw`. The VM ID is 2107, not 2104, because Terraform does not order a destroy and a create of two different
-addresses.
-
-Manual steps after `apply` (noVNC console):
-
-1. Install Windows and set the same Administrator password as `ws-etw-0` (`win_password` in `src/ansible/proxmox.ini` covers both).
-2. Set a static IP: `10.21.3.11/24`, gateway `10.21.3.1`, DNS `1.1.1.1`.
-3. Do the WinRM bootstrap and Tamper Protection steps in `src/ansible/README.md`, then run Ansible.
-
-## nt2102-vpn (VM 2105)
-
-Ubuntu 24.04 VM for an OpenVPN server. It is built the same way as the trainer: shared cloud image, and
-cloud-init sets the static `10.21.3.50/24`, gateway `10.21.3.1` and user `it2102` with the `it2102-vms` key.
-It has 2 cores, 1 GB RAM and a 10 GB disk.
-
-```bash
-ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.50
-```
-
-Firewall: the shared `it2102:` rules, plus one rule for this VM only (`local.vpn_rules`): **IN ACCEPT TCP 1194
-from any source** (OpenVPN clients come from outside the lab subnet, DNAT'd as TCP by pve-master). The VM's
-`input_policy` is ACCEPT today, so this rule is what keeps the VPN reachable if that policy is ever set to DROP;
-OpenVPN must listen on TCP (`proto tcp-server`), not the default UDP.
-
-- **OpenVPN** was installed by hand on 2026-11-02 (`/etc/openvpn/server/server.conf`: TCP 1194, clients in
-  `10.8.0.0/24`, PKI under `/etc/openvpn/easy-rsa`). Ansible (`src/ansible/vpn.yml`, role `vpn_routing`) manages only
-  the routes pushed to clients (lab `10.21.3.0/24` + Kali `10.21.4.0/24`) and the NAT.
-- **No SNAT to the lab (2026-11-15):** VPN client traffic to `10.21.3.0/24` / `10.21.4.0/24` keeps its real `10.8.0.x`
-  source (iptables RETURN above the MASQUERADE, saved in `/etc/iptables/rules.v4`), so lab VMs and Loki see who connected,
-  not `10.21.3.50`. Replies find their way back through a pve-master route `10.8.0.0/24 via 10.21.3.50 dev it2102` plus
-  `nt2102:` FORWARD accepts (`src/ansible/proxmox-firewall.yml`). The route is **not persistent** by choice: after a
-  pve-master reboot or an SDN apply, re-run `proxmox-firewall.yml` (symptom: VPN clients connect but can't reach any VM).
-  Run `proxmox-firewall.yml` before `vpn.yml --tags nat`.
-- Clients on the internet reach it on **external TCP 2102**: the home router forwards TCP 2102 → pve-master
-  `192.168.1.120:2102`, and pve-master DNATs that to `10.21.3.50:1194`
-  (`src/ansible/proxmox-firewall.yml`, iptables rules saved with `netfilter-persistent`). Client configs use `remote <public-ip> 2102`.
-- The shared OUT DROP to `192.168.1.0/24` also applies to traffic this VM forwards for VPN clients.
-  Through the tunnel they reach the lab subnet, not the home LAN.
-
-## kali (VM 2106)
-
-Kali attacker on its **own** SDN VNet `it2102k` → subnet `10.21.4.0/24` (gateway `10.21.4.1`, SNAT),
-separate from the lab subnet `10.21.3.0/24`. 2 cores, 4 GB RAM, 40 GB disk. Built from the **installer
-ISO** (there is no Kali cloud image for this path), so — like `ws-etw-0` — it is installed by hand and has
-**no cloud-init**: Terraform builds only the hardware. A dedicated `proxmox_sdn_applier.kali` applies the
-new VNet to the node on `apply` (the main applier does not re-run for a newly added VNet).
-
-`kali_iso_url` in `main.tf` is **version-pinned** (`kali-2026.3` when written); confirm/bump it against
-<https://www.kali.org/get-kali> before `apply`, like the Windows `iso_url`.
-
-One-time manual steps after `apply` (noVNC console):
-
-1. Install Kali from the ISO (guided install; keep Kali's default account **`kali` / `kali`** — Ansible
-   logs in with it, hardcoded in `src/ansible/proxmox.ini`, not a secret on the lab subnet).
-2. Static networking (no DHCP on `it2102k`): IP `10.21.4.30/24`, gateway `10.21.4.1`, DNS e.g. `1.1.1.1`
-   (output `kali_ip`).
-3. Enable SSH: `sudo systemctl enable --now ssh` (Kali allows password auth by default).
-
-Reaching Kali from the workstation: the home router currently routes **only** `10.21.3.0/24` to
-pve-master. Add the same static route for `10.21.4.0/24 → 192.168.1.120` (pve-master LAN IP), **or** jump
-through the node:
-
-```bash
-ssh -J root@<pve-master-LAN-IP> kali@10.21.4.30
-```
-
-Then provision it (user/password auth, so `sshpass` must be on the control node):
-
-```bash
-sudo apt install sshpass
-ansible-playbook -i proxmox.ini kali.yml
-```
-
-### Firewall (VM 2106) + the cross-subnet attack path
-
-Kali gets the shared `it2102:` rules (`local.it2102_rules`): no home LAN, no node, inbound only from the
-lab + Kali subnets. To let the attack cross between `10.21.4.0/24` and `10.21.3.0/24`, a rule was added to
-`it2102_rules` for **all** VMs: `IN ACCEPT ← 10.21.4.0/24`. So `ws-etw-0` accepts Kali's DVWA exploit, and
-Kali accepts the `ws-etw-0 → Kali` stage callback (covered by the existing `IN ACCEPT ← 10.21.3.0/24`).
-pve-master routes between the two VNet gateways and does not masquerade inter-subnet traffic, so `ws-etw-0`
-sees Kali's real `10.21.4.30` source. (Note: this README describes the effective input default as DROP
-while `firewall_options` sets `input_policy = ACCEPT` — a doc/code mismatch; the explicit accept rule makes
-the path work under either.)
-
-## Cloud image vs ISO install
-
-The Ubuntu VMs use a cloud image; the Windows VMs use an installer ISO (there's no Windows Server eval cloud image).
-
-| | Cloud image + cloud-init (`ubuntu-trainer`, `nt2102-vpn`) | Installer ISO + manual install (`ws-etw-0`, `ws-etw-1`) |
-|---|---|---|
-| What Proxmox downloads | A finished disk (`.img`, ~600 MB), imported as the VM disk (`import_from`) | An installer (`.iso`, ~5 GB) attached as a CD-ROM |
-| Who sets IP, user, SSH key | Terraform, via the `initialization` block → cloud-init on first boot | You, in the installer / Windows settings |
-| Manual steps after `apply` | None | Whole install in the console, then static IP + WinRM bootstrap |
-| `destroy` + `apply` | Same VM again, nobody needs to touch it | Empty disk again: reinstall by hand |
-| Guest config in Terraform | Yes (IP/user/key are in `main.tf`) | No, only the hardware |
-| Reuse | One downloaded image serves both Ubuntu VMs | One ISO per OS |
-
-Takeaway: the cloud image is the default for anything rebuilt often. The ISO path is the fallback when no
-cloud image exists. It can be automated too (`autounattend.xml` or a Packer-built template), but isn't here.
+| file | what |
+|---|---|
+| `main.tf` | all lab values in `locals`: zone, VNets, VMs, firewall rules |
+| `variables.tf` | only credentials (`TF_VAR_*`) |
+| `versions.tf` | provider pin, root login via SSH agent |
+| `terraform.tfstate` | committed state |
+| `../src/ansible/proxmox-firewall.yml` · `proxmox-firewall-teardown.yml` | pve-master DNAT + VPN return route, and their removal |

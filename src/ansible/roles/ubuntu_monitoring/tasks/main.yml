@@ -2,7 +2,7 @@
 # Trainer CPU / memory graphs: node-exporter (whole VM) + cAdvisor (per service, incl. ocr-live.service) -> Prometheus
 # -> the Grafana the ubuntu_loki role already runs. Run after ubuntu_loki: it needs Docker and Grafana's folders.
 #
-# Own compose project on purpose: the `Restart lokistack` handler restarts Loki too, and a Loki restart can cost live
+# Own compose project: the `Restart lokistack` handler restarts Loki too, and a Loki restart can cost live
 # windows (DEVIATIONS D8). Grafana picks these files up from its existing provisioning mount, so only Grafana restarts.
 # Host networking like lokistack, but every service binds 127.0.0.1: no ufw rule, nothing reachable off the VM.
 

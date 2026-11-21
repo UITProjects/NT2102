@@ -154,7 +154,7 @@ Ví dụ FILE có điểm train trong [0.10, 0.23]:
 Vì p <= 1: điểm >= 10 ⇔ ít nhất ~10 anomalous node trong một câu chuyện liên thông.
 Thang: Minor < 10, Moderate 10–100, Significant 100–1000, Critical > 1000 [PAPER §7.2.1].
 [AUTHOR CODE] dùng > 10 và top-k khi không có gì đạt; đồ án bỏ top-k (live thì mọi window sẽ đỏ).
-Mốc [OURS] 30 cũ đã bỏ 2026-11-03 (D8). Live từ 2026-11-15: [OURS] 4.5 trên cả hai host (xem Q13).
+Live: [OURS] 4.5 trên cả hai host (D8, xem Q13).
 Báo cáo: Phụ lục, mục Thuật toán 1.
 
 

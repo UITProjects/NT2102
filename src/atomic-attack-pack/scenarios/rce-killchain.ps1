@@ -6,7 +6,7 @@
   itself: the Kali attacker (tools/launch_exploit.py) exploits DVWA and delivers this script as the
   stage. See SCENARIOS.md for the phase/ATT&CK table and README.md for the run recipe.
 
-  Realistic post-exploitation chain (user, 2026-11-04 - deliberately high-volume so the attack stands
+  Realistic post-exploitation chain (high-volume so the attack stands
   out from the idle baseline on its own, without any detector-side weighting):
     Initial access / execution ... T1190 + T1059.001  (the delivery; marked only)
     Discovery .................... T1033 T1082 T1057 T1016
@@ -29,7 +29,7 @@
 param(
     # Where this script fetched its stage from (the Kali attacker). The launcher substitutes these;
     # defaults keep a manual run on the VM working. ${attacker}:${StagePort} is the T1105/C2 endpoint.
-    # Env names are neutral on purpose (U_H host, U_P port, U_D duration): Sysmon logs the delivering
+    # Env names are neutral (U_H host, U_P port, U_D duration): Sysmon logs the delivering
     # cradle's command line and the LLM reads it decoded; "LAB_*" would leak the lab (DEVIATIONS D14).
     [string]$Attacker  = $(if ($env:U_H) { $env:U_H } else { "10.21.4.30" }),
     [int]   $StagePort = $(if ($env:U_P) { [int]$env:U_P } else { 8080 }),

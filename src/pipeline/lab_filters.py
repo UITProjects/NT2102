@@ -10,7 +10,7 @@ does not change any trained model's data and must not force a converter_check MI
 
 (The watchdog filter, by contrast, lives in etw2nodlink.py and IS hash-covered, because it removes
 watchdog nodes that DO appear in idle, so it changes the training baseline -- see etw2nodlink.own_tooling_*
-and DEVIATIONS D8. Different place, on purpose.)
+and DEVIATIONS D8. Hence the different place.)
 
 Used by:
   - src/pipeline/build_experiment.py  (training build, before windowing)

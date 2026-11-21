@@ -1,5 +1,5 @@
 ---
-# nt2102-vpn (OpenVPN server, set up by hand on 2026-11-02). This role manages only what VPN clients can reach
+# nt2102-vpn (OpenVPN server, set up by hand). This role manages only what VPN clients can reach
 # and how their traffic is forwarded; OpenVPN itself, the PKI and client certs stay manual.
 vpn_server_conf: /etc/openvpn/server/server.conf
 vpn_service: openvpn-server@server

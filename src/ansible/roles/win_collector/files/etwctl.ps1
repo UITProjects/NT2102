@@ -8,7 +8,7 @@
   Settings come from C:\ProgramData\etwlab\etwlab.json (written by the win_collector role).
 
   The collector is etwcollect (src/etw-python), run by the SYSTEM scheduled task CollectorTask; it pushes the
-  run's lines to Loki itself (DEVIATIONS D10; it replaced SilkService + Grafana Alloy on 2026-10-26).
+  run's lines to Loki itself (DEVIATIONS D10).
 
   PowerShell notes: Get-ScheduledTask / Start-ScheduledTask read / start a Task Scheduler task (its .State is
   Ready, Running, ...); `& $exe args` runs a program; $LASTEXITCODE is the

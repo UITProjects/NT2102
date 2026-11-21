@@ -50,7 +50,7 @@
         comment: "it2102: DNAT OpenVPN: ext 2102/tcp -> {{ vpn_ip }}:1194"
       register: vpn_dnat
 
-    # Not persistent by choice (user, 2026-11-15): a reboot or an SDN apply (ifreload) drops it, and re-running
+    # Not persistent: a reboot or an SDN apply (ifreload) drops it, and re-running
     # this playbook brings it back. `ip route replace` is idempotent; the check keeps changed=0 on a re-run.
     - name: Check the return route for VPN clients
       ansible.builtin.command: ip route show {{ vpn_client_cidr }}

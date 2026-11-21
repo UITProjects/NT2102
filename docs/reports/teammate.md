@@ -33,7 +33,7 @@ The current "Next 3 steps" are in `docs/PROGRESS.md`. In short:
 
 1. **More benign data**: 2–3 captures at different times (trigger the Google updater, a Defender scan),
    retrain into `src/artifacts/runs/exp02`, and record the max benign subgraph score per window.
-2. **Replay check**: `src/live/README.md` step 4 → `ALL MATCH`.
+2. **Replay check**: `compare_replay.py` on the training capture → `ALL MATCH`.
 3. **Attack demo**: one Atomic scenario during a live session (`src/atomic-attack-pack/`). Does its window
    reach ≥ 30? Do not re-tune the cut-off on the attack window.
 4. **CVE → RCE scenario** (target demo, not built yet): exploit a lab service, then ATT&CK follow-on.

@@ -45,7 +45,7 @@
   when: not uv_bin.stat.exists
   changed_when: true
 
-# ---------- swap (user, 2026-11-07) ----------
+# ---------- swap ----------
 - name: Check for the swap file
   ansible.builtin.stat:
     path: "{{ swap_file }}"

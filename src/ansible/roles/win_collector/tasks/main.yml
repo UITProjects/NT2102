@@ -3,7 +3,7 @@
 # converter/windowing tool/shipper + etwctl. The Python tools are copied byte-for-byte from src/pipeline and
 # src/live, so Get-FileHash on the VM (experiment.json tools.*) equals the sha engine.py load_converter computes.
 
-# ---------- 1. Remove the old collector path (SilkETW/SilkService + Grafana Alloy, replaced 2026-10-26) ----------
+# ---------- 1. Remove the old collector path (SilkETW/SilkService + Grafana Alloy) ----------
 # Idempotent and cloud-safe: every step is a no-op when the old pieces are not there.
 - name: Remove the SilkService service
   ansible.windows.win_service:

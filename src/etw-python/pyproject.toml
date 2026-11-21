@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "ETW collector for the OCR-APT lab: Kernel-Process/File/Network -> SilkETW-format JSON lines -> Loki"
 readme = "README.md"
 requires-python = ">=3.12"
-# No runtime dependencies on purpose: the ETW calls are ctypes, the Loki push is urllib (DEVIATIONS D10).
+# No runtime dependencies: the ETW calls are ctypes, the Loki push is urllib (DEVIATIONS D10).
 dependencies = []
 
 # `etwcollect run | stop | status | dosmap | push-ledger | selftest` (src/etwcollect/cli.py)
