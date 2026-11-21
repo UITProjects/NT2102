@@ -4,14 +4,16 @@ A one-class graph neural network that learns a Windows host's normal kernel acti
 red within its 5-minute window, with an LLM-written incident report. Built on the core method of
 [OCR-APT](https://doi.org/10.1145/3719027.3765219) (Aly, Mansour, Youssef, ACM CCS 2025). NT2102 course project.
 
-**[Live demo](https://projects.datrollout.dev/nt2102/)** (recorded, read-only) · **[Slides](https://uitprojects.github.io/NT2102/)** · Status: proof of concept, lab torn down.
+- **[Explore the recorded data](https://projects.datrollout.dev/nt2102/)**: every window, alert subgraph and LLM report from the live run (read-only snapshot)
+- **[Video: react2shell attack detected live](https://youtu.be/DzUX-xf_72s)**
+- **[Slides](https://uitprojects.github.io/NT2102/)** · Status: proof of concept, lab torn down.
 
 ## Outcome
 
 - **DVWA → RCE → ATT&CK chain** (`ws-etw-0`): 3 of 3 live runs went red, each with an LLM `attack` verdict.
   First 24 h live: 279 windows, 7 alerts (4 attack, 3 benign false alarms).
 - **Real react2shell attack** (Next.js RCE on `ws-etw-1`, run by a team member): red at subgraph score 7.24 and 19.86,
-  LLM `attack` 0.85 / 0.95. In-sample: the alert cut-off was tuned on this run.
+  LLM `attack` 0.85 / 0.95 ([video](https://youtu.be/DzUX-xf_72s)). In-sample: the alert cut-off was tuned on this run.
 - **Public demo**: 4,658 recorded windows (2026-11-02 → 11-15), 63 red, 17 LLM `attack`. Replays the scores
   computed live at the time. Nothing is re-scored.
 
