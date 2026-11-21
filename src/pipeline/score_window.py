@@ -60,7 +60,7 @@ def load_run(run_dir: str, scaler: dict, allow_collapsed: bool = False) -> Run:
         bad = s[(s["run"] == 0) & (s["emb_std"] < 1e-6)]
         if len(bad) and not allow_collapsed:
             sys.exit(f"[ERROR] collapsed model(s) in {run_dir}: {bad['node_type'].tolist()} have emb_std ~ 0. "
-                     f"Retrain on matching edges/features (see docs/PROGRESS.md) or pass --allow-collapsed.")
+                     f"Retrain on matching edges/features or pass --allow-collapsed.")
 
     run = Run(run_dir, meta["relations"], meta["feature_order"])
     for ntype in meta["node_types"]:

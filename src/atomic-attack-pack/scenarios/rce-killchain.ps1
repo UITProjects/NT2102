@@ -47,7 +47,7 @@ if (-not (Get-Command Write-AttackLabel -ErrorAction SilentlyContinue)) {
 }
 
 if ($SelfTest) {
-    # Prove-it-runs only (CLAUDE section 6): temporary label file, stubbed actions, check the JSONL shape.
+    # Prove-it-runs only: temporary label file, stubbed actions, check the JSONL shape.
     # Contacts nothing: no scan, no download, no DB.
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("rce-selftest-{0}.jsonl" -f ([guid]::NewGuid()))
     Initialize-AttackLab -LabelFile $tmp

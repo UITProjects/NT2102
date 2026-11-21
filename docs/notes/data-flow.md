@@ -43,7 +43,7 @@ everything else is counted under `unmapped` in `*_summary.json`.
 | Kernel-Network send / recv | Send / Recv | process → NET |
 
 All six point process → object (`DIRECTION`). [INFERENCE] NODLINK's own direction convention is
-undocumented and still unchecked (see `docs/PROGRESS.md`). Stage 4 adds inverse edges, which probably softens
+undocumented and still unchecked. Stage 4 adds inverse edges, which probably softens
 the effect on message passing, but the `out_*` / `in_*` feature split follows the direction directly.
 
 **Node identity** (this is what keeps train and test comparable):
@@ -186,7 +186,7 @@ ends of a connection cannot be matched from edges) and joins them with each VM's
 ## Open checks
 
 Converter loss (unresolved Reads/Writes), edge direction vs NODLINK, and the old un-windowed edges file:
-see `docs/PROGRESS.md` "Open items" and the pitfalls in `src/README.md`.
+see `docs/DEVIATIONS.md`.
 
 ## Reproduce
 

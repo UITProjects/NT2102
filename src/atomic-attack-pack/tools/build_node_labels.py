@@ -4,7 +4,7 @@ build_node_labels.py - turn attack-labels.jsonl (the oracle) into node-level lab
 
 Rule: a node is malicious IFF it matches an attack indicator (process image / file path / network endpoint)
 AND is active within that attack's [start_utc, end_utc]. Weak oracle, see LABELING.md and DEVIATIONS D6.
-SKETCH, not runnable yet: the TODO column names do not match the converter output (docs/PROGRESS.md).
+SKETCH, not runnable yet: the TODO column names do not match the converter output.
 """
 import json, sys, fnmatch
 from datetime import datetime, timezone

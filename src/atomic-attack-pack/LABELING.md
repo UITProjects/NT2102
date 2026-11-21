@@ -20,7 +20,7 @@ That file is the **label oracle**; it is joined against the converted graph to p
 Converter node attributes are `node,node_type,node_attr` with types `PROCESS/FILE/NET` and **no per-node
 timestamp**, so the activity interval is the node's window: `node → window → windows.csv` times.
 Indicator-only matching (no time constraint) over-labels; avoid it. `tools/build_node_labels.py` is a sketch
-that does not match these columns yet (`docs/PROGRESS.md` Open items).
+that does not match these columns yet.
 
 **Live session** (end-goal path): per window, `src/live/sessions/<id>/windows/<wid>/node_attrs.csv` plus the
 window times in `sessions/<id>/windows.csv`; same join.

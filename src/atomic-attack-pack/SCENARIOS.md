@@ -1,7 +1,7 @@
 # The demo attack: RCE kill chain
 
-One scenario (`scenarios/rce-killchain.ps1`) replaces the old 01–10 pack. It is the end-goal attack
-(CLAUDE §8): a real exploit of the lab's vulnerable service, then a compact ATT&CK follow-on, all
+One scenario (`scenarios/rce-killchain.ps1`) replaces the old 01–10 pack. It is the end-goal attack:
+a real exploit of the lab's vulnerable service, then a compact ATT&CK follow-on, all
 observable by SilkETW Kernel-Process/File/Network and self-labelled into
 `C:\lab-labels\attack-labels.jsonl` (LABELING.md, DEVIATIONS D6).
 

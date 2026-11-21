@@ -181,7 +181,7 @@ table.types td:first-child, table.types td:nth-child(2) { font-family: var(--mon
   <div class="wrap">
     <h2><span class="n">2</span>The converter decides the type and the ID</h2>
     <div class="prose">
-      <p><span class="tag ours">OURS</span> The node type comes from which ETW event created the node (<code>etw2nodlink.py</code>, <code>classify</code> at <code>:76</code>). The ID is built so the same thing gets the same ID in training, test and live (CLAUDE.md §9, node identity):</p>
+      <p><span class="tag ours">OURS</span> The node type comes from which ETW event created the node (<code>etw2nodlink.py</code>, <code>classify</code> at <code>:76</code>). The ID is built so the same thing gets the same ID in training, test and live:</p>
       <ul>
         <li><strong>PROCESS</strong>: <code>p&lt;pid&gt;_&lt;start ms&gt;</code> from ProcessStart (<code>:199</code>). PIDs get reused, so the start time is part of the key. A process already running when capture began has no start event and gets <code>p&lt;pid&gt;_pre_&lt;run&gt;</code> (<code>:149-155</code>).</li>
         <li><strong>FILE</strong>: <code>f</code> + the first 16 hex characters of SHA-1(lower-cased path) (<code>:157-158</code>, used by Load <code>:213</code> and Read/Write <code>:232</code>).</li>

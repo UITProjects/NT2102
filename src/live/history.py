@@ -17,8 +17,8 @@ engineering for the 24/7 demo (DEVIATIONS D8); nothing here changes how a window
     detail:   detail.json; for windows scored before it existed, rebuilt from scores.csv + subgraphs.json
               (no LLM summary then)
 
-Why a JSONL file and not a database: the project keeps every stage as plain files you can open (CLAUDE.md §9,
-no RDF/GraphDB). The file is append-only, so a crash loses at most the line being written; a torn last line is
+Why a JSONL file and not a database: the project keeps every stage as plain files you can open (no
+RDF/GraphDB). The file is append-only, so a crash loses at most the line being written; a torn last line is
 skipped on load.
 
 Usage (from the repo root)

@@ -39,12 +39,12 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   sessions, and the 6-h rotation canary (`etwctl.ps1` runs `cmd /c whoami`). 174 of 1,415 windows, about 41 h kept. Why: a 3 h
   range misses daily and ~10 h OS jobs, which were 11 of exp06's 16 windows ≥ 10. Impact: idle reds on held-out windows 4 → 0
   (3 seeds, 200 windows); interactive sessions stay red, as an idle model should. `powershell.exe` stays in every window,
-  because the 5-min `etwlab-live` watchdog starts it. Details: `docs/notes/retrain-2day-fp-lesson.md`.
+  because the 5-min `etwlab-live` watchdog starts it.
 - Logged-on session (2026-11-09, exp08): an RDP connect + WinRM at 10:30Z and an interactive logon at 10:46Z on `ws-etw-0`
   raised 8 benign alerts in 4 h (servicing after WinRM, `ping`/`ipconfig` in the session, then `dsregcmd.exe` hourly while the
   session stays logged on); all 7 LLM-judged were `false_positive`. Impact: idle means no one logged on. Sign out after RDP, and
   exclude logon → sign-out from training. A retrain does not fix this. Loki retention raised 72 h → 90 d so a baseline can cover
-  more than 3 days. Details: `docs/notes/logged-on-session-fp-lesson.md`.
+  more than 3 days.
 - `ws-etw-1` is **not idle-only** (exp15-ws1): its baseline 11-06 20:30Z → 11-12 12:15Z *includes* the
   teammate's setup and admin work (account creation, `icacls`, git clone, Node/npm installs, Edge) and **all their RDP sessions**,
   plus the VM's current state (react2shell `node` server, a SYSTEM task running `powershell → whoami` every minute, the NetBIOS
@@ -61,8 +61,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   attacker who looks like the admin would blend in, and no such detection is claimed. `exp10` (idle, pre-DC) is retired from live use.
   **Since 2026-11-15 (`exp17-ws0`)** the range is all DC-era data, 11-09 16:49Z → 11-15 11:20Z (4,153 windows, 198 excluded:
   `src/artifacts/exclusions/ws-etw-0-20261115.json`; canaries, our DVWA chains, Ansible/WinRM). It also keeps the admin GPO-editor session,
-  DsmSvc, an Edge update and a 545-process .NET ngen burst as benign. Label source: operator reading of Loki kproc/Sysmon/kfile
-  (`docs/notes/fp-review-20261115.md`).
+  DsmSvc, an Edge update and a 545-process .NET ngen burst as benign. Label source: operator reading of Loki kproc/Sysmon/kfile.
 - Limits: our numbers are not comparable with the paper's tables; no detection-quality claim.
 
 ## D3. Feature extraction re-implemented (`src/pipeline/encode_to_features.py`)
@@ -127,7 +126,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   signed tools** — Sysinternals **PsExec** (as SYSTEM: `PsExec64.exe → PSEXESVC.exe → cmd.exe → whoami`)
   and **rclone** (`copyurl` fetch from the C2), with **nmap/ncat best-effort** (staged on Kali by
   `roles/kali_attack`, default-off, falling back to the PowerShell TcpClient sweep). Rationale: the graph
-  keys FILE nodes by path-hash and NET nodes by `ip:port`-hash (CLAUDE.md §9) and uses **no content
+  keys FILE nodes by path-hash and NET nodes by `ip:port`-hash and uses **no content
   feature**, so real binaries on disk add nothing over the earlier inert markers — the added signal is the
   tool's **process + socket nodes** (unseen in the idle baseline), which only appear when the tool is
   *executed*. Lab-only and benign: real but non-malicious tools, read-only DB, isolated host-only subnets,
@@ -255,7 +254,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
     measured; 30 comes from ONE benign window. Check the Atomic / demo attack against 30, do not re-tune
     on the attack window (that fits the threshold to the test).
   - The scale hides the updater false positive, it does not fix it (≥ 30 unseen DLLs would be red
-    again). Wider benign training (PROGRESS) is the real fix.
+    again). Wider benign training is the real fix.
   - Calibration + attack result (2026-10-22, `exp03` on the 1-h kfile-fixed capture `x-20261022T140932Z`,
     live session `live-20261022T155035Z`): a live DVWA→RCE kill chain scored **37.76** then **56.0**
     (Moderate) in its window; the kept subgraph is the powershell cradle (powershell ×2 + ~26 .NET/
@@ -323,7 +322,7 @@ Tags: [PAPER] paper text · [AUTHOR CODE] verified in the authors' code (github.
   our own watchdog's .NET/module startup reads) sums past Moderate and outranks the small attack cluster.
   Measured: in `sessions/history.jsonl` every alerting window is an LLM-confirmed false positive **except**
   the 2026-11-05 00:50Z attack, which had the fewest flagged nodes (18) but the right ones ([OURS]/[INFERENCE]
-  consequence). See `docs/notes/subgraph-score-fragility.md`.
+  consequence).
 - **Attack detection rests on one context-sensitive NET node (2026-11-05, verified):** the attack reaches
   Moderate only when the C2 beacon socket is flagged and seeds a subgraph pulling in the attack nodes. Same
   exp07, same τ, the same socket (`10.21.4.30:8080`, near-identical own features) scored **+1.165 (flagged)**

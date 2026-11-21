@@ -1,6 +1,6 @@
 """selftest.py - `etwcollect selftest` (any OS) and `etwcollect selftest --live` (Windows, elevated).
 
-A selftest proves "it runs", never "it captures everything" (CLAUDE.md §6). What each part checks:
+A selftest proves "it runs", never "it captures everything". What each part checks:
   offline  decode of a synthetic payload (every in-type we use, IPv4/port, length-prefixed binary, early end);
            EventName rule + timestamp; exclusion rules (a)-(c); whole-line batching; the Loki shipper against a
            fake Loki (labels, metadata, event-time timestamps, resume from offsets, retry, refusal, meta line,

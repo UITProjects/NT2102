@@ -31,7 +31,7 @@ EXCLUDE_IMAGES = {"silkservice", "alloy"}
 # that: any process with an edge to a \start-live.ps1 file, or to anything under c:\programdata\etwlab\, is
 # our watchdog, and all of its nodes + edges are dropped from BOTH training data (build_experiment, before
 # windowing) and live scoring (engine._score). The attack's RCE PowerShell never reads these paths, so it is
-# unaffected. Root cause / rationale: docs/notes/subgraph-score-fragility.md.
+# unaffected.
 def is_own_tooling_path(attr):
     s = str(attr or "").lower().replace("/", "\\")
     return s.endswith("\\start-live.ps1") or "\\programdata\\etwlab\\" in s

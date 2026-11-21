@@ -85,7 +85,7 @@ winPEAS + lệnh -enc đã giải mã nhờ dòng lệnh Sysmon). Lưu ý in-sam
 Trung thực về false positive: trong 24h đầu của exp08 có 288 window, 7 alert — 4 là 3 lần tấn công thật,
 3 là false alarm benign (đều bị LLM gắn false_positive, xảy ra khi có hoạt động Ansible/git/choco trên VM).
 Nguồn nhãn: thời điểm nhóm tự chạy tấn công + kết luận LLM, KHÔNG phải ground truth → đây là counts, không
-phải tỉ lệ thống kê. (Số liệu: docs/PROGRESS.md.)
+phải tỉ lệ thống kê.
 
 Vì sao benign = idle? Nếu benign có sẵn các lệnh discovery (whoami/net/systeminfo/schtasks) — như
 workload script cũ — thì mô hình học chúng là "bình thường" và bỏ sót tấn công (exp04). Nền idle giữ

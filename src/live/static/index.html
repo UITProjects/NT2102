@@ -392,7 +392,7 @@ html.present .alertcard{max-height:560px}
   }
 
   // ------------------------------------------------------------- Parameters panel (every VM side by side)
-  // [PAPER] defaults a running value is compared with: §7.2.1 (n_seed, max_e, Moderate from 10); GNN = the paper hyperparameters (CLAUDE.md §9)
+  // [PAPER] defaults a running value is compared with: §7.2.1 (n_seed, max_e, Moderate from 10); GNN = the paper hyperparameters
   const PAPER = {moderate_from: 10, n_seed: 15, max_edges: 5000, layers: 3, hidden: 32, lr: 0.005, beta: 0.5};
   let paramsBy = {};                                       // VM -> its /api/status (params change only on restart)
   async function loadParams() {

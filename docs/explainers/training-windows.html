@@ -136,7 +136,7 @@ footer { padding: 30px 16px 60px; color: var(--muted); font-size: 0.85rem; borde
 <header class="hero wrap">
   <h1>Twenty minutes of benign activity, cut into five-minute graphs</h1>
   <p class="lede">How the OCRGCN trainer in this project uses the benign capture: why the 20-minute recording is sliced into overlapping 5-minute windows, why two of them are thrown away, how all windows end up in one graph without mixing, and why the idle-time features make the window length matter.</p>
-  <p class="prose" style="font-size:0.9rem;color:var(--muted)">Numbers come from the benign experiment <code>20261009T145632Z</code> and training run <code>exp01</code> (<code>docs/PROGRESS.md</code>). A wider recapture is under way, so the counts will change; the mechanism will not. Tags: <span class="tag paper">PAPER</span> stated in the OCR-APT paper. <span class="tag repo">AUTHOR CODE</span> verified in the authors' code (github.com/CoDS-GCS/OCR-APT). <span class="tag ours">OURS</span> what this project does differently. <span class="tag inf">INFERENCE</span> an interpretation, not verified.</p>
+  <p class="prose" style="font-size:0.9rem;color:var(--muted)">Numbers come from the benign experiment <code>20261009T145632Z</code> and training run <code>exp01</code>. A wider recapture is under way, so the counts will change; the mechanism will not. Tags: <span class="tag paper">PAPER</span> stated in the OCR-APT paper. <span class="tag repo">AUTHOR CODE</span> verified in the authors' code (github.com/CoDS-GCS/OCR-APT). <span class="tag ours">OURS</span> what this project does differently. <span class="tag inf">INFERENCE</span> an interpretation, not verified.</p>
 </header>
 
 <!-- 1 ------------------------------------------------------------------ -->
@@ -389,7 +389,7 @@ loss = model.loss(emb[tr])               # torch.Tensor [] (0-dim: one number), 
       <ul>
         <li><strong>Only 5 training windows.</strong> 20 minutes is not useless, it is small. The model has seen little normal behaviour.</li>
         <li><strong>Correlated rows.</strong> A long-running process appears in up to 3 overlapping windows, so there are fewer independent samples than the 6,810 rows suggest (<code>docs/DEVIATIONS.md</code>).</li>
-        <li><strong>The first live false positive.</strong> 18 syswow64 DLLs (FILE nodes) loaded once by a short-lived <code>updater</code> process were flagged; training had 0 <code>updater</code> processes (<code>docs/PROGRESS.md</code>). Unseen benign behaviour is exactly what a thin capture misses.</li>
+        <li><strong>The first live false positive.</strong> 18 syswow64 DLLs (FILE nodes) loaded once by a short-lived <code>updater</code> process were flagged; training had 0 <code>updater</code> processes. Unseen benign behaviour is exactly what a thin capture misses.</li>
         <li><strong>Next step.</strong> Record longer or several seeded captures, keep the 5-minute window so the features stay on the live scale, retrain and recalibrate.</li>
       </ul>
       <p class="note">No number on this page is a detection metric. The training numbers say "it runs and is consistent", not "it detects attacks".</p>
@@ -398,7 +398,7 @@ loss = model.loss(emb[tr])               # torch.Tensor [] (0-dim: one number), 
 </section>
 
 <footer class="wrap">
-  Sources: <code>src/pipeline/etwwindow.py</code>, <code>src/pipeline/encode_to_features.py</code>, <code>src/pipeline/train_gnn_models.py</code>, <code>src/scripts/06-benign-workload.ps1</code>, <code>docs/PROGRESS.md</code>, <code>docs/DEVIATIONS.md</code>, OCR-APT paper §5.1, §7.2.1. Companion pages: <a href="edges-to-node-features.html">edges → node features</a>, <a href="live-windows.html">live windows</a>, <a href="inference.html">from score to node</a>.
+  Sources: <code>src/pipeline/etwwindow.py</code>, <code>src/pipeline/encode_to_features.py</code>, <code>src/pipeline/train_gnn_models.py</code>, <code>src/scripts/06-benign-workload.ps1</code>, <code>docs/DEVIATIONS.md</code>, OCR-APT paper §5.1, §7.2.1. Companion pages: <a href="edges-to-node-features.html">edges → node features</a>, <a href="live-windows.html">live windows</a>, <a href="inference.html">from score to node</a>.
 </footer>
 
 <script>
