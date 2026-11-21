@@ -172,7 +172,7 @@ class Engine:
         self.llm_cfg = {"provider": llm_provider or ("custom" if llm_client else None),
                         "model": getattr(self.llm, "model", None), "max_subgraphs": llm_max_subgraphs,
                         "reasoning_effort": llm_reasoning_effort, "max_per_day": llm_max_per_day}
-        # [OURS] daily LLM budget (user, 2026-11-02: token spend on a 24/7 server): at most llm_max_per_day red
+        # [OURS] daily LLM budget (caps token spend on a 24/7 server): at most llm_max_per_day red
         # windows investigated per local calendar day (each = 1 triage per kept subgraph up to max_subgraphs, 3 for
         # an attack subgraph, +9 with >= 2 attack subgraphs: <= 24 requests);
         # 0 = unlimited. Kept by the store (sessions/llm_budget.json) so restarts and new sessions do not reset it.
@@ -401,7 +401,7 @@ class Engine:
                                              self.sg["moderate_from"], tuple(self.sg["require_types"]))
         sg_sum = alg1.summarise(subgraphs)
         sup_line = alg1.suppression_log(wid, subgraphs)
-        if sup_line:      # the type rule turned a would-be alert into a normal window: say why (user, 2026-11-09)
+        if sup_line:      # the type rule turned a would-be alert into a normal window: say why
             print(f"[engine]{f' {self.host}' if self.host else ''} {sup_line}", flush=True)
         nodes["attr"] = nodes["node_uuid"].map(attrs)
         ms = int((time.time() - t0) * 1000)
@@ -625,7 +625,7 @@ def selftest():
     streams = {"kproc": [], "kfile": [], "knet": [], "kproc_d14": [], "sysmon": []}
     vol = r"\Device\HarddiskVolume4"
     # [OURS] D14: a process started inside window 1 + its Sysmon EID 1 record (header PID = Sysmon's service).
-    # Its kproc lines go on their own stream, sent on time: the main kproc stream is shipped late on purpose.
+    # Its kproc lines go on their own stream, sent on time: the main kproc stream is shipped late by design.
     t300 = base + 390_000
     streams["kproc_d14"].append(ev(kp, "ProcessStart/Start", 100, "explorer", t300, ProcessID="300",
                                ParentProcessID="100", ImageName=vol + r"\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"))

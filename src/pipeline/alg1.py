@@ -17,7 +17,7 @@ in memory (no GraphDB). [AUTHOR CODE] l.N = upstream detect_anomalous_subgraphs.
     level    = Negligible / Minor / Moderate / Significant / Critical ([PAPER] §7.2.1: Moderate from 10)
     kept     = level >= min_level (default Moderate, [AUTHOR CODE] l.61)               Alg. 1 l.22-24
                AND [OURS] the subgraph's ANOMALOUS nodes cover every type in require_types
-               (default: >= 1 anomalous NET node; user, 2026-11-09). A level-kept subgraph that misses a type
+               (default: >= 1 anomalous NET node). A level-kept subgraph that misses a type
                stays in the output with kept = False and `suppressed` = the reason (logged, never alerted,
                never sent to the LLM). --sg-require-types none = paper behaviour.
 
@@ -43,9 +43,9 @@ import networkx as nx
 import pandas as pd
 
 LEVELS = ["Negligible", "Minor", "Moderate", "Significant", "Critical"]
-MODERATE_FROM = 10.0       # [PAPER] §7.2.1 "between 10 and 100 ... moderate" (user, 2026-11-03); [AUTHOR CODE] l.394 is > 10
+MODERATE_FROM = 10.0       # [PAPER] §7.2.1 "between 10 and 100 ... moderate"; [AUTHOR CODE] l.394 is > 10
 TYPE_ORDER = {"net": 1, "process": 2, "file": 3}        # [AUTHOR CODE] node_type_order l.674
-# [OURS] (user, 2026-11-09): a kept subgraph must hold >= 1 anomalous NET node. Re-judged on the live history
+# [OURS]: a kept subgraph must hold >= 1 anomalous NET node. Re-judged on the live history
 # 11-05 -> 11-09 (exp08): 5/5 attack windows still alert, false alarms 14 -> 3 (in-sample; DEVIATIONS D8).
 # 'file,net,process' (the first version) lost the 11-06 00:50Z C2 window (net + process only).
 REQUIRE_TYPES = ("net",)

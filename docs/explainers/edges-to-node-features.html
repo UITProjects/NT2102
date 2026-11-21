@@ -258,7 +258,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
     </div>
     <div class="tabpanel" id="panel-tsv" role="tabpanel" aria-labelledby="tab-tsv" hidden>
       <div class="scroll"><pre class="tsv nomath" id="tsvBox"></pre></div>
-      <p class="note" style="margin-bottom:0">Highlighted triples are what the encoder pulls out. Edge-type declarations look like <code>Write a …/edge-type</code> (<code>transform_to_RDF.py</code> l.214–215), and l.277 collects their subjects. For W10 that list is then ignored, as section 2 explains. The <code>node-attribute</code> values (image names, paths, IPs) never reach the features. <span class="tag paper">PAPER</span> §5.1.1 leaves them out on purpose so the model does not memorize specific instances.</p>
+      <p class="note" style="margin-bottom:0">Highlighted triples are what the encoder pulls out. Edge-type declarations look like <code>Write a …/edge-type</code> (<code>transform_to_RDF.py</code> l.214–215), and l.277 collects their subjects. For W10 that list is then ignored, as section 2 explains. The <code>node-attribute</code> values (image names, paths, IPs) never reach the features. <span class="tag paper">PAPER</span> §5.1.1 leaves them out so the model does not memorize specific instances.</p>
     </div>
   </div>
 </section>
@@ -413,7 +413,7 @@ footer { padding: 30px 0 60px; color: var(--muted); font-size: 0.85rem; border-t
           <li>Total volume, after L2 normalization.</li>
           <li>Who the counterpart was. OCRGCN recovers this through typed message passing.</li>
           <li>Order and timing of individual events. The idle features keep a summary; the LLM stage keeps the sequence.</li>
-          <li>Names, paths and IPs, left out on purpose (§5.1.1).</li>
+          <li>Names, paths and IPs, left out by design (§5.1.1).</li>
         </ul>
       </div>
     </div>

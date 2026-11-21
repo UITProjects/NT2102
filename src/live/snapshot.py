@@ -55,7 +55,7 @@ SECRET_PATTERNS = [re.compile(r"(?i)(-{1,2}password[\s:=]+)(['\"]?)([^\s'\"]+)")
                    re.compile(r"(?i)(convertto-securestring\s+)(['\"]?)([^\s'\"]+)")]
 DEFAULT_NOTE = ("Recorded snapshot of the live OCR-APT detector (read-only). Scores, alert levels and LLM verdicts are "
                 "what the live server computed at the time with the model recorded per session; nothing is re-scored "
-                "here. The 4.5 alert cut-off and NET rule off (since 2026-11-15) were tuned on the 2026-11-15 "
+                "here. The 4.5 alert cut-off and NET rule off were tuned on the 2026-11-15 "
                 "react2shell run, so that run is in-sample evidence, not an independent test.")
 
 

@@ -34,7 +34,7 @@ endpoint; phases are separated by port (exploit → :3000, stage/download → :8
 | Persistence | Persistence | T1053.005 | `schtasks.exe` creates task `UpdaterSync` running the tool |
 | Defense evasion | Defense evasion | T1070.001, T1070.004 | `wevtutil.exe cl Security/System/Application` under the RCE shell (process + `.evtx` FILE nodes); `powershell` deletes `C:\Users\Public\tools\` + `downloaded_tool.bin` (anti-forensics). Clearing the event logs does **not** affect collection — `etwcollect` reads live ETW sessions, not `.evtx`. **Observed (2026-11-06):** captured but scores **in-distribution** (not flagged), so it does not enter the kept subgraph or lift the alert — a lone short-lived process is not anomalous by its own per-node features (DEVIATIONS D5/D8); the window reds on the tool/C2/DB nodes |
 
-The chain is deliberately **high-volume** (user, 2026-11-04): the scan alone is ~360 connection attempts,
+The chain is **high-volume** by design: the scan alone is ~360 connection attempts,
 and the beacon + DB bursts repeat for `--attack-seconds` (default 180 ≥ 3 min). That is the point — more
 real attacker activity = more flagged nodes = a higher subgraph score **without any detector-side
 weighting** (the earlier NET ×2 idea was rolled back). It also means a large NET/process spike: mind the
@@ -51,8 +51,7 @@ artefacts above fall under.
 
 ## The alert cut-off (honesty)
 
-A window alerts only if one subgraph holds roughly ≥ 10 anomalous nodes (the paper's Moderate, DEVIATIONS D8;
-it was ≥ 30, set on ONE benign window, until 2026-11-03). The kill chain is sized (a Discovery burst of several processes + the download +
+A window alerts only if one subgraph holds roughly ≥ 10 anomalous nodes (the paper's Moderate, DEVIATIONS D8). The kill chain is sized (a Discovery burst of several processes + the download +
 persistence, all rooted at the unseen RCE shell) to clear it, but this is **confirmed on a capture, not
 tuned to the attack**: if the window scores < 10, widen the chain or justify a lower `--sg-moderate-from`
 from the benign baseline — do not re-tune the threshold to the attack window (that fits the test).
@@ -62,7 +61,7 @@ disclosed in DEVIATIONS D8: `--attack-seconds` (default 180) loops Discovery + t
 attack sustains ≥ 3 min of activity (more flagged nodes + recurring NET telemetry) instead of a ~10 s
 blip; and the T1105 phase now **downloads and executes real benign tools** (PsExec/rclone; nmap/ncat
 best-effort) so their processes + sockets add new unseen nodes. The detector stays paper-faithful SG-Det
-(the earlier `--sg-net-weight` NET ×2 idea was **rolled back** 2026-11-04); the Moderate=10 threshold is
+(the earlier `--sg-net-weight` NET ×2 idea was **rolled back**); the Moderate=10 threshold is
 unchanged and the live result is still reported as observed.
 
 ## Run

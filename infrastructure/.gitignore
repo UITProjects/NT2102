@@ -1,5 +1,5 @@
 .terraform/
-# terraform.tfstate IS committed (user, 2026-10-31); backups stay ignored
+# terraform.tfstate IS committed (no secrets in it); backups stay ignored
 *.tfstate.*
 terraform.tfvars
 *.auto.tfvars

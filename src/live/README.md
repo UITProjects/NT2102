@@ -1,247 +1,41 @@
-# Live demo: VM → Loki → trainer scoring → browser
+# src/live/: live detector
+
+Follows each Windows VM's ETW stream in Loki, scores every 5-minute window with that host's OCRGCN model,
+turns anomalous nodes into alert subgraphs, asks an LLM for a verdict on red windows, and serves it all in a
+web UI with a persistent, range-queryable history. The same server replays a recorded snapshot for the public demo.
+
+## Outcome
+
+- Ran 24/7 on the trainer for two weeks on two hosts, with one model per host.
+- DVWA kill chain and the real react2shell attack both went red with an LLM `attack` verdict; idle windows stayed
+  mostly green (a few benign false alarms a day).
+- The live path reproduces the offline pipeline on the training capture (`compare_replay.py`).
+- Self-healing: watchdog exit + systemd restart, `/healthz`, a restart resumes from Loki.
+
+## Architecture
 
 ```
-VM  etwcollect (SYSTEM task) → raw\test\live-<UTC>\{kfile,knet,kproc}.json      (start-live.ps1)
-    its shipper thread ──push──► Loki :3100 on the trainer      (src/etw-python; SilkService + Alloy before 2026-10-26)
-trainer  live_server.py --loki-url → loki_source.py (poll the newest test run, 1 s)
-     → engine.py: reorder by event time → etw2nodlink.Graph (same code as training,
-     src/pipeline/etw2nodlink.py) → 5-min windows → train scaler + train relations →
-     OCRGCN per type → score > τ → Alg. 1 subgraphs + SG-Det (alert = ≥ 1 subgraph ≥ Moderate
-     with >= 1 anomalous NET node)
-     → optional LLM verdict (alg2.py) → sessions/<id>/windows/<wid>/ + UI (SSE)
+Loki ─► loki_source.py (one per scored VM) ─► engine.py
+          reorder by event time → provenance graph (same converter as training) → 5-min windows
+          → train scaler + relations → OCRGCN per node type → anomalous nodes
+          → Alg. 1 subgraphs + SG-Det level (alg1.py) → red / green
+          → LLM thread: triage verdict + Alg. 2 report (alg2.py, daily budget)
+     ─► correlate.py: red window's network nodes → peer VM's process at the other end → both sides to the LLM
+     ─► repositories (history, cross-host findings, session files) ─► live_server.py (FastAPI + SSE) ─► UI
 ```
 
-| file | role |
+Alert rule: subgraph score = Σ clamped min-max node probability; red at ≥ Moderate (paper scale 10, live 4.5 [OURS], D8).
+The LLM verdict is an overlay, never a label or training data (D9). Command lines from Sysmon are shown to
+the UI and the LLM only, never used as features (D14).
+
+## Key files
+
+| file | what |
 |---|---|
-| `loki_source.py` | follows Loki: newest test run → engine payloads (synthetic offsets, dos map from `etw-meta`) |
-| `loki_push.py` | test feed: pushes a recorded run into Loki in the collector's shape (`--shift-to-now --speed N` for live) |
-| `etwship.py` | stdlib HTTP shipper: `--replay` on the host (compare_replay), `--print-dos-map` on the VM (etwctl) |
-| `engine.py` | ingest, reorder buffer, windows, scoring thread, calls Alg. 1 and the LLM thread |
-| `live_server.py` | FastAPI: `/ingest`, `/api/*`, SSE `/api/stream`, UI at `/` |
-| `static/index.html` | UI |
-| `compare_replay.py` | checks that the live path reproduces the offline pipeline on the training capture |
-| `../pipeline/score_window.py` | scorer shared with offline scoring |
-| `../pipeline/alg1.py` | Alg. 1 subgraphs + subgraph-score filter; re-judges saved sessions |
-| `../pipeline/alg2.py` | LLM verdict on red windows + Alg. 2 attack report; re-judges saved sessions |
-
-Run everything from the repo root after `uv sync`. Shortcuts: `./selftest.sh`, `./serve.sh [live|local]`,
-`./replay.sh <session-id|raw-dir> [speed]`, `./rejudge.sh <session-id> [llm-provider]` (`-h` for usage).
-
-## 1. It runs
-
-`./selftest.sh` → PASS on every step.
-
-## 2. Prerequisite: a valid model
-
-`src/artifacts/runs/exp01` (current valid run, docs/PROGRESS.md). A retrain on wider benign data
-(PROGRESS "Next 3 steps" #1) goes next to it as `exp02`. The server refuses a run whose
-`runs_summary.csv` shows `emb_std ≈ 0`.
-
-## 3. Offline scorer reproduces the training scores
-
-```
-uv run python src/pipeline/score_window.py --run-dir src/artifacts/runs/exp01 \
-  --edges src/out/etw/experiments/20261009T145632Z/SimulatedW10_train_edges.csv \
-  --scaler src/artifacts/features/self-dataset/feature_scaler.json
-```
-Expect a flag rate per type ≈ `train_flag_rate` in runs_summary.csv; scores equal train_scores.csv.
-
-## 4. Works correctly: replay the training capture (no VM)
-
-```
-./serve.sh local --stride-min 2 --origin-ms 1791557793343        # terminal 1: grid = training w0000, stride 2
-./replay.sh src/out/etw/experiments/20261009T145632Z/raw/train/x-20261009T145632Z   # terminal 2: 120x ≈ 10 s
-uv run python src/live/compare_replay.py --session src/live/sessions/replay-x-20261009T145632Z \
-  --experiment src/out/etw/experiments/20261009T145632Z \
-  --features src/artifacts/features/self-dataset/features_model.csv \
-  --train-scores src/artifacts/runs/exp01/train_scores.csv
-```
-Expect `ALL MATCH`. Watch at http://127.0.0.1:8000. The dos-map is inferred from the raw paths
-(`\device\harddiskvolume4` → `c:` on this VM). Replay speed: 120 works; 0 hangs, 600 times out.
-
-## 5. Live (etwcollect → Loki, the default)
-
-The trainer runs `ocr-live` (systemd, `src/ansible/roles/ubuntu_project`), which is
-`live_server.py ... --loki-url http://127.0.0.1:3100` with the current model (`lab promote <run>`) plus
-`live_llm_args` (the LLM flags; set in `inventory.local.ini`, empty = LLM off).
-
-**The capture is always on.** The SYSTEM scheduled task `etwlab-live` (win_shipper role) runs
-`C:\scripts\start-live.ps1` at boot and every 5 min: it keeps a `test/live-<UTC>` run capturing, starts a new
-run every 6 h, deletes raw `live-*` runs idle for 1 day,. By hand, in an elevated
-PowerShell on the VM:
-```
-C:\scripts\start-live.ps1 -Status     # service, current run, hold, task, last log lines
-C:\scripts\start-live.ps1 -Rotate     # fresh live run now = a clean session before a demo
-C:\scripts\start-live.ps1 -Pause      # stop live and keep it stopped;  -Resume undoes it
-# benign = idle: keep the desktop idle; the always-on capture ships it to Loki, pull an idle range to train
-```
-The server follows the newest `split="test"` run, and a new run starts a new session. Window results are kept
-forever (the history below); only the raw copy of an old `live-*` session (`<session>/raw/`, ~2 GB/h under load)
-is deleted, after 12 idle hours (`live_raw_keep_hours`; a session holding a `.keep` file keeps it). Loki keeps
-90 days (`loki_retention`, 72 h until 2026-11-09): pull training captures within that.
-
-**History: query any time range (2026-11-03, `history.py`).** Every window state (closed, scored, error, LLM
-verdict) is appended to `sessions/history.jsonl`, and each scored window's detail to
-`windows/<wid>/detail.json`, so nothing is lost on a restart or a run rotation. The UI's **History** panel
-(from / to in lab time, 1 h · 6 h · 24 h · 7 d, alerts only; the URL keeps the range) lists one row per window
-start and opens a row in the detail panel. The same from a shell:
-```
-curl -s 'http://<trainer>:8000/api/history?from=2026-11-03T17:00:00Z&to=2026-11-03T18:00:00Z&alert=1'
-curl -s 'http://<trainer>:8000/api/history/<session folder>/<window id>'      # one window's detail
-```
-`from`/`to` take ISO-8601 (no offset = UTC) or epoch ms; default the last 24 h; `replay=1` adds replay sessions.
-A row shows the alert, verdict and cut-off **as judged at the time** (`moderate_from`). The first start after the
-upgrade backfills older sessions from their `windows.csv` (no LLM report text for those).
-
-**LLM on the live server.** `ocr-live` has no terminal, so it cannot prompt for the DeepSeek key. Save it
-once on the trainer, then let Ansible add the flags:
-```
-ssh -i ~/OneDrive/credentials/ssh/it2102-vms/id_rsa it2102@10.21.3.20
-cd ~/NT2102 && uv run --group llm python src/pipeline/alg2.py --ping --llm-provider deepseek   # prompts, saves, answers OK
-```
-The key lands in `~/.config/nt2102/credentials.json` on the trainer (plain text, mode 600). With
-`--llm-debug` in `live_llm_args`, `journalctl -u ocr-live -f` shows every raw LLM response.
-
-**Replay a live session on the laptop** (to check it by hand): copy `src/live/sessions/live-<UTC>/` from the
-trainer and the model run folder into `src/live/sessions/live-<UTC>/model/`, then
-```
-RUN_DIR=src/live/sessions/live-<UTC>/model SCALER=<…>/feature_scaler.json EXPERIMENT=<…>/experiment.json \
-  ./serve.sh local --llm-provider deepseek --llm-reasoning-effort none --llm-debug   # terminal 1
-./replay.sh live-<UTC>                                                               # terminal 2
-```
-and compare `windows.csv` / `llm_verdicts.csv` of `replay-live-<UTC>` with the live session.
-- Clock: newest event time minus `--lateness-s`. After `--loki-idle-s` (default 2 × lateness) with no new
-  lines, it follows host time, so the last window of a stopped capture still closes (DEVIATIONS D8).
-- UI tile "pipeline lag": host time minus the newest event.
-
-**Running 24/7 (2026-11-02).** What keeps `ocr-live` up unattended:
-- `curl http://<trainer>:8000/healthz` → 200 `{"ok": true}`, or 503 with the reason (an engine thread died, or
-  no successful Loki poll for 120 s).
-- Errors do not end the Loki polling thread: any exception is logged (traceback in `journalctl -u ocr-live`)
-  and retried with backoff; the UI shows `Loki error: …`. One event the converter cannot handle is skipped
-  and counted (tile "events skipped").
-- Watchdog (`--watchdog-s 300`): when a worker thread died or a Loki poll hangs for 5 min, the process exits
-  and systemd (`Restart=always`) starts a fresh one. Loki merely being down does NOT restart it (that would
-  not fix Loki); it keeps retrying.
-- A restart mid-run re-reads the run (up to `--loki-lookback-s`, 1 h) into a **new folder
-  `sessions/<run>.r2`** (`.r3`, …; `session.json` has `restart_of`), so the first folder's raw copy is never
-  duplicated. The cleanup cron prunes `.rN` folders like any `live-*` session.
-- Catch-up is bounded: at most 20 000 lines per provider per poll, and the clock waits for the provider that
-  is behind, so a 1-h backlog arrives in slices instead of one multi-GB read (UI: "catching up").
-- The UI tab re-syncs by itself after the server restarts or the session changes (no reload needed).
-- **Parameters panel** (top of the UI, 2026-11-15): every scored VM side by side, read from that engine's `/api/status`, so
-  it shows what scoring uses now. Rows: model run, training hyperparameters (`train_meta.json` args), τ, converter check,
-  window/stride/lateness, SG-Det cut-off + NET rule, n_seed/max_e/min nodes, LLM provider/model/budget, and the running
-  code (git sha, branch, uncommitted changes; read at server start). Values that differ from the paper are tagged [OURS].
-- `OOMScoreAdjust=500`: under memory pressure the kernel kills `ocr-live` (it restarts) before Loki/Docker.
-- Still open: a ws-etw-0 → Loki push stall longer than `--loki-idle-s` drops that backlog as late (PROGRESS).
-
-No VM? Feed Loki from a recording (on the trainer):
-```
-uv run python src/live/loki_push.py --dir src/out/etw/experiments/<id>/raw/train/<run> \
-    --split test --run live-replay1 --shift-to-now --speed 10
-```
-
-### Alert rule (Alg. 1 + SG-Det, `src/pipeline/alg1.py`, DEVIATIONS D8)
-- Subgraph score = Σ prob over its anomalous nodes; prob = (score − train min) / (train max − train min), clamped to [0, 1].
-- Window is red only if ≥ 1 subgraph is ≥ Moderate = score ≥ 10 ([PAPER] §7.2.1; [AUTHOR CODE] is > 10; until
-  2026-11-03 our own live scale was 30). `ocr-live` takes it from Ansible `live_sg_moderate_from` (default 10).
-  Subgraphs below the cut-off are still listed (dashed buttons in the UI).
-- [OURS] NET rule (2026-11-09): a subgraph at or above the cut-off alerts (and goes to the LLM) only if it holds at
-  least one anomalous NET node. Otherwise it is **suppressed**: the window stays green, the LLM is not called, and the
-  reason is logged (`journalctl -u ocr-live | grep suppressed`). It is also shown in the UI (timeline, history, subgraph
-  buttons) and kept in `history.jsonl` (`subgraphs_suppressed`, `suppressed_reason`) and `subgraphs.json`
-  (`suppressed`, `types_anomalous`). `--sg-require-types none` turns it off (paper behaviour). Why and limits: DEVIATIONS D8.
-- Flags: `--n-seed 15 --min-nodes 3 --max-edges 5000 --sg-min-level Moderate --sg-moderate-from 10 [--sg-min-score X]
-  [--sg-require-types net|file,net,process|none]` (default `net`).
-- Try another cut-off on a saved session without the VM: `./rejudge.sh <id> "" --sg-moderate-from 30`
-  (writes `subgraphs_alg1.{json,csv}` per window).
-
-### LLM verdict on red windows (`src/pipeline/alg2.py`, DEVIATIONS D9)
-- Off by default. `--llm-provider anthropic|openai|ollama|deepseek` (first `uv sync --group llm`; keys from
-  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`; Ollama at `http://localhost:11434/v1` unless `--llm-base-url`).
-  `mock` is a keyword rule for UI tests, not an LLM.
-- **Any OpenAI-compatible endpoint** (self-hosted vLLM / LM Studio / OpenRouter / Groq / a proxy):
-  `--llm-provider openai --llm-base-url http://host:8000/v1 [--llm-model NAME] [--llm-api-key KEY]`.
-  The key falls back to `$OPENAI_API_KEY`; a keyless endpoint used with `--llm-base-url` gets a harmless
-  dummy key so the SDK is satisfied. Same flags on `rejudge.sh`/`alg2.py` directly.
-- **DeepSeek API** (chosen provider; model `deepseek-flash` = DeepSeek-V4.1-Flash-1017, at
-  `https://api.deepseek.com`): `--llm-provider deepseek [--llm-reasoning-effort none]`. Get a key at
-  platform.deepseek.com; usage and cost show at platform.deepseek.com/usage.
-  - Key: `--llm-api-key` > `$NT2102_DEEPSEEK_API_KEY` > `~/.config/nt2102/credentials.json` > a terminal
-    prompt (input hidden). Your own unprefixed `DEEPSEEK_API_KEY` is deliberately ignored.
-  - **The first prompt saves the key to `~/.config/nt2102/credentials.json` in plain text (mode 600, outside
-    the repo).** Delete its `deepseek` entry (or the file) to forget it or enter a new one. No terminal (for
-    example a service) → the start fails with a message instead of prompting.
-  - `--llm-reasoning-effort none|low|high|max`: not sent by default (DeepSeek thinks, effort high, and ignores
-    temperature). `none` turns thinking off: fastest, and temperature 0 applies, so use it for the live demo.
-- **Debug:** `--llm-debug` or `NT2102_LLM_DEBUG=1` (also through `rejudge.sh`) prints every call's raw
-  response (including DeepSeek's `reasoning_content`) or HTTP error body to stderr and keeps it as `raw` in
-  `calls.jsonl`. An answer cut at the provider's output limit always prints a warning.
-- Runs on its own thread: neutral triage (attack / benign / uncertain), then the paper's Alg. 2 prompts
-  for attacks. The window stays red; the badge shows `LLM: attack`, `LLM: FP` (struck through), `LLM: ?`
-  or `LLM: …`.
-- UI test: the benign replay `live-20261011T112141Z` has no red window at the default scale;
-  `./serve.sh local --llm-provider mock --sg-moderate-from 10.0001` makes its 11:25 window red.
-- Without the VM: `./rejudge.sh <id>` (prints the LLM input, no call) or `./rejudge.sh <id> anthropic`.
-- An LLM "FP" is not a label and is never used for training.
-- **Daily budget** `--llm-max-per-day 10` (default; 0 = no limit): at most 10 red windows investigated per
-  local calendar day of the trainer. One window = for each of up to `--llm-max-subgraphs` (5) kept subgraphs
-  1 triage request (3 if it is judged an attack), plus 9 when ≥ 2 subgraphs are attacks: ≤ 5 requests for a
-  benign window, ≤ 24 worst case, so 10 windows ≤ 240 requests/day. Later red windows stay red with the badge `LLM: budget` and
-  `skipped` in `llm_verdicts.csv`. The count lives in `sessions/llm_budget.json` (survives restarts; delete
-  it to reset today's count). The status panel shows "LLM budget today used / limit".
-
-A red window is an observation, not a detection result, until the window has labels (DEVIATIONS D6, D8).
-
-## Outputs per session (`src/live/sessions/<id>/`)
-- `session.json`: model, scaler, converter sha256, dos_map, parameters.
-- `raw/<stream>.json`: verbatim; can be replayed or converted into a labelled test split.
-- `windows.csv`: one row per window, incl. `subgraphs_kept, max_sg_score, max_level, alert, llm`
-  (`llm` = pending when written; final verdicts in `llm_verdicts.csv`).
-- `windows/<wid>/`: `edges.csv, node_attrs.csv, node_cmdlines.csv, features_model.csv, scores.csv, subgraphs.json`, and
-  `llm/` (`sg<id>_doc.txt` = exact LLM input, `triage.json`, `sg<id>_report.md`, `iocs.json`, `calls.jsonl`).
-- `node_cmdlines.csv` (DEVIATIONS D14): PROCESS nodes joined to a Sysmon EID 1 record (stream `sysmon`) by PID + start time:
-  `node, pid, start_utc, image, cmdline, decoded, parent_cmdline, delta_ms` (display copy: `-enc` decoded, secrets redacted,
-  400 chars). Investigation-only: shown in the UI and the LLM document, never scored. Empty when the VM has no Sysmon.
-  Offline for any saved window: `python src/pipeline/cmdlines.py --sysmon raw/sysmon.json --node-attrs windows/<wid>/node_attrs.csv --out x.csv`.
-
-## Several Windows hosts
-
-All Windows VMs push to one Loki, told apart by the `host` label. Each VM has its own model, and `lab hosts` picks which
-VMs are scored:
-
-```bash
-lab loop --start <t> --end <t> --split test --benign-split test --host ws-etw-1 --model exp09-ws1   # train one VM
-lab promote exp08 --host ws-etw-0          # assign a model to a VM (changes nothing live yet)
-lab promote exp09-ws1 --host ws-etw-1
-lab hosts                                  # show assignments
-lab hosts ws-etw-0 ws-etw-1 && sudo systemctl restart ocr-live    # two-VM mode
-lab hosts ws-etw-0 && sudo systemctl restart ocr-live             # one-VM mode; assignments are kept
-```
-
-One `Engine` + one `LokiSource` runs per scored VM, each with its own model, scaler, run rotation and clock. They share
-the history and the LLM budget. Session folders are `<run>-<host>`. Per-host scoring and SG-Det are the same code as with one
-VM: a selftest checks that a VM's windows are identical either way. Until `lab hosts` is used, `live_loki_host`
-(`--loki-default-host`) keeps the server on one VM with the single top-level model.
-
-`--host` twice still builds a pooled experiment (`merge_experiments()`, D12), but live scoring uses one model per host.
-A range that holds several hosts and no `--host` is refused. Lines from before the rename are `--host ws-etw`.
-
-### Cross-host follow-up (`src/live/correlate.py`, DEVIATIONS D13)
-
-With two or more VMs scored and `/etc/nt2102-hosts.json` present (Ansible writes it from the inventory), a **red window** on
-one VM is followed to the other: every NET node in its kept subgraphs whose IP is another monitored VM is a seed. The raw
-network lines give the exact connection (5-tuple), so the other end is found on the peer VM: its socket node, the process
-that owns it, and what that process touched, scored by the **peer's own model**. The LLM gets both sides in one document.
-Each VM's model cannot do this, because it only sees that VM's graph.
-
-| Level | Meaning | Effect |
-|---|---|---|
-| `pending` | a red window's kept subgraph holds a socket on another VM; the peer's windows in [t − 5 min, t + 5 min] are not closed yet | shown |
-| `one-sided` | the peer's model scored the nodes around that connection as normal | LLM report of both sides |
-| `corroborated` | the peer's model flagged ≥ 1 of them, or one of its kept subgraphs holds them | LLM report again |
-
-A connection between the VMs with no red window is never shown, and there is no known-traffic list. Nothing here changes a
-VM's own windows. Results: `sessions/crosshost.jsonl`, LLM files in `sessions/crosshost/<id>/`, API `/api/crosshost`, UI
-panel **Cross-host follow-up**. Validated on synthetic windows only.
+| `engine.py` | ingest, windows, scoring thread, LLM thread |
+| `loki_source.py` · `loki_push.py` · `etwship.py` | Loki input · recorded-run feeder · HTTP replay shipper |
+| `correlate.py` | cross-host follow-up (D13): `pending` / `one-sided` / `corroborated` |
+| `live_server.py` · `static/index.html` | HTTP API, SSE stream, UI |
+| `repository.py` · `history.py` · `file_store.py` | persistence interfaces and file implementations |
+| `snapshot.py` · `playback.py` | snapshot build and read-only replay (public demo) |
+| `compare_replay.py` | live vs offline equality check |

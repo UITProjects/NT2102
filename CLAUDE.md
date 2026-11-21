@@ -154,7 +154,7 @@ numbers. If ambiguous, answer the most likely interpretation and state the assum
   `deploy/snapshot/nt2102-snapshot.tar.gz`, snapshot mode of `live_server.py`, image + CI, `deploy/k8s/`. Verified locally: all 24
   `./selftest.sh` steps pass, the container serves the snapshot, 30-user load test OK, manifests pass a server-side dry run on the cluster.
   **Not yet deployed.** User steps left: commit + merge to `main` → tag `v1.0.0` → make the GHCR package public → `terraform apply` (DNS) →
-  Argo sync → cluster load test, then fill the cluster numbers into `deploy/README.md`. Decisions: section 9 "Public demo"; guide: `deploy/README.md`.
+  Argo sync → cluster load test, then fill the cluster numbers into `deploy/README.md`. Decisions: section 9 "Public demo"; overview: `deploy/README.md`.
 - SG-Det: code default = the **paper's level scale** (user, 2026-11-03): Moderate from 10, [PAPER] §7.2.1. **Live `ocr-live` runs [OURS]
   Moderate from 4.5 on both hosts since 2026-11-15** (user; `live_sg_moderate_from` in `proxmox.ini`) **with the NET rule OFF** (user,
   2026-11-15 05:03Z, `live_sg_require_types=none`; accepts ~5 benign red/day per host): the teammate's 11-15 react2shell run (up to 19.9)
@@ -294,7 +294,7 @@ history of earlier progress) and, if relevant, this section.
   sessions) → `src/pipeline/alg2.py` (optional LLM thread: triage verdict + Alg. 2 l.3–15 report on red
   windows) → `src/live/history.py` (persistent window history, `sessions/history.jsonl`, range queries via
   `/api/history`); `etwship.py --replay` + `compare_replay.py` check the live path against the offline
-  pipeline. Run guide: `src/live/README.md`.
+  pipeline. Overview: `src/live/README.md`.
 - Artefacts: `src/out/etw/experiments/<id>/` (raw, converted, windowed edges, `windows.csv`,
   `experiment.json`, `check.json`, `pull.json`, benign ledger in `labels/`), `src/artifacts/runs/<run>/`
   (one model: `models/`, `features/` + scaler, `experiment.json`, `lineage.json`; `exp01` predates this and
